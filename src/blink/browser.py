@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.3.1'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.4.0'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -286,7 +286,10 @@ class BrowserBridge:
           const SECRET_FIELD=/^(password|passwd|pwd|pass|passcode|client_secret|current_password|new_password|access_token|refresh_token|id_token)$/i;
           const LIMIT=262144;
           const pageOf=url=>{try{const u=new URL(url);return u.origin+u.pathname;}catch{return null;}};
-          const headersOf=h=>Object.fromEntries(Object.entries(h||{}).slice(0,100).map(([k,v])=>[k,SECRET_HEADER.test(k)?'<redacted>':String(v).slice(0,4000)]));
+          // Cookie names are kept (they tell how the site logs in); every cookie value is blanked.
+          const cookieNames=v=>String(v).split(/;\s*|\n/).map(x=>x.split('=')[0].trim()).filter(Boolean).slice(0,50).map(n=>n+'=<redacted>').join('; ');
+          const headersOf=h=>Object.fromEntries(Object.entries(h||{}).slice(0,100).map(([k,v])=>[k,
+            /^(cookie|set-cookie)$/i.test(k)?cookieNames(v):SECRET_HEADER.test(k)?'<redacted>':String(v).slice(0,4000)]));
           const scrub=text=>{if(typeof text!=='string'||!text)return text;
             try{const walk=x=>Array.isArray(x)?x.map(walk):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,SECRET_FIELD.test(k)?'<redacted>':walk(v)])):x;
               return JSON.stringify(walk(JSON.parse(text)));}catch{}
@@ -349,8 +352,13 @@ class BrowserBridge:
           p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
           // Prove screenshots work now, so a failure shows when recording starts, not after a long session.
           await shoot('start');
-          return {recording:true,screenshots:shots.length?'enabled':'failed',screenshotError:lastShotError};
+          return {recording:true,screenshots:shots.length?'enabled':'failed',screenshotError:lastShotError,url:p.url()};
         ''')
+
+    def rename_owner(self, old, new):
+        with self.lock:
+            if old in self.owners and new not in self.owners:
+                self.owners[new] = self.owners.pop(old)
 
     def capture_drain(self, binding, ack=None):
         """Hand over the next batch (encoded size about 3 MB). A batch stays in the tab until the caller

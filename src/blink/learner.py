@@ -43,6 +43,93 @@ def path_template(path):
     return '/'.join(out) or '/'
 
 
+def blink_name(url):
+    """The default Blink name: the host as reached, lowercase, a leading www. dropped, dots as dashes."""
+    host = (urlsplit(url).hostname or '').lower()
+    host = host[4:] if host.startswith('www.') else host
+    return re.sub(r'[^a-z0-9-]', '-', host.replace('.', '-')).strip('-')[:100] or 'blink'
+
+
+EFFECTS = {'GET': 'read', 'HEAD': 'read', 'POST': 'write', 'PUT': 'write', 'PATCH': 'write', 'DELETE': 'destructive'}
+VERBS = {'GET': 'get', 'HEAD': 'get', 'POST': 'create', 'PUT': 'update', 'PATCH': 'update', 'DELETE': 'delete'}
+IDENTITY_PATH = re.compile(r'/(me|whoami|self|current[-_]?user|user|users/me|profile|account|session)(/|$)', re.I)
+
+
+def _merge_shapes(a, b):
+    if not a:
+        return b or {}
+    if not b or a.get('type') != b.get('type'):
+        return a
+    if a.get('type') == 'object':
+        props = dict(a.get('properties') or {})
+        for key, value in (b.get('properties') or {}).items():
+            props[key] = _merge_shapes(props.get(key), value)
+        return {'type': 'object', 'properties': props}
+    return a
+
+
+def endpoint_groups(records, limit=300):
+    """Requests grouped by method, origin and path template, with suggested names and effects: computed here so
+    the model only chooses which endpoints to keep."""
+    groups, order = {}, []
+    for index, record in enumerate(records):
+        if not isinstance(record, dict) or not all(isinstance(record.get(k), str) for k in ('method', 'origin', 'path')) \
+                or record['method'] == 'OPTIONS':
+            continue
+        key = f"{record['method']} {record['origin']}{record.get('pathTemplate', record['path'])}"
+        group = groups.get(key)
+        if group is None:
+            group = groups[key] = {'endpoint': key, 'method': record['method'], 'origin': record['origin'],
+                                   'pathTemplate': record.get('pathTemplate', record['path']), 'examplePath': record['path'],
+                                   'index': index, 'count': 0, 'statuses': [], 'inScope': record.get('inScope', True),
+                                   'resourceType': record.get('resourceType'), 'queryNames': [],
+                                   'requestMediaType': record.get('requestMediaType'), 'requestSchema': {},
+                                   'authenticated': False, 'suggestedEffect': EFFECTS.get(record['method'], 'write')}
+            order.append(key)
+        group['count'] += 1
+        if record.get('status') and record['status'] not in group['statuses']:
+            group['statuses'].append(record['status'])
+        group['queryNames'] = list(dict.fromkeys(group['queryNames'] + list(record.get('queryNames') or [])))[:100]
+        group['requestSchema'] = _merge_shapes(group['requestSchema'], record.get('requestSchema'))
+        group['authenticated'] |= bool({'cookie', 'authorization'} & set(record.get('headerNames') or []))
+    used, result = set(), []
+    for key in order[:limit]:
+        group = groups[key]
+        words = [w for w in group['pathTemplate'].split('/') if w and not w.startswith('{')][-2:]
+        stem = ''.join(w[:1].upper() + w[1:] for w in re.split(r'[^A-Za-z0-9]+', ' '.join(words)) if w) or 'Root'
+        name, n = VERBS.get(group['method'], 'call') + stem, 2
+        while name in used:
+            name, n = f"{VERBS.get(group['method'], 'call')}{stem}{n}", n + 1
+        used.add(name)
+        group['suggestedOperationId'] = name[:100] if re.match('[A-Za-z]', name) else 'op' + name[:98]
+        group['statuses'].sort()
+        result.append(group)
+    return result
+
+
+def suggest_auth(records, groups):
+    """A login recipe from what was seen: cookie names (values are never kept) and an identity read."""
+    cookies = []
+    for record in records:
+        for name in record.get('cookieNames') or []:
+            if name not in cookies:
+                cookies.append(name)
+    authenticated = [g for g in groups if g['authenticated'] and g['inScope']]
+    if not authenticated:
+        return {'auth': {'kind': 'none'}, 'probe': None, 'notes': ['No cookies or Authorization headers were seen.']}
+    probe = next((g for g in groups if g['method'] == 'GET' and g['inScope'] and g['authenticated']
+                  and IDENTITY_PATH.search(g['pathTemplate']) and any(200 <= s < 300 for s in g['statuses'])), None)
+    notes = []
+    if any('authorization' in (r.get('headerNames') or []) for r in records):
+        notes.append('An Authorization header was seen: the site may use a bearer token (bearer-storage) instead of cookies.')
+    if probe is None:
+        notes.append('No identity read (/me, /user, /profile, ...) was recorded; record opening your profile once.')
+    auth = {'kind': 'cookie-session', 'cookies': cookies[:30]}
+    if probe is not None:
+        auth['probe'] = probe['suggestedOperationId']
+    return {'auth': auth, 'probe': probe['endpoint'] if probe else None, 'notes': notes}
+
+
 def named_types(value, depth=0):
     """A given schema reduced to types and real field names: examples, defaults and other values are dropped."""
     if depth > 8 or not isinstance(value, dict) or value.get('type') not in {
@@ -244,7 +331,13 @@ class Learner:
             records.append(item)
         return self._save(records, 'har', missing)
 
-    def start(self, binding, url, origins):
+    def start(self, binding, url, origins=None):
+        # Only the URL is needed: the name follows the host reached after redirects, the origins default to it.
+        auto_name = not binding
+        if origins is None:
+            parsed = urlsplit(url)
+            origins = [canonical_origin(f'{parsed.scheme}://{parsed.netloc}', allow_http=True)]
+        binding = binding or blink_name(url)
         origins = _origins(origins)
         if not self.browser:
             raise ValueError('Shared Playwright browser is not configured')
@@ -268,12 +361,24 @@ class Learner:
         state = started.get('screenshots') if isinstance(started, dict) else None
         state = state if state in ('enabled', 'failed') else 'unsupported'
         run['screenshots'] = run['meta']['screenshots'] = state
+        final = started.get('url') if isinstance(started, dict) else None
+        if isinstance(final, str) and final.startswith(('http://', 'https://')):
+            try:
+                reached = canonical_origin(f'{urlsplit(final).scheme}://{urlsplit(final).netloc}', allow_http=True)
+            except Exception:
+                reached = None
+            if reached and reached not in run['origins']:  # the site redirected: record its real origin too
+                run['origins'].append(reached)
+                run['meta']['origins'] = run['origins']
+            run['meta']['reachedUrl'] = final
+            if auto_name and blink_name(final) != binding and blink_name(final) not in self.running:
+                binding, run = self._rename(run, binding, blink_name(final))
         _private_write(run['folder'] / 'meta.json', json.dumps(run['meta'], indent=2))
         with self.lock:
             self.running[binding] = run
         self._ensure_collector()
-        result = {'binding': binding, 'recording': True, 'screenshots': state, 'session': run['session'],
-                  'folder': str(run['folder'])}
+        result = {'binding': binding, 'blink': binding, 'recording': True, 'screenshots': state, 'session': run['session'],
+                  'folder': str(run['folder']), 'origins': run['origins'], 'reachedUrl': run['meta'].get('reachedUrl')}
         if state != 'enabled':
             error = started.get('screenshotError') if isinstance(started, dict) else None
             result['screenshotError'] = str(error)[:200] if error else 'The browser did not return a screenshot'
@@ -315,6 +420,25 @@ class Learner:
                                                 'status': 'recording', 'records': [], 'folder': str(folder)})
         self._write_index(run)
         return run
+
+    def _rename(self, run, old, new):
+        """Move a just-started session to the name of the host reached after redirects."""
+        rename = getattr(self.browser, 'rename_owner', None)
+        if not callable(rename):
+            return old, run
+        session = new + run['session'][len(old):]
+        folder = screenshot_dir(self.store, session)
+        if folder.exists():
+            return old, run
+        rename(old, new)
+        os.rename(run['folder'], folder)
+        self.store.delete('captures', run['session'])
+        run.update(session=session, folder=folder)
+        run['meta'].update(id=session, blink=new)
+        self.store.put('captures', session, {'id': session, 'createdAt': run['startedAt'], 'source': 'shared-playwright',
+                                             'status': 'recording', 'records': [], 'folder': str(folder)})
+        self._write_index(run)
+        return new, run
 
     def _abandon(self, run, reason):
         try:
@@ -614,6 +738,10 @@ class Learner:
         view['screenshots'] = (session.get('screenshots') or [])[:200]
         if offset + limit < len(records):
             view['more'] = 'blink_admin review with session, offset and limit shows the next records'
+        groups = endpoint_groups(records)
+        view['endpoints'] = [{k: g[k] for k in ('endpoint', 'count', 'statuses', 'inScope', 'suggestedOperationId',
+                                                'suggestedEffect', 'queryNames', 'requestMediaType')} for g in groups]
+        view['suggestedAuth'] = suggest_auth(records, groups)
         return view
 
     @staticmethod
@@ -656,7 +784,10 @@ class Learner:
                 shape = {'type': 'object', 'properties': {k[:100]: {'type': 'string'} for k, _ in pairs[:100]}} if pairs else {}
         from urllib.parse import parse_qsl
         query = [k for k, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)]
-        return {'seq': item.get('seq'), 'method': method.upper(), 'origin': source, 'path': path,
+        cookie_names = []
+        if isinstance(lowered.get('cookie'), str):
+            cookie_names = [c.split('=')[0].strip() for c in lowered['cookie'].split(';') if c.split('=')[0].strip()][:50]
+        return {'seq': item.get('seq'), 'method': method.upper(), 'origin': source, 'path': path, 'cookieNames': cookie_names,
                 'pathTemplate': path_template(path), 'inScope': source in origins,
                 'resourceType': item.get('resourceType') if item.get('resourceType') in RESOURCE_TYPES else 'other',
                 'status': _status(item.get('status', 0)), 'headerNames': names[:100],
@@ -766,6 +897,39 @@ class Learner:
         self.store.put('captures', session, capture)
         return capture
 
+    def _expand_selections(self, capture, operations, auth):
+        """Selections may name an endpoint from the session's endpoint list; names, effects, path templates,
+        schemas and statuses come from the recording, and a missing login recipe from the suggestion (with its
+        identity read added). Explicit fields in a selection always win."""
+        if not isinstance(operations, list):
+            return operations, auth
+        records = capture.get('records') or []
+        groups = {g['endpoint']: g for g in endpoint_groups(records, limit=100000)}
+        suggestion = suggest_auth(records, list(groups.values()))
+        if auth is None:
+            auth = copy.deepcopy(suggestion['auth'])
+        expanded = []
+        for selection in operations:
+            if isinstance(selection, dict) and 'endpoint' in selection:
+                group = groups.get(selection['endpoint'])
+                if group is None:
+                    raise ValueError(f"Unknown endpoint: {selection['endpoint']}")
+                base = {'index': group['index'], 'operationId': group['suggestedOperationId'],
+                        'effect': group['suggestedEffect'], 'path': group['pathTemplate'], 'statuses': group['statuses']}
+                if group['requestSchema']:
+                    base['requestSchema'] = group['requestSchema']
+                selection = {**base, **{k: v for k, v in selection.items() if k != 'endpoint'}}
+            expanded.append(selection)
+        probe = auth.get('probe') if isinstance(auth, dict) else None
+        group = groups.get(suggestion['probe']) if suggestion['probe'] else None
+        if probe and group and not any(isinstance(x, dict) and x.get('operationId') == probe for x in expanded):
+            origins = {records[x['index']]['origin'] for x in expanded if isinstance(x, dict) and isinstance(x.get('index'), int)
+                       and 0 <= x['index'] < len(records)}
+            if not origins or origins == {group['origin']}:
+                expanded.append({'index': group['index'], 'operationId': probe, 'effect': 'read',
+                                 'path': group['pathTemplate'], 'statuses': group['statuses']})
+        return expanded, auth
+
     def propose(self, session, service, operations, *, source='local', auth=None, execution=None, app_origin=None):
         capture = self.review(session)
         if capture['status'] == 'incomplete':
@@ -773,6 +937,7 @@ class Learner:
         if (not isinstance(service, str) or not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*', service)
                 or not isinstance(operations, list) or not 1 <= len(operations) <= 1000):
             raise ValueError('Valid service ID and explicitly curated operations are required')
+        operations, auth = self._expand_selections(capture, operations, auth)
         if not isinstance(auth, dict) or not isinstance(auth.get('kind'), str):
             raise ValueError('Explicit authentication recipe required, including kind:none for anonymous services')
         paths, origins, operation_ids, endpoints = {}, set(), set(), set()
@@ -804,6 +969,9 @@ class Learner:
                   'summary': selection.get('summary', operation_id),
                   'parameters': copy.deepcopy(selection.get('parameters', parameters)),
                   'responses': {'200': {'description': 'Response shape requires verification'}}, 'x-blink-verified': []}
+            observed = sorted({c for c in selection.get('statuses') or [] if isinstance(c, int) and 200 <= c < 300})
+            if observed:  # the success statuses actually seen, not a fixed 200
+                op['responses'] = {str(c): {'description': 'Observed in the recording'} for c in observed}
             if 'responses' in selection:
                 op['responses'] = copy.deepcopy(selection['responses'])
             if 'money' in selection:

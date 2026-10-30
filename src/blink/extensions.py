@@ -45,8 +45,11 @@ class LazyBrowser:
     def capture_shots(self, binding, start):
         return self.get().capture_shots(binding, start)
 
-    def capture_drain(self, binding):
-        return self.get().capture_drain(binding)
+    def capture_drain(self, binding, ack=None):
+        return self.get().capture_drain(binding, ack)
+
+    def rename_owner(self, old, new):
+        return self.get().rename_owner(old, new)
 
     def capture_shots_clear(self, binding):
         return self.get().capture_shots_clear(binding)
@@ -147,7 +150,7 @@ class Extensions:
             if method == 'learn_import_har':
                 data = self.learner.import_har(params['path'], params['origins'])
             elif method == 'learn_start':
-                data = self.learner.start(params['binding'], params['url'], params['origins'])
+                data = self.learner.start(params.get('binding'), params['url'], params.get('origins'))
             elif method == 'learn_stop':
                 data = self.learner.stop(params['binding'])
             elif method == 'learn_accept_partial':

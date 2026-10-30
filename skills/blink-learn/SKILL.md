@@ -7,15 +7,12 @@ When the user asks to learn a site or service, start the recording at once, then
 user and follow their lead. Never rush ahead of them. The plugin does all checking and file handling; never
 inspect processes, folders or files with shell commands to find out what Web Blink is doing.
 
-1. Call `blink_request_approval` with `learn_start` (`binding`, `url`, `origins`). It runs immediately, opens
-   its own work tab and creates the session folder at once: `<blink>-<UTC start time>` with `meta.json` (what,
-   by whom, when), `requests.jsonl`, `screenshots/`, `screenshots.jsonl` and `index.json`. Do not open, close or
-   switch other tabs; never touch tab 0 or another session's tabs. `origins` are the site's own origins;
-   every other host (CDN, login, Google, APIs) is recorded too and marked `inScope: false`.
-   Name the Blink after the site's host as reached after all redirects: lowercase, a leading `www.` dropped,
-   dots replaced by dashes (`https://www.msn.com/...` -> `msn-com`, `login.salesforce.com` ->
-   `login-salesforce-com`). Use the same name for the `binding` and the proposed `service`. Use a different
-   name only when the user asks for one explicitly.
+1. Call `blink_request_approval` with `learn_start` and only `{"url": ...}`. The plugin names the Blink after the
+   host reached after redirects (`www.msn.com` -> `msn-com`), sets the origins, opens its own work tab and
+   creates the session folder `<blink>-<UTC start time>` (`meta.json`, `requests.jsonl`, `screenshots/`,
+   `screenshots.jsonl`, `index.json`). Pass `binding` only when the user names the Blink, and `origins` only
+   when they ask for a specific scope. Do not open, close or switch other tabs; never touch tab 0 or another
+   session's tabs. Every other host the site talks to is recorded too (`inScope: false`).
 2. Read the `learn_start` result: only `screenshots: enabled` means screenshots work. Otherwise (or with a
    `daemonOutdated` warning) tell the user at once with `screenshotError` and offer to stop and start again.
    Then tell the user the recording is on, the folder name, and that the tab is theirs.
@@ -26,13 +23,16 @@ inspect processes, folders or files with shell commands to find out what Web Bli
    works) make one call, `blink_admin` with action `recording`, and report its numbers: requests and
    screenshots on disk, seconds since the last write, `healthy`, errors. The daemon writes to the folder every
    3 seconds.
-5. Stop (`learn_stop`) only when the user chooses to. The result lists the folder, the screenshots (`file`,
-   `afterRecord` = position in the request timeline, `reason`), the requests catalog (real `path`,
-   `pathTemplate` with `{id}`, field names, no values) and counters (`screenshotErrors`, `failedRequests`,
-   `drainErrors`). Report any non-zero error counter plainly. The full requests, with the values the user
-   typed, are in `requestsFile` (one JSON object per line: url, method, status, request and response
-   headers and bodies); read it for details. Then `learn_propose` (runs immediately; quarantined), using the
-   recorded `pathTemplate` and field names.
+5. Stop (`learn_stop`) only when the user chooses to. The result is computed by the plugin: counters (report
+   any non-zero `screenshotErrors`, `failedRequests`, `drainErrors`, `interrupted`), the screenshots, a page of
+   the request catalog, `endpoints` (requests grouped by method + host + path template, with `count`,
+   `statuses`, `suggestedOperationId`, `suggestedEffect`) and `suggestedAuth` (login recipe from cookie names,
+   identity read, notes). Show the user the endpoints, ask which to keep (AskUserQuestion, multi-select), then
+   call `learn_propose` with `session`, `service` (the Blink name) and `operations: [{"endpoint": "<key>"}, ...]`;
+   names, effects, path templates, body fields, observed statuses, the login recipe and its identity read are
+   filled in by the plugin. Add a field to a selection only to change a suggestion the user disagreed with.
+   Full request details, values included, are in `requestsFile`; read it only for a specific question.
+   An `interrupted` session needs `learn_accept_partial` with the user's reason before proposing.
 
 The session is kept locally by default; `blink_admin` `sessions` lists all with their folders, so an old
 session can be searched for a step a Blink missed. The Blink itself only holds the extracted interaction.
