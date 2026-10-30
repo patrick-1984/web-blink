@@ -294,10 +294,13 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
 
 
 def control_request(method, params=None, *, state_dir=None, plugin_root=None, autostart=True):
-    """Native CLI helper; caller must confirm this exact command before invoking it.
+    """Exact-command control helper for the CLI and the MCP control bridge (blink.approval apply).
 
-    This helper is not reachable from blink.client's public stdin entry or MCP. A permit
-    stores only command identity/digest; account material travels over the private socket.
+    The caller decides that this exact command is authorized (the user's order under the default
+    approval policy, or an accepted dialog/terminal confirmation when the user opted into one).
+    It is not reachable from blink.client's public stdin entry or the public MCP tools. A permit
+    stores only command identity/digest (single use, 60 s expiry); account material travels over
+    the private socket.
     """
     from .storage import Store, digest, encoded, strict_json
     if params is None:

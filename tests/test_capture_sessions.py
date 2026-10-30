@@ -625,10 +625,13 @@ class ProposeEverythingTests(unittest.TestCase):
     def test_activation_is_one_dialog(self):
         from blink.approval import describe, METHODS
         self.assertIn('activate_blink', METHODS); self.assertIn('approve_intents', METHODS)
+        from blink.config import ConfigStore
         with tempfile.TemporaryDirectory() as temp:
+            settings = Path(temp) / 'settings'
+            ConfigStore(settings).set('approvals', 'dialog')  # the opt-in dialog policy
             shown = describe('activate_blink', {'manifest': {'service': 'own:x', 'digest': 'd'}, 'bind': {'binding': 'x'},
                                                 'grant': {'binding': 'x', 'operations': ['a'], 'origins': ['https://x.example']}},
-                             state_dir=temp)
+                             state_dir=temp, config_dir=settings)
             self.assertEqual(shown['status'], 'ok')
             for part in ('approve', 'bind', 'grant'):
                 self.assertIn(part, shown['data']['text'])

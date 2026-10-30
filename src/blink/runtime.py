@@ -109,7 +109,8 @@ class Runtime:
         if not isinstance(method,str) or not isinstance(params or {},dict):return envelope('invalid_arguments','Invalid runtime request')
         params=params or {}
         if method not in PUBLIC and not (human and method in HUMAN):
-            return envelope('forbidden','This method requires the human CLI or is not exposed')
+            # human=True is set only by the daemon's control socket after an exact-command permit was consumed.
+            return envelope('forbidden','This method needs an exact-command control permit (CLI or the blink_request_approval bridge) or is not exposed')
         try:
             with self._lock,self.broker.secret_scope():
                 if method in ('call_read', 'prepare', 'execute'):

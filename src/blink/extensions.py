@@ -145,7 +145,8 @@ class Extensions:
         if method not in methods:
             return None
         if not human:
-            return reply({}, 'Use the host-confirmed human CLI for this action', 'forbidden')
+            # Permit-gated control action: reachable through the CLI or the blink_request_approval bridge.
+            return reply({}, 'This action needs an exact-command control permit: use blink_request_approval or the CLI', 'forbidden')
         try:
             if method == 'learn_import_har':
                 data = self.learner.import_har(params['path'], params['origins'])

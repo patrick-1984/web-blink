@@ -1,9 +1,11 @@
-"""Human approval bridge for the Claude MCP server.
+"""Control bridge for the Claude MCP server: the user's order authorizes the exact action.
 
-The MCP server shows the human an in-app approval dialog (MCP elicitation) built from
-``describe`` and calls ``apply`` only after the human accepted that exact dialog. The model
-can propose an action through the public tool but never answers the dialog, so approval
-authority stays with the human; ``apply`` uses the same one-time native permit as the CLI.
+``describe`` validates the exact action and reports the user's approval policy, read from trusted local
+configuration (``approvals`` in settings.json; never from tool arguments). Under the default ``none`` policy
+the MCP server applies the described action at once; only an explicit ``dialog`` policy shows the user an
+Approve/Decline dialog (MCP elicitation) built from the full review. ``apply`` re-validates, checks the exact
+parameter digest and runs the action over the private control socket with the same one-time native permit as
+the CLI (exact method, parameter digest, expiry, single use).
 """
 import argparse
 import json
@@ -11,25 +13,23 @@ import sys
 
 from .storage import digest, encoded, strict_json
 
-# Host-confirmed actions a human may approve in the dialog: the runtime's human methods and
-# the extension methods the daemon only accepts with a native permit. Manifest staging from
-# a local file (`blink install`) and credential entry (`custody_authorize`, whose input holds
-# account secrets that must never pass through the model) stay CLI-only.
+# Control actions the bridge carries out: the runtime's control methods and the extension methods the daemon
+# only accepts with a native permit. Unknown methods stay forbidden; public runtime operations keep their tools.
 METHODS = frozenset({
     'approve_manifest', 'set_trust', 'grant', 'bind', 'approve_intent',
     'reconcile', 'revoke', 'retry_intent',
     'learn_import_har', 'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
-    'jobs_create', 'jobs_pause', 'jobs_resume', 'jobs_run',
+    'jobs_create', 'jobs_pause', 'jobs_resume', 'jobs_run', 'jobs_list',
     'workflow_validate', 'workflow_run', 'browser_open', 'browser_close',
-    'forget_capture', 'tools_add', 'tools_remove',
+    'forget_capture', 'tools_add', 'tools_remove', 'tools_list', 'notifications', 'preflight',
     'trust_pin', 'trust_unpin', 'health_enable', 'health_disable', 'health_clear',
-    'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover', 'custody_forget',
-    'forget_service', 'purge_state', 'restart_daemon', 'activate_blink', 'approve_intents',
-    'private_set', 'private_secret_set',
+    'custody_authorize', 'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover',
+    'custody_forget', 'forget_service', 'purge_state', 'restart_daemon', 'activate_blink', 'approve_intents',
+    'install_manifest', 'private_set', 'private_secret_set',
 })
-# Local, reversible actions with no effect on any web service: they run as soon as the user asks for
-# them (no dialog). Recording stays limited to the exact origins given; proposals stay quarantined.
-# private_set only changes the user's own local private Blink (preferences, defaults, notes; never secrets).
+# Under the opt-in dialog policy: local, reversible actions with no effect on any web service still run as
+# soon as the user asks for them (no dialog). Recording stays limited to the exact origins given; proposals
+# stay quarantined. private_set only changes the user's own local private Blink (never secrets).
 IMMEDIATE = frozenset({'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
                        'browser_open', 'browser_close', 'workflow_validate', 'private_set'})
 TITLES = {
@@ -39,12 +39,92 @@ TITLES = {
     'learn_propose': 'Stage a learned integration proposal', 'revoke': 'Revoke an account binding',
     'forget_service': 'Forget a service', 'purge_state': 'Purge local Web Blink state',
     'forget_capture': 'Clean up this capture session locally (Decline keeps it)',
-    'restart_daemon': 'Restart the outdated Web Blink daemon (a recording in progress would be lost)',
+    'restart_daemon': 'Restart the Web Blink daemon (a recording in progress would be lost)',
     'activate_blink': 'Switch on a Blink: approve it, connect your account and allow its operations',
     'approve_intents': 'Run these prepared writes',
     'private_set': 'Save your own private preferences for a Blink',
     'private_secret_set': 'Store a private secret for a Blink on this computer',
+    'custody_authorize': 'Store account credentials for a binding on this computer',
+    'install_manifest': 'Stage an integration for review (quarantined)',
 }
+# Credential bundle fields: the dialog names them, never their values.
+SECRET_FIELDS = ('token', 'refreshToken', 'clientId', 'clientSecret')
+NAMED_SECRET_MAPS = ('cookies', 'headers')
+
+
+def _forbidden(summary):
+    return {'status': 'forbidden', 'summary': summary, 'warnings': []}
+
+
+def validate(method, params):
+    """Shape checks shared by both policies; None when the action is well formed. Runs before anything is
+    looked up, shown or dispatched."""
+    if not isinstance(method, str) or method not in METHODS:
+        return _forbidden('This action is not supported by the Web Blink control bridge')
+    if not isinstance(params, dict):
+        return _forbidden('Parameters must be an object')
+    if method == 'approve_intent':
+        if set(params) != {'intentId'} or not isinstance(params['intentId'], str):
+            return _forbidden('approve_intent takes exactly a string intentId')
+    elif method == 'approve_intents':
+        ids = params.get('intentIds')
+        if set(params) != {'intentIds'} or not isinstance(ids, list) or not 1 <= len(ids) <= 50 or not all(isinstance(i, str) for i in ids):
+            return _forbidden('approve_intents takes intentIds: a list of 1-50 string ids')
+    elif method == 'activate_blink':
+        if (set(params) - {'manifest', 'bind', 'grant'} or not isinstance(params.get('manifest'), dict)
+                or any(k in params and not isinstance(params[k], dict) for k in ('bind', 'grant'))):
+            return _forbidden('activate_blink takes manifest (approve_manifest parameters), optional bind and grant parameters')
+    elif method == 'restart_daemon':
+        if params:
+            return _forbidden('restart_daemon takes no parameters')
+    elif method in ('jobs_list', 'tools_list'):
+        if params:
+            return _forbidden(f'{method} takes no parameters')
+    elif method == 'install_manifest':
+        if set(params) != {'document', 'source', 'integration'}:
+            return _forbidden('install_manifest takes exactly document, source and integration')
+    elif method == 'notifications':
+        if set(params) - {'ack', 'id'}:
+            return _forbidden('notifications takes optional ack and id')
+    elif method == 'preflight':
+        if set(params) - {'capability', 'force'}:
+            return _forbidden('preflight takes optional capability and force')
+    elif method == 'custody_authorize':
+        if (set(params) - {'binding', 'mode', 'source', 'exclusive', 'bound', 'reharvestApproved', 'credentials'}
+                or not isinstance(params.get('binding'), str) or not isinstance(params.get('credentials'), dict)):
+            return _forbidden('custody_authorize takes binding, credentials and optional mode, source, exclusive, '
+                              'bound and reharvestApproved')
+    return None
+
+
+def _credential_names(credentials):
+    """A credential bundle shown without any secret value: which fields and which cookie/header names it holds."""
+    if not isinstance(credentials, dict):
+        return '[hidden credentials]'
+    shown = {}
+    for key, value in credentials.items():
+        if key in NAMED_SECRET_MAPS and isinstance(value, dict):
+            shown[key] = {name: '[hidden]' for name in value}
+        elif key in ('expiresAt', 'tokenExpiresAt', 'cookieExpiries', 'cookieOrigins'):
+            shown[key] = value  # metadata, not secret material
+        else:
+            shown[key] = '[hidden]'
+    return shown
+
+
+def presented(method, params):
+    """Parameters as a dialog may show them: exact, except secret values. Digests still bind the real values."""
+    if method == 'private_secret_set' and isinstance(params.get('value'), str):
+        return dict(params, value=f"[hidden: {len(params['value'])} characters]")
+    if method == 'custody_authorize':
+        return dict(params, credentials=_credential_names(params.get('credentials')))
+    return params
+
+
+def approval_mode(config_dir=None):
+    """The user's policy from trusted local configuration; ConfigError when the settings file is invalid."""
+    from .config import ConfigStore
+    return ConfigStore(config_dir).approval_mode()
 
 
 def _review(manifest, state_dir, plugin_root):
@@ -80,10 +160,26 @@ def complete(method, params, *, state_dir=None, plugin_root=None):
     return params
 
 
-def describe(method, params, *, state_dir=None, plugin_root=None):
-    if method not in METHODS:
-        return {'status': 'forbidden', 'summary': 'This action cannot be approved in the dialog', 'warnings': []}
+def describe(method, params, *, state_dir=None, plugin_root=None, config_dir=None):
+    invalid = validate(method, params)
+    if invalid:
+        return invalid
+    from .config import ConfigError
+    try:
+        mode = approval_mode(config_dir)
+    except ConfigError as exc:
+        # A broken policy runs nothing and opens no dialog.
+        return {'status': 'configuration_error', 'summary': f'Approval setting is invalid: {exc}', 'warnings': []}
     params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root)
+    if mode == 'none':
+        # The user's order authorizes the action: a small descriptor, no review document.
+        return {'status': 'ok', 'summary': 'Exact action described',
+                'data': {'method': method, 'mode': 'none', 'exactParametersSha256': digest(params)}, 'warnings': []}
+    return _dialog(method, params, state_dir=state_dir, plugin_root=plugin_root)
+
+
+def _dialog(method, params, *, state_dir=None, plugin_root=None):
+    """The full review for the opt-in dialog policy."""
     context = None
     if method in ('approve_manifest', 'activate_blink'):
         manifest = params if method == 'approve_manifest' else params.get('manifest')
@@ -96,49 +192,30 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
         if isinstance(grant, dict) and grant.get('autoApprove') in ('writes', 'writes-and-deletes'):
             context = dict(context or {}, standingApproval=(
                 'Claude may run this Blink\'s writes' + (' and deletes' if grant['autoApprove'] == 'writes-and-deletes' else '')
-                + ' without asking you each time. Payments always ask.'))
-    if method == 'approve_intent':
-        if set(params) != {'intentId'} or not isinstance(params['intentId'], str):
-            return {'status': 'forbidden', 'summary': 'approve_intent takes exactly a string intentId', 'warnings': []}
+                + ' without asking you each time.'))
+    if method in ('approve_intent', 'approve_intents'):
         from .client import request
-        review = request('admin', {'action': 'intent', 'intentId': params['intentId']},
-                         state_dir=state_dir, plugin_root=plugin_root)
-        if review.get('status') != 'ok':
-            return {'status': 'approval_unavailable', 'summary': 'The write cannot be shown for review; nothing was approved', 'warnings': []}
-        # Verbatim: write arguments never hold credentials (the broker adds them at execution), and
-        # redaction would hide the real target of the write.
-        context = review.get('data')
-    # Parameters are shown exactly as given: the dialog never carries credentials (custody_authorize is
-    # CLI-only), and redacting would let a model hide an action's real target under a secret-like key.
-    shown = params
-    if method == 'private_secret_set' and isinstance(params.get('value'), str):
-        # The dialog names the secret, never its value; the digest still binds the exact value.
-        shown = dict(params, value=f"[hidden: {len(params['value'])} characters]")
-    data = {'method': method, 'title': TITLES.get(method, method.replace('_', ' ').capitalize()),
-            'parameters': shown, 'exactParametersSha256': digest(params)}
-    if method == 'activate_blink':
-        # One dialog instead of three: the exact approve_manifest, bind and grant parameters, each shown below.
-        if set(params) - {'manifest', 'bind', 'grant'} or not isinstance(params.get('manifest'), dict):
-            return {'status': 'forbidden', 'summary': 'activate_blink takes manifest (approve_manifest parameters), '
-                    'optional bind and grant parameters', 'warnings': []}
-    if method == 'approve_intents':
-        ids = params.get('intentIds')
-        if set(params) != {'intentIds'} or not isinstance(ids, list) or not 1 <= len(ids) <= 50 or not all(isinstance(i, str) for i in ids):
-            return {'status': 'forbidden', 'summary': 'approve_intents takes intentIds: a list of 1-50 string ids', 'warnings': []}
-        from .client import request
+        ids = [params['intentId']] if method == 'approve_intent' else params['intentIds']
         context = []
         for intent in ids:
             review = request('admin', {'action': 'intent', 'intentId': intent}, state_dir=state_dir, plugin_root=plugin_root)
             if review.get('status') != 'ok':
-                return {'status': 'approval_unavailable', 'summary': f'Write {intent} cannot be shown for review; nothing was approved', 'warnings': []}
+                return review  # the runtime's own error (for example an unknown intent); nothing was run
+            # Verbatim: write arguments never hold credentials (the broker adds them at execution), and
+            # redaction would hide the real target of the write.
             context.append(review.get('data'))
+        if method == 'approve_intent':
+            context = context[0]
     if method == 'restart_daemon':
-        if params:
-            return {'status': 'forbidden', 'summary': 'restart_daemon takes no parameters', 'warnings': []}
         from .client import _probe
         from .doctor import secure_state_directory
         running = _probe(secure_state_directory(state_dir))
         context = {'runningDaemon': running if isinstance(running, dict) else (running or 'none')}
+    # Parameters are shown exactly as given, except secret values (private secrets, credential bundles):
+    # redacting anything else would let a model hide an action's real target under a secret-like key.
+    shown = presented(method, params)
+    data = {'method': method, 'mode': 'dialog', 'title': TITLES.get(method, method.replace('_', ' ').capitalize()),
+            'parameters': shown, 'exactParametersSha256': digest(params)}
     if context is not None:
         data['context'] = context
     data['immediate'] = method in IMMEDIATE
@@ -153,11 +230,12 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
 
 
 def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None):
-    if method not in METHODS:
-        return {'status': 'forbidden', 'summary': 'This action cannot be approved in the dialog', 'warnings': []}
+    invalid = validate(method, params)
+    if invalid:
+        return invalid
     params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root)
-    if digest(params) != expected_digest:
-        return {'status': 'authorization_required', 'summary': 'Parameters differ from the approved dialog', 'warnings': []}
+    if not isinstance(expected_digest, str) or digest(params) != expected_digest:
+        return {'status': 'authorization_required', 'summary': 'Parameters differ from the described action', 'warnings': []}
     if method == 'restart_daemon':
         from .client import restart_legacy_daemon
         return restart_legacy_daemon(state_dir=state_dir, plugin_root=plugin_root)
@@ -182,6 +260,7 @@ def main(argv=None):
     parser.add_argument('stage', choices=('describe', 'apply'))
     parser.add_argument('--state-dir')
     parser.add_argument('--plugin-root')
+    parser.add_argument('--config-dir')  # like BLINK_CONFIG_DIR: where the user's approval policy lives
     args = parser.parse_args(argv)
     try:
         # The MCP server's backend envelope: {"method": <stage>, "params": {"method", "params"[, "digest"]}}.
@@ -192,12 +271,13 @@ def main(argv=None):
         if not isinstance(payload.get('method'), str) or not isinstance(payload.get('params'), dict):
             raise ValueError('invalid approval request')
         if args.stage == 'describe':
-            result = describe(payload['method'], payload['params'], state_dir=args.state_dir, plugin_root=args.plugin_root)
+            result = describe(payload['method'], payload['params'], state_dir=args.state_dir, plugin_root=args.plugin_root,
+                              config_dir=args.config_dir)
         else:
             result = apply(payload['method'], payload['params'], payload.get('digest'),
                            state_dir=args.state_dir, plugin_root=args.plugin_root)
     except Exception:
-        result = {'status': 'invalid_request', 'summary': 'Approval request failed; check diagnostics and parameters', 'warnings': []}
+        result = {'status': 'invalid_request', 'summary': 'Control request failed; check diagnostics and parameters', 'warnings': []}
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))
     return 0
 
