@@ -82,13 +82,13 @@ class Runtime:
         if not record:raise BlinkError('quarantined','No approved manifest is active for this service')
         return record
 
-    def install_manifest(self,document,source_id,integration_id,*,provenance=None,connection=None):
+    def install_manifest(self,document,source_id,integration_id,*,provenance=None,connection=None,variables=None):
         if not isinstance(source_id,str) or not ID.fullmatch(source_id) or not isinstance(integration_id,str) or not ID.fullmatch(integration_id):
             raise BlinkError('invalid_source','Source/integration IDs are invalid')
         declares=isinstance(document,dict) and isinstance(document.get('x-blink-service'),dict) and document['x-blink-service'].get('variables')
         if declares:
             from .private import variables as private_variables
-            compiled=compile_manifest(document,allow_http=self.allow_http,variables=private_variables(integration_id))
+            compiled=compile_manifest(document,allow_http=self.allow_http,variables=variables if variables is not None else private_variables(integration_id))
         else:compiled=compile_manifest(document,allow_http=self.allow_http)
         if compiled['id']!=integration_id:raise BlinkError('invalid_manifest','Integration ID disagrees with the manifest')
         service=source_id+':'+integration_id
@@ -632,7 +632,7 @@ class Runtime:
         def typed(value,shape):
             kinds=shape.get('type') if isinstance(shape,dict) else None
             kinds={kinds} if isinstance(kinds,str) else set(kinds or [])
-            if 'string' not in kinds and kinds&{'integer','number'} and re.fullmatch(r'-?[0-9]{1,15}',value):return int(value)
+            if 'string' not in kinds and kinds&{'integer','number'} and re.fullmatch(r'-?[0-9]{1,200}',value):return int(value)
             return value
         for name,variable in op.get('variables',{}).items():
             if name in args:continue
