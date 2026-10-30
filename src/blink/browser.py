@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.2.5'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.2.6'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -281,13 +281,22 @@ class BrowserBridge:
           // Screenshots of the owned tab, kept in this tab until the recording stops and they are saved privately.
           // Labels are taken when the shot is requested, so later responses cannot shift it in the timeline.
           // An unchanged page (same pixels as the last shot) is not stored again.
-          const shoot=reason=>{if(shots.length>=200||shooting)return shooting;
+          // Overlapping requests are queued (at most 10 waiting), never dropped.
+          let queued=0;
+          const shoot=reason=>{if(shots.length+queued>=200||queued>=10)return shooting||Promise.resolve();queued++;
             const mark={afterRecord:records.length,t:Date.now(),reason,page:pageOf(p.url())};
-            shooting=(async()=>{try{const b=await p.screenshot({type:'jpeg',quality:50});const data=b.toString('base64');
-              if(b.length<=2097152&&data!==last){last=data;shots.push({index:shots.length,...mark,data});}}catch{}shooting=null;})();
+            shooting=(shooting||Promise.resolve()).then(async()=>{try{const b=await p.screenshot({type:'jpeg',quality:50});const data=b.toString('base64');
+              if(b.length<=2097152&&data!==last){last=data;shots.push({index:shots.length,...mark,data});}}catch{}queued--;});
             return shooting;};
           let pending=null;
           const later=reason=>{clearTimeout(shotTimer);pending=reason;shotTimer=setTimeout(()=>{pending=null;shoot(reason);},700);};
+          // Clicks, typing (after a pause), changes and submits in the page report through the console, so local
+          // edits that send no request are shot too. The hook stays installed but is silent unless a recording runs.
+          const ui=msg=>{try{const t=msg.text();if(t.startsWith('__blink_ui:'))later(t.slice(11));}catch{}};
+          const hook=()=>{if(window.__blinkUi)return;window.__blinkUi=true;let k;const say=r=>console.debug('__blink_ui:'+r);
+            addEventListener('click',()=>say('click'),true);addEventListener('change',()=>say('change'),true);
+            addEventListener('submit',()=>say('submit'),true);addEventListener('input',()=>{clearTimeout(k);k=setTimeout(()=>say('typing'),800);},true);};
+          try{if(typeof p.addInitScript==='function'){await p.addInitScript(hook);await p.evaluate(hook);}}catch{}
           // Typing and local edits send nothing: a periodic shot (skipped when unchanged) records them too.
           const ticker=setInterval(()=>{shoot('periodic');},10000);
           const navigated=f=>{try{if(f===p.mainFrame())later('navigation');}catch{}};
@@ -317,7 +326,7 @@ class BrowserBridge:
           }catch{}};
           p.__blinkCapture={records,listener,popup,worker,failed,serviceworker,navigated,submitting,missingOrigins,assets,shots,
             overflow:()=>overflow,incomplete:()=>incomplete,timer:()=>shotTimer,ticker,pending:()=>pending,inflight:()=>shooting,
-            assetsTruncated:()=>assetsTruncated,shoot};p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);
+            assetsTruncated:()=>assetsTruncated,shoot,ui};p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
           await shoot('start');return {recording:true};
         ''')
 
@@ -328,7 +337,7 @@ class BrowserBridge:
         return self._run_owned(owner, r'''
           const capture=p.__blinkCapture;if(!capture)throw Error('capture_not_running');
           p.off('response',capture.listener);p.off('popup',capture.popup);p.off('worker',capture.worker);p.off('requestfailed',capture.failed);
-          p.context().off('serviceworker',capture.serviceworker);p.off('framenavigated',capture.navigated);p.off('request',capture.submitting);
+          p.context().off('serviceworker',capture.serviceworker);p.off('framenavigated',capture.navigated);p.off('request',capture.submitting);p.off('console',capture.ui);
           clearTimeout(capture.timer());clearInterval(capture.ticker);
           // Keep the last interaction: finish an in-flight shot, then take the pending one or a final one.
           await capture.inflight();await capture.shoot(capture.pending()||'stop');
@@ -347,6 +356,17 @@ class BrowserBridge:
           const shot=(p.__blinkShots||[])[v.payload.index];return {shot:shot||null};
         ''', {'index': index})
 
+    def capture_shots(self, binding, start):
+        """A batch of a stopped recording's screenshots, about 3 MB per call (few calls, under the message limit)."""
+        owner = self.owners.get(binding)
+        if not owner:
+            raise BrowserUnavailable('Owned capture tab unavailable')
+        return self._run_owned(owner, r'''
+          const all=p.__blinkShots||[],out=[];let i=v.payload.start,size=0;
+          while(i<all.length&&(out.length===0||size+all[i].data.length<=3000000)){out.push(all[i]);size+=all[i].data.length;i++;}
+          return {shots:out,next:i,total:all.length};
+        ''', {'start': start})
+
     def capture_shots_clear(self, binding):
         owner = self.owners.get(binding)
         if owner:
@@ -358,7 +378,7 @@ class BrowserBridge:
             if owner:
                 self._run_owned(owner, '''const c=p.__blinkCapture;if(c){p.off('response',c.listener);
                     p.off('popup',c.popup);p.off('worker',c.worker);p.off('requestfailed',c.failed);p.context().off('serviceworker',c.serviceworker);
-                    p.off('framenavigated',c.navigated);p.off('request',c.submitting);clearTimeout(c.timer());clearInterval(c.ticker);delete p.__blinkCapture;}delete p.__blinkShots;await p.close();return {closed:true};''')
+                    p.off('framenavigated',c.navigated);p.off('request',c.submitting);p.off('console',c.ui);clearTimeout(c.timer());clearInterval(c.ticker);delete p.__blinkCapture;}delete p.__blinkShots;await p.close();return {closed:true};''')
                 self.owners.pop(binding, None)
 
     def _profile_call(self, name, payload):
