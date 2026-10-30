@@ -276,21 +276,44 @@ class Learner:
                 assets.append({'origin': source, 'type': kind, 'count': count})
         return sorted(assets, key=lambda a: (a['origin'], a['type']))
 
-    def _screenshots(self, binding, count, session_id):
-        """Pull the recording's screenshots one by one into private state; failures only lose screenshots."""
-        self.unsaved_screenshots = 0
-        fetch = getattr(self.browser, 'capture_shot', None)
-        if not callable(fetch) or not isinstance(count, int) or isinstance(count, bool) or count <= 0:
-            return []
-        folder, saved, failed = screenshot_dir(self.store, session_id), [], 0
-        for index in range(min(count, MAX_SHOTS)):
-            shot = None
+    def _fetch_shots(self, binding, count):
+        """Yield (index, shot); batches when the browser supports it. A batch or shot that fails three times is skipped."""
+        def attempt(call, *args):
             for _attempt in range(3):
                 try:
-                    shot = (fetch(binding, index) or {}).get('shot')
-                    break
+                    return call(binding, *args)
                 except Exception:
                     continue
+            return None
+        batch = getattr(self.browser, 'capture_shots', None)
+        if callable(batch):
+            start = 0
+            while start < count:
+                result = attempt(batch, start)
+                shots = result.get('shots') if isinstance(result, dict) else None
+                if not isinstance(shots, list) or not shots:
+                    for index in range(start, count):
+                        yield index, None
+                    return
+                for offset, shot in enumerate(shots):
+                    yield start + offset, shot
+                start += len(shots)
+            return
+        single = getattr(self.browser, 'capture_shot', None)
+        for index in range(count):
+            result = attempt(single, index)
+            yield index, result.get('shot') if isinstance(result, dict) else None
+
+    def _screenshots(self, binding, count, session_id):
+        """Pull the recording's screenshots into the private session folder. Unsaved ones are counted, then the
+        browser copy is cleared either way (there is no later recovery path, and it must not linger in the tab)."""
+        self.unsaved_screenshots = 0
+        if not (callable(getattr(self.browser, 'capture_shots', None)) or callable(getattr(self.browser, 'capture_shot', None))):
+            return []
+        if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+            return []
+        folder, saved, failed = screenshot_dir(self.store, session_id), [], 0
+        for index, shot in self._fetch_shots(binding, min(count, MAX_SHOTS)):
             try:
                 data = base64.b64decode(shot['data'], validate=True)
                 if not data.startswith(b'\xff\xd8') or len(data) > MAX_SHOT_BYTES:
@@ -306,10 +329,9 @@ class Learner:
                               'page': page if isinstance(page, str) and len(page) <= 500 else None})
             except Exception:
                 failed += 1
-                continue
         self.unsaved_screenshots = failed
         clear = getattr(self.browser, 'capture_shots_clear', None)
-        if callable(clear) and not failed:  # keep the browser copy while any screenshot is unsaved
+        if callable(clear):
             try:
                 clear(binding)
             except Exception:

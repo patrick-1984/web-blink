@@ -93,6 +93,16 @@ class RecorderJavascriptTests(unittest.TestCase):
         self.assertTrue(result['assetsTruncated'])
 
 
+    def test_overlapping_interactions_are_queued_not_dropped(self):
+        result = self.record('''
+          p.screenshot=async()=>{await sleep(300);shots++;return Buffer.from([0xff,0xd8,shots]);};
+          p.emit('request',req('https://app.example/a','POST','fetch'));
+          p.emit('request',req('https://app.example/b','DELETE','fetch'));await sleep(50);''')
+        reasons = [s['reason'] for s in result['kept']]
+        self.assertIn('before POST https://app.example/{segment1}', reasons)
+        self.assertIn('before DELETE https://app.example/{segment1}', reasons)
+
+
 class LocalSessionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -180,7 +190,7 @@ class LocalSessionTests(unittest.TestCase):
         Extensions(self.runtime).dispatch('forget_capture', {'session': session['id']}, human=True)
         self.assertIsNotNone(self.runtime.store.get('captures', session['id']))
 
-    def test_a_failed_transfer_is_retried_and_never_clears_the_browser_copy(self):
+    def test_a_failed_transfer_is_retried_then_counted_and_the_browser_copy_cleared(self):
         class Browser:
             calls, cleared = {}, False
             def capture_stop(self, binding):
@@ -197,7 +207,22 @@ class LocalSessionTests(unittest.TestCase):
         session = learner.stop('b')
         self.assertEqual(len(session['screenshots']), 1)
         self.assertEqual(session['unsavedScreenshots'], 1)
-        self.assertFalse(Browser.cleared)
+        self.assertTrue(Browser.cleared)
+
+    def test_screenshots_transfer_in_batches(self):
+        class Browser:
+            calls = 0
+            def capture_stop(self, binding):
+                return {'screenshots': 5, 'records': []}
+            def capture_shots(self, binding, start):
+                Browser.calls += 1
+                shot = {'data': base64.b64encode(JPEG).decode(), 'afterRecord': 0, 't': 0, 'reason': 'x'}
+                return {'shots': [shot] * min(2, 5 - start), 'next': start + 2, 'total': 5}
+            def capture_shots_clear(self, binding): pass
+        learner = Learner(self.runtime, Browser()); learner.running['b'] = ['https://app.example']
+        session = learner.stop('b')
+        self.assertEqual(len(session['screenshots']), 5)
+        self.assertEqual(Browser.calls, 3)
 
 
 if __name__ == '__main__':

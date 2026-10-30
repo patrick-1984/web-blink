@@ -42,6 +42,9 @@ class LazyBrowser:
     def capture_shot(self, binding, index):
         return self.get().capture_shot(binding, index)
 
+    def capture_shots(self, binding, start):
+        return self.get().capture_shots(binding, start)
+
     def capture_shots_clear(self, binding):
         return self.get().capture_shots_clear(binding)
 
