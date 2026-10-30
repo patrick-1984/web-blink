@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .profile import origin as canonical_origin
+from .schemaver import bump_minor, parse as parse_version
 
 MAX_HAR = 32 * 1024 * 1024
 METHODS = {'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'}
@@ -1039,7 +1040,48 @@ class Learner:
                                  'path': group['pathTemplate'], 'statuses': group['statuses']})
         return expanded, auth
 
-    def propose(self, session, service, operations, *, source='local', auth=None, execution=None, app_origin=None):
+    def _previous_version(self, service_key):
+        """Highest Blink version among the active manifest and staged candidates of this service, with its history."""
+        rows = [self.store.get('active_manifest', service_key)]
+        rows += [row for row in self.store.list('manifest_candidate') if row.get('service') == service_key]
+        best = None
+        for row in rows:
+            if not isinstance(row, dict) or not isinstance(row.get('document'), dict):
+                continue
+            meta = row['document'].get('x-blink-service') or {}
+            version = meta.get('version') or row['document'].get('info', {}).get('version')
+            if parse_version(version) is None:
+                version = '0.1.0'
+            history = meta.get('history') if isinstance(meta.get('history'), list) else None
+            if history is None:  # an older manifest without a history: its version, dated when it was staged
+                history = [{'version': version, 'date': time.strftime('%Y-%m-%d', time.localtime(row.get('createdAt') or time.time())),
+                            'note': 'Earlier version (recorded before Blink histories)'}]
+            if best is None or parse_version(version) > parse_version(best[0]):
+                best = (version, history)
+        return best
+
+    @staticmethod
+    def _apply_field_notes(op, field_notes):
+        """fieldNotes: {field: note}; a field is a parameter name or a body field (dotted for nested fields)."""
+        if not isinstance(field_notes, dict):
+            raise ValueError('fieldNotes must map field names to notes')
+        for field, note in field_notes.items():
+            if not isinstance(note, str) or not note.strip() or len(note) > 2000:
+                raise ValueError('Each field note must be a non-empty string of at most 2000 characters')
+            parameter = next((x for x in op.get('parameters', []) if x.get('name') == field), None)
+            if parameter is not None:
+                parameter['x-blink-notes'] = note
+                continue
+            body = next(iter(op.get('requestBody', {}).get('content', {}).values()), {}).get('schema')
+            node = body
+            for part in field.removeprefix('body.').split('.'):
+                node = node.get('properties', {}).get(part) if isinstance(node, dict) else None
+            if not isinstance(node, dict):
+                raise ValueError(f'fieldNotes names an unknown field: {field}')
+            node['x-blink-notes'] = note
+
+    def propose(self, session, service, operations, *, source='local', auth=None, execution=None, app_origin=None,
+                version_note=None):
         capture = self.review(session)
         if capture['status'] == 'incomplete':
             raise ValueError('Resolve incomplete capture scope before proposing an executable Blink')
@@ -1092,6 +1134,10 @@ class Learner:
                 op['responses'] = copy.deepcopy(selection['responses'])
             if 'money' in selection:
                 op['x-blink-money'] = copy.deepcopy(selection['money'])
+            if selection.get('notes') is not None:
+                if not isinstance(selection['notes'], str) or not selection['notes'].strip() or len(selection['notes']) > 2000:
+                    raise ValueError('notes must be a non-empty string of at most 2000 characters')
+                op['x-blink-notes'] = selection['notes']
             body_schema = selection.get('requestSchema', record.get('requestSchema'))
             if record['method'] not in ('GET', 'HEAD') and (body_schema or 'requestSchema' in selection):
                 required = selection.get('bodyRequired', True)
@@ -1104,6 +1150,8 @@ class Learner:
                     raise ValueError('Choose a supported request media type')
                 op['requestBody'] = {'required': required, 'content': {
                     media_type: {'schema': copy.deepcopy(body_schema)}}}
+            if selection.get('fieldNotes'):
+                self._apply_field_notes(op, selection['fieldNotes'])
             paths.setdefault(path, {})[record['method'].lower()] = op
             origins.add(record['origin'])
         if len(origins) != 1:
@@ -1111,9 +1159,21 @@ class Learner:
         origin = next(iter(origins))
         chosen_execution = execution or ({'allowed': ['direct'], 'preferred': 'direct'} if auth['kind'] == 'none'
                                          else {'allowed': ['in_page'], 'preferred': 'in_page'})
-        document = {'openapi': '3.1.0', 'info': {'title': service, 'version': '0.1.0'},
+        if version_note is not None and (not isinstance(version_note, str) or len(version_note) > 500):
+            raise ValueError('versionNote must be a string of at most 500 characters')
+        today = time.strftime('%Y-%m-%d')
+        previous = self._previous_version(f'{source}:{service}') if isinstance(source, str) else None
+        if previous:  # append-only: the earlier history stays as it was, a new minor version is added
+            version = bump_minor(previous[0])
+            history = copy.deepcopy(previous[1]) + [{'version': version, 'date': today,
+                                                     'note': version_note or f'Re-learned from capture {session}'[:500]}]
+        else:
+            version = '0.1.0'
+            history = [{'version': version, 'date': today, 'note': version_note or f'Learned from capture {session}'[:500]}]
+        document = {'openapi': '3.1.0', 'info': {'title': service, 'version': version},
                     'servers': [{'url': origin}], 'x-blink-service': {
-                        'id': service, 'requestedOrigins': [origin], 'appOrigin': app_origin or origin,
+                        'id': service, 'version': version, 'history': history,
+                        'requestedOrigins': [origin], 'appOrigin': app_origin or origin,
                         'auth': copy.deepcopy(auth), 'exec': copy.deepcopy(chosen_execution)}, 'paths': paths}
         result = self.runtime.install_manifest(document, source, service,
                                                provenance={'capture': session, 'verified': False})

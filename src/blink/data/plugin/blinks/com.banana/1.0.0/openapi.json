@@ -1,5 +1,8 @@
 {
   "openapi": "3.1.0",
+  "x-blink-schema": {
+    "version": "1.1.0"
+  },
   "info": {
     "title": "Banana example read-only Web Link",
     "version": "1.0.0",
@@ -12,6 +15,14 @@
   ],
   "x-blink-service": {
     "id": "com.banana",
+    "version": "1.0.0",
+    "history": [
+      {
+        "version": "1.0.0",
+        "date": "2026-10-30",
+        "note": "First published example"
+      }
+    ],
     "requestedOrigins": [
       "https://api.banana.example"
     ],
@@ -32,6 +43,7 @@
         "operationId": "list_products",
         "summary": "List example products",
         "x-blink-effect": "read",
+        "x-blink-notes": "Returns every product at once; there is no paging, so no parameters are needed.",
         "responses": {
           "200": {
             "description": "Example product list",

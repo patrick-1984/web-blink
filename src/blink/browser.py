@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.5.1'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.6.0'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -290,7 +290,9 @@ class BrowserBridge:
           const SECRET_QUERY=/^(access_token|refresh_token|id_token|token|auth|api_key|apikey|client_secret|password|code_verifier|sig|signature|samlresponse|samlrequest)$/i;
           const vault=[];let secretSeq=0;
           const secret=(value,where)=>{secretSeq++;vault.push({ref:secretSeq,where,value:String(value)});return '<secret:'+secretSeq+'>';};
-          const cleanUrl=(href,where)=>{try{const u=new URL(href);for(const k of [...u.searchParams.keys()])if(SECRET_QUERY.test(k))u.searchParams.set(k,secret(u.searchParams.get(k),where+' query '+k));return u.href;}catch{return href;}};
+          // URL and form encoding would turn the reference into %3Csecret%3AN%3E; keep it readable as <secret:N>.
+          const plain=t=>t.replace(/%3Csecret%3A(\d+)%3E/g,'<secret:$1>');
+          const cleanUrl=(href,where)=>{try{const u=new URL(href);for(const k of [...u.searchParams.keys()])if(SECRET_QUERY.test(k))u.searchParams.set(k,secret(u.searchParams.get(k),where+' query '+k));return plain(u.href);}catch{return href;}};
           const SECRET_FIELD=/^(password|passwd|pwd|pass|passcode|client_secret|current_password|new_password|samlresponse|samlrequest|wresult|assertion|code_verifier)$|token$/i;
           const LIMIT=262144;
           const pageOf=url=>{try{const u=new URL(url);return u.origin+u.pathname;}catch{return null;}};
@@ -308,7 +310,7 @@ class BrowserBridge:
                 SECRET_FIELD.test(k)&&v!==null&&typeof v!=='object'?secret(v,where+' field '+k):walk(v)])):x;
               return JSON.stringify(walk(JSON.parse(text)));}catch{}
             try{if(/^[^\s=&]+=[^\s]*$/.test(text)||/&/.test(text)&&!/\s/.test(text)){const q=new URLSearchParams(text);let hit=false;
-              for(const k of [...q.keys()])if(SECRET_FIELD.test(k)){q.set(k,secret(q.get(k),where+' field '+k));hit=true;}if(hit)return q.toString();}}catch{}
+              for(const k of [...q.keys()])if(SECRET_FIELD.test(k)){q.set(k,secret(q.get(k),where+' field '+k));hit=true;}if(hit)return plain(q.toString());}}catch{}
             return text;};
           // Redact the whole body first, then cut it; a body that cannot be redacted reliably is not kept.
           const keep=(t,where)=>{if(typeof t!=='string')return [t,false];const clean=scrub(t,where);
@@ -356,10 +358,21 @@ class BrowserBridge:
           const detachSockets=()=>{for(const [ws,h] of sockets.splice(0))for(const [n,f] of Object.entries(h)){try{ws.off(n,f);}catch{}}};
           const detach=pg=>{pg.off('response',listener);pg.off('requestfailed',failed);pg.off('websocket',websocket);
             pg.off('download',download);pg.off('popup',popup);pg.off('worker',worker);pg.off('framenavigated',navigated);pg.off('request',submitting);};
-          const popup=child=>{try{event({type:'popup',url:cleanUrl(child.url(),'popup')});}catch{}if(!owned.has(child)){try{attach(child);}catch{incomplete=true;}}};
+          const popup=child=>{try{event({type:'popup',url:cleanUrl(child.url(),'popup')});}catch{}if(!owned.has(child)){try{attach(child);}catch{incomplete=true;}}adopt(child);};
           // New pages are attached as soon as they exist (before their first redirect); kept only if opened by an owned page.
-          const newPage=async pg=>{try{attach(pg);const opener=await pg.opener();if(!opener||!owned.has(opener)){detach(pg);owned.delete(pg);}}catch{}};
-          try{p.context().on('page',newPage);}catch{}
+          const newPage=async pg=>{try{attach(pg);const opener=await pg.opener();if(!opener||!owned.has(opener)){detach(pg);owned.delete(pg);}else adopt(pg);}catch{}};
+          // A popup's first responses (its start URL and redirects) arrive before Playwright reports the page, so
+          // page listeners miss them: the context hands them over with no page yet; they are held (30 s, 200 at most)
+          // and recorded once the page turns out to be opened by an owned page.
+          const early=[];
+          // (A navigation request made before its frame existed throws on frame() until Playwright knows the frame.)
+          const pageOfRequest=req=>{try{return req.frame().page();}catch{try{return req.serviceWorker()?undefined:null;}catch{return null;}}};
+          const hold=kind=>x=>{try{while(early.length&&Date.now()-early[0][2]>30000)early.shift();
+            if(pageOfRequest(kind==='response'?x.request():x)===null&&early.length<200)early.push([x,kind,Date.now()]);}catch{}};
+          const earlyResponse=hold('response'),earlyFailed=hold('failed');
+          const adopt=pg=>{for(const item of early.splice(0)){try{const at=pageOfRequest(item[1]==='response'?item[0].request():item[0]);
+            if(at===pg){if(item[1]==='response')listener(item[0]);else failed(item[0]);}else if(at===null)early.push(item);}catch{}}};
+          try{p.context().on('page',newPage);p.context().on('response',earlyResponse);p.context().on('requestfailed',earlyFailed);}catch{}
           // Session state: the cookie jar (HttpOnly included), web storage per frame, IndexedDB and Cache Storage
           // names, service worker registrations. Values that look like credentials go to the vault.
           const CRED=/token|auth|sess|jwt|secret|key|cred|sid|csrf|xsrf|saml|password/i;
@@ -414,7 +427,7 @@ class BrowserBridge:
           const counters=()=>({seq,overflow,incomplete,failedRequests,workers,serviceWorker,assets,assetsTruncated,bodiesLoading:pendingBodies.size,
             capabilities,events:events.length,
             missingOrigins:[...missingOrigins],shotErrors,lastShotError,shotsDropped,shotsAbandoned:queued});
-          p.__blinkCapture={records,shots,vault,events,owned,detach,detachSockets,newPage,snapshot,cdpRef:()=>cdp,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
+          p.__blinkCapture={records,shots,vault,events,owned,detach,detachSockets,newPage,earlyResponse,earlyFailed,snapshot,cdpRef:()=>cdp,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
             timer:()=>shotTimer,pending:()=>pending,inflight:()=>shooting,drained:n=>{bufferBytes=Math.max(0,bufferBytes-n);}};
           attach(p);p.on('console',ui);p.context().on('serviceworker',serviceworker);
           // Low-level network events (cookie headers as sent, blocked cookies, raw Set-Cookie) where CDP is available.
@@ -474,7 +487,7 @@ class BrowserBridge:
           const capture=p.__blinkCapture;if(!capture)throw Error('capture_not_running');
           await capture.snapshot('stop');
           for(const pg of capture.owned)capture.detach(pg);capture.detachSockets();
-          try{p.context().off('page',capture.newPage);}catch{}
+          try{p.context().off('page',capture.newPage);p.context().off('response',capture.earlyResponse);p.context().off('requestfailed',capture.earlyFailed);}catch{}
           p.context().off('serviceworker',capture.serviceworker);p.off('console',capture.ui);
           try{const c=capture.cdpRef();if(c)await c.detach();}catch{}
           clearTimeout(capture.timer());clearInterval(capture.ticker);
@@ -496,7 +509,7 @@ class BrowserBridge:
         with self.lock:
             owner = self.owners.get(binding)
             if owner:
-                self._run_owned(owner, '''const c=p.__blinkCapture;if(c&&c.owned){for(const pg of c.owned)c.detach(pg);}if(c){p.off('response',c.listener);
+                self._run_owned(owner, '''const c=p.__blinkCapture;if(c&&c.owned){for(const pg of c.owned)c.detach(pg);}if(c){try{p.context().off('page',c.newPage);p.context().off('response',c.earlyResponse);p.context().off('requestfailed',c.earlyFailed);}catch{}p.off('response',c.listener);
                     p.off('popup',c.popup);p.off('worker',c.worker);p.off('requestfailed',c.failed);p.context().off('serviceworker',c.serviceworker);
                     p.off('framenavigated',c.navigated);p.off('request',c.submitting);p.off('console',c.ui);clearTimeout(c.timer());clearInterval(c.ticker);delete p.__blinkCapture;}delete p.__blinkFinal;delete p.__blinkShots;await p.close();return {closed:true};''')
                 self.owners.pop(binding, None)

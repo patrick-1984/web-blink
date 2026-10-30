@@ -24,8 +24,31 @@ from an unattended job. Python 3.11 or later is required. The current daemon tra
 hosts; Windows has diagnostics only. Git and OpenSSL are needed only for their respective optional source
 and signature features.
 
+## Where your data lives
+
+All Web Blink user data is in one private folder (mode 0700) in your home:
+
+| Path | Contents |
+|---|---|
+| `~/.web-blink/state/` | daemon state: `blink.sqlite3`, sockets, `runtime.lock`, `captures/<session>` folders, secrets |
+| `~/.web-blink/config/` | `settings.json` and other CLI preferences |
+| `~/.web-blink/private/` | your private Blinks |
+
+`BLINK_HOME` selects another home folder; `BLINK_STATE_DIR` / `--state-dir` and `BLINK_CONFIG_DIR` /
+`--config-dir` still select a single state or configuration folder. `blink doctor` reports `homeDir`,
+`stateDir`, `configDir` and `privateDir`.
+
+Earlier versions kept state in `${XDG_STATE_HOME:-~/.local/state}/web-blink` and settings in
+`${XDG_CONFIG_HOME:-~/.config}/web-blink` (macOS: `~/Library/Application Support/WebBlink`; Windows:
+`%LOCALAPPDATA%/WebBlink` and `%APPDATA%/WebBlink`). The first run that uses the default folder moves them
+into `~/.web-blink` (a rename, or copy, verify and remove across file systems) and leaves a
+`MOVED-TO-web-blink.txt` note behind. Files already present in the new folder are never overwritten, and
+saved recordings are pointed at their new folder. While a daemon still runs on the old folder, nothing moves:
+that run keeps using the old folder, `blink doctor` warns, and the move happens on a later run after the
+daemon has stopped. An explicit `BLINK_HOME`, state or configuration folder never triggers the move.
+
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.5.1-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.6.0-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -96,7 +119,7 @@ each form submission and on each page change (at most 200, JPEG), so long add/re
 apart afterwards.
 
 Each capture session gets its folder the moment recording starts: `<blink>-<UTC start time>` under the private
-state directory, with `meta.json` (blink, start URL, origins, who and when, plugin version), `requests.jsonl`
+state directory (`~/.web-blink/state/captures/`), with `meta.json` (blink, start URL, origins, who and when, plugin version), `requests.jsonl`
 (every request: full URL, method, status, request and response headers and bodies up to 256 KB each, appended
 every 3 seconds while you record), `screenshots/` with `screenshots.jsonl` (time, reason, position in the
 request timeline) and `index.json` (live counters). Your own data is kept as you entered it; only live login

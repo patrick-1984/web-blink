@@ -40,13 +40,32 @@ The validator checks strict JSON (including duplicate-key rejection), all four s
 examples, raw-file-byte hashes and invalid fixtures. It neither fetches repositories nor installs links.
 
 
-Before the first release these files are drafts. After publication, each integer schemaVersion/URN suffix
-and vN directory is an immutable contract edition: any structural change, including additive fields,
-gets a new edition. There are no silent minor revisions behind one URN.
+## Editions, dates and growth
+
+Every schema document states its own edition and release date in `x-blink-schema`
+(`{"version": "1.1.0", "released": "2026-10-30"}`); `index.json` lists the same `version` and `released`
+next to each digest, and the checks refuse a disagreement. The URN suffix, `schemaVersion` and `vN`
+directory name the MAJOR edition.
+
+- Newer readers accept older documents.
+- MINOR editions are additive only. A document may declare the edition it was written for
+  (`"x-blink-schema": {"version": "1.4.0"}`); a higher MINOR of the same MAJOR is still read.
+- Removing or renaming a field, or changing its meaning, requires a new MAJOR edition. A document that
+  declares another MAJOR (by `x-blink-schema`, `schemaVersion` or the `$schema` URN) is refused with a
+  message naming both editions.
+- Extension keys: `x-` prefixed keys and the reserved `x-blink-ext` object are accepted on the document
+  envelopes and, in the execution profile, on `info`, `x-blink-service`, operations and parameters (inline
+  JSON Schemas accept them anyway). Readers ignore them. The `x-blink-` namespace stays reserved: an unknown
+  `x-blink-*` key is refused, so a future security-relevant keyword can never be silently ignored.
+  Security-relevant objects (auth, origins, effects, exec, responses, request bodies) stay closed.
 
 Each installed source-lock entry carries its own snapshot (repository, commit, catalog path/hash),
 independent of a source's latest observed snapshot. Custom sources cannot use the reserved builtin ID.
 
 
 The index also publishes `configProfile` for private global/per-Blink CLI settings. `blink schemas export`
-exports all seven bundled schema files and the index.
+exports all eight bundled schema files and the index.
+
+`privateProfile` publishes `v1/private-blink.schema.json`: one user's own data for one Blink (identity hints,
+field defaults, preferences, process notes, separately stored secrets). It is stored under
+`$BLINK_HOME/private/` (default `~/.web-blink/private/`) and is never part of a shared Blink.

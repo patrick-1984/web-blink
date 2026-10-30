@@ -71,6 +71,15 @@ blink tools list
 blink forget --input '{"service":"team:hours"}' --yes
 ```
 
+The private Blink (your own login hints, field defaults, preferences and process notes for one Blink) uses
+the `human` command and the public admin read; secret values are typed only into the CLI and never shown:
+
+```sh
+blink human private_set --input '{"service":"local:hours","patch":{"preferences":{"leavePtoEmpty":true}}}' --yes
+blink human private_secret_set --input - --yes   # {"service":"local:hours","name":"pin","value":"..."}
+blink admin --input '{"action":"private","service":"local:hours"}'
+```
+
 `learn list` and `jobs list` use non-authorizing public status tools; `tools list` uses a private read
 request. These list commands never ask for approval. `--dry-run` suppresses every mutating management
 action before confirmation or control dispatch, including service cleanup and purge. It does not disable
@@ -108,13 +117,9 @@ remain checked at their actual point of use.
 ## Global and per-Blink defaults
 
 Settings persist in a plugin-specific **configuration directory**, separately from caches, runtime state
-and credentials:
-
-| Host | Default file |
-|---|---|
-| Linux | `${XDG_CONFIG_HOME:-~/.config}/web-blink/settings.json` |
-| macOS | `~/Library/Application Support/WebBlink/config/settings.json` |
-| Windows | `%APPDATA%/WebBlink/settings.json` |
+and credentials: `~/.web-blink/config/settings.json` on every host (`$BLINK_HOME/config` when `BLINK_HOME`
+is set). Settings from the older `${XDG_CONFIG_HOME:-~/.config}/web-blink`, `~/Library/Application
+Support/WebBlink/config` or `%APPDATA%/WebBlink` folder move there once on first use.
 
 `BLINK_CONFIG_DIR` or `--config-dir` selects another directory. Files are written atomically under an
 update lock; POSIX directories/files require 0700/0600. Symlinked, plugin-tree and Git-worktree locations

@@ -158,7 +158,8 @@ class Extensions:
             elif method == 'learn_propose':
                 data = self.learner.propose(params['session'], params['service'], params.get('operations'),
                     source=params.get('source', 'local'), auth=params.get('auth'),
-                    execution=params.get('execution'), app_origin=params.get('appOrigin'))
+                    execution=params.get('execution'), app_origin=params.get('appOrigin'),
+                    version_note=params.get('versionNote'))
                 return reply(data, 'Untested Blink proposal staged in quarantine', 'quarantined')
             elif method == 'jobs_create':
                 data = self.scheduler.create(params)

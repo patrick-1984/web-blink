@@ -15,7 +15,7 @@ inspect processes, folders or files with shell commands to find out what Web Bli
 
 1. Call `blink_request_approval` with `learn_start` and only `{"url": ...}`. The plugin names the Blink after the
    host reached after redirects (`www.msn.com` -> `msn-com`), sets the origins, opens its own work tab and
-   creates the session folder `<blink>-<UTC start time>` (`meta.json`, `requests.jsonl`, `screenshots/`,
+   creates the session folder `~/.web-blink/state/captures/<blink>-<UTC start time>` (`meta.json`, `requests.jsonl`, `screenshots/`,
    `screenshots.jsonl`, `index.json`). Pass `binding` only when the user names the Blink, and `origins` only
    when they ask for a specific scope. Do not open, close or switch other tabs; never touch tab 0 or another
    session's tabs. Every other host the site talks to is recorded too (`inScope: false`).
@@ -42,6 +42,13 @@ inspect processes, folders or files with shell commands to find out what Web Bli
    Everything the user did in the recording was a deliberate demonstration: never ask whether a step (a delete,
    a submit) was on purpose, and never ask the user about field types, parameters or values the recording
    shows; read them from the session.
+   Structural notes belong in the Blink: per selection pass `notes` (the operation) and `fieldNotes`
+   (`{"pto": "Keep this usually empty because PTO is booked in the HR tool"}`; a parameter name or a body field,
+   dotted for nested fields). They describe the service for every user. The user's *own* choices (their login
+   name, "leave PTO empty for me", their usual task, how they fill a week) are not Blink content: save them
+   with `blink_request_approval` `private_set` (see blink-use), never in the proposal.
+   Each proposal is versioned: the first is 0.1.0 with today's date; proposing the same Blink again bumps the
+   minor version and appends to `x-blink-service.history` (pass `versionNote` to say what changed).
    Full request details, values included, are in `requestsFile`; read it only for a specific question.
    An `interrupted` session needs `learn_accept_partial` with the user's reason before proposing.
 

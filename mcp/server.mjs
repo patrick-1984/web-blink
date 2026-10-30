@@ -17,9 +17,9 @@ const definitions = [
  ['blink_call_read','Execute a reviewed read through the runtime grant and identity checks.',operationFields,['service','operation'],'call_read',true],
  ['blink_prepare','Prepare a non-read intent for separate human approval. Does not dispatch it.',{...operationFields,intentId:{type:'string',minLength:1,maxLength:100}},['service','operation'],'prepare',false],
  ['blink_execute','Execute one already-approved intent. This tool cannot issue approval.',{intentId:textSchema},['intentId'],'execute',false],
- ['blink_admin','Read runtime status, recording status (action recording: what is written to the session folder right now), sessions or a review; cannot authorize or configure account access.',{action:{type:'string',enum:['status','recording','review','capabilities','sessions','jobs','job','binding','intent','workflow','canary']},id:textSchema,session:textSchema,job:textSchema,binding:textSchema,intentId:textSchema,runId:textSchema,candidate:textSchema,offset:{type:'integer',minimum:0,maximum:1000000},limit:{type:'integer',minimum:1,maximum:200}},['action'],'admin',true],
+ ['blink_admin','Read runtime status, recording status (action recording: what is written to the session folder right now), sessions, a review, or the user\'s private Blink (action private with service or blink: login hints, field defaults, preferences and process notes; secret names only); cannot authorize or configure account access.',{action:{type:'string',enum:['status','recording','review','capabilities','sessions','jobs','job','binding','intent','workflow','canary','private']},id:textSchema,service:textSchema,blink:textSchema,session:textSchema,job:textSchema,binding:textSchema,intentId:textSchema,runId:textSchema,candidate:textSchema,offset:{type:'integer',minimum:0,maximum:1000000},limit:{type:'integer',minimum:1,maximum:200}},['action'],'admin',true],
  ['blink_doctor','Report host capabilities without needing Python, a daemon or browser.',{},[],'doctor',true],
- ['blink_request_approval','Carry out a host-confirmed action the user asked for. Local, reversible actions (learn_start/learn_stop recording, learn_propose, browser_open/browser_close, workflow_validate) run immediately. Actions with real effects (approve_intent for a prepared write, approve_manifest, bind, grant, jobs, revoke, forget, purge) show the human one Approve/Decline dialog with the exact parameters and run only if approved. Call it directly; do not ask for confirmation in chat first.',{method:{type:'string',minLength:1,maxLength:100},params:{type:'object'},reason:{type:'string',maxLength:500}},['method','params'],'approval',false],
+ ['blink_request_approval','Carry out a host-confirmed action the user asked for. Local, reversible actions (learn_start/learn_stop recording, learn_propose, browser_open/browser_close, workflow_validate, private_set for the user\'s own preferences) run immediately. Actions with real effects (approve_intent for a prepared write, approve_manifest, bind, grant, jobs, revoke, forget, purge) show the human one Approve/Decline dialog with the exact parameters and run only if approved. Call it directly; do not ask for confirmation in chat first.',{method:{type:'string',minLength:1,maxLength:100},params:{type:'object'},reason:{type:'string',maxLength:500}},['method','params'],'approval',false],
 ];
 const tools = definitions.map(([name,description,properties,required,method,readOnly]) => ({
  name,description,inputSchema:{type:'object',properties,required,additionalProperties:false},
@@ -48,14 +48,16 @@ function doctor() {
  const probe=spawnSync(launch.command,[...probeArgs,'-c','import sys,json; import jsonschema; import blink.runtime; from blink.doctor import report; assert sys.version_info >= (3,11); print(json.dumps(report()))'],
   {env,cwd:root,encoding:'utf8',maxBuffer:65536,timeout:3500,windowsHide:true});
  let runtimeAvailable=false;
- if(!probe.error&&probe.status===0){try{runtimeAvailable=JSON.parse(probe.stdout).data.capabilities.runtime===true;}catch{}}
+ let homeDir=null,moving=[];
+ if(!probe.error&&probe.status===0){try{const report=JSON.parse(probe.stdout),data=report.data;runtimeAvailable=data.capabilities.runtime===true;homeDir=data.homeDir??null;
+  moving=(report.warnings??[]).filter(w=>typeof w==='string'&&w.startsWith('Web Blink data stays'));}catch{}}
  const unix=process.platform!=='win32';
  return {status:runtimeAvailable && unix?'ok':'degraded',summary:'Host bootstrap capabilities',data:{
   capabilities:{diagnostics:true,runtime:runtimeAvailable&&unix,windowsRuntime:false},
   checks:{node:{available:true,version:process.versions.node},runtimeDependencies:{available:runtimeAvailable},
-   launcher:{kind:launch.kind},unixTransport:{available:unix}},
+   launcher:{kind:launch.kind},unixTransport:{available:unix}},homeDir,
   dependencyPolicy:'Doctor probes cached dependencies offline. Prepare pinned dependencies with the documented native setup command before runtime use; the MCP launcher stays offline.'},
-  warnings:unix?[]:['Windows supports diagnostics; the current local runtime requires POSIX Unix sockets.']};
+  warnings:[...(unix?[]:['Windows supports diagnostics; the current local runtime requires POSIX Unix sockets.']),...moving]};
 }
 async function doctorWithDaemon(){
  // Ask the daemon too: its handshake replaces an outdated one, and a version mismatch is reported here.
@@ -169,7 +171,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.5.1'},instructions:'Act on what the user asks without asking again in chat; never ask whether to submit, delete or proceed, not even for irreversible writes: the plugin dialog (or standing approval) is the only confirmation. Use blink_request_approval for host-confirmed actions: recording and other local steps run at once, actions with real effects get one Approve/Decline dialog for the human. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask, and ask them how to proceed instead of rushing ahead. Never ask the human to type shell commands unless the tool reports approval_unavailable.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.6.0'},instructions:'Act on what the user asks without asking again in chat; never ask whether to submit, delete or proceed, not even for irreversible writes: the plugin dialog (or standing approval) is the only confirmation. Use blink_request_approval for host-confirmed actions: recording and other local steps run at once, actions with real effects get one Approve/Decline dialog for the human. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask, and ask them how to proceed instead of rushing ahead. Never ask the human to type shell commands unless the tool reports approval_unavailable.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');

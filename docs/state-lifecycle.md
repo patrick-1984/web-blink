@@ -61,6 +61,11 @@ preflight `checks.user.json` and `sentinel.json` data. It uses the preflight com
 only those known files. Database/WAL files and live database/daemon/family/settings/preflight locks remain;
 cleanup never destroys a running daemon's fencing primitives. Diagnostic checks can recreate a sentinel.
 
+Runtime state lives in `~/.web-blink/state` and settings in `~/.web-blink/config` (see the runtime guide's
+"Where your data lives"); a purge removes neither folder, and the one-time move from the old
+`~/.local/state/web-blink` / `~/.config/web-blink` (or macOS/Windows `WebBlink`) folders never runs while a
+daemon holds the old `runtime.lock`.
+
 Global and per-Blink CLI settings are a separate per-user configuration store. They remain unchanged by
 default. The native CLI binds its exact selected `ConfigStore` directory through the `config_dir` argument;
 an explicit `--config-dir` must not be replaced by the daemon's `BLINK_CONFIG_DIR` or default directory.
