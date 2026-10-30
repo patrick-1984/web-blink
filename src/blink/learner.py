@@ -303,11 +303,20 @@ class Learner:
                 result = attempt(batch, start)
                 shots = result.get('shots') if isinstance(result, dict) else None
                 if not isinstance(shots, list) or not shots:
-                    # A failed batch falls back to one-by-one retrieval for the rest.
+                    # A failed batch falls back to one-by-one retrieval for the rest, but gives up after two
+                    # failures in a row or 60 s in all, so an unresponsive browser cannot block the daemon.
                     single = getattr(self.browser, 'capture_shot', None)
+                    misses, deadline = 0, time.monotonic() + 60
                     for index in range(start, count):
-                        one = attempt(single, index) if callable(single) else None
-                        yield index, one.get('shot') if isinstance(one, dict) else None
+                        one = None
+                        if callable(single) and misses < 2 and time.monotonic() < deadline:
+                            try:
+                                one = single(binding, index)
+                            except Exception:
+                                one = None
+                        shot = one.get('shot') if isinstance(one, dict) else None
+                        misses = 0 if shot else misses + 1
+                        yield index, shot
                     return
                 for offset, shot in enumerate(shots):
                     yield start + offset, shot

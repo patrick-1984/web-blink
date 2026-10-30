@@ -248,6 +248,22 @@ class LocalSessionTests(unittest.TestCase):
         learner = Learner(self.runtime, Browser()); learner.running['b'] = ['https://app.example']
         self.assertEqual(len(learner.stop('b')['screenshots']), 4)
 
+    def test_an_unresponsive_browser_cannot_block_the_transfer(self):
+        class Browser:
+            calls = 0
+            def capture_stop(self, binding):
+                return {'screenshots': 200, 'records': []}
+            def capture_shots(self, binding, start):
+                raise TimeoutError('down')
+            def capture_shot(self, binding, index):
+                Browser.calls += 1
+                raise TimeoutError('down')
+            def capture_shots_clear(self, binding): pass
+        learner = Learner(self.runtime, Browser()); learner.running['b'] = ['https://app.example']
+        session = learner.stop('b')
+        self.assertEqual(Browser.calls, 2)
+        self.assertEqual(session['unsavedScreenshots'], 200)
+
 
 if __name__ == '__main__':
     unittest.main()
