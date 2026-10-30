@@ -25,7 +25,7 @@ hosts; Windows has diagnostics only. Git and OpenSSL are needed only for their r
 and signature features.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.2.10-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.3.0-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -95,17 +95,19 @@ are counted per host in `staticAssets`. Screenshots of the work tab are taken at
 each form submission and on each page change (at most 200, JPEG), so long add/remove sequences can be told
 apart afterwards.
 
-Each capture session is kept locally by default in a private folder (`blink_admin` `sessions` shows the
-`folder`): `session.json` with the recorded requests and screenshot timeline, plus the screenshots. Nothing is
-deleted automatically; use an old session to find a step a Blink is missing. Only `forget_capture` (offered by
-Claude after a Blink is confirmed, Decline keeps the session) or a purge removes it. Blinks never contain
-session data or screenshots. Screenshots are not redacted: they show the page as you saw it.
+Each capture session gets its folder the moment recording starts: `<blink>-<UTC start time>` under the private
+state directory, with `meta.json` (blink, start URL, origins, who and when, plugin version), `requests.jsonl`
+(every request: full URL, method, status, request and response headers and bodies up to 256 KB each, appended
+every 3 seconds while you record), `screenshots/` with `screenshots.jsonl` (time, reason, position in the
+request timeline) and `index.json` (live counters). Your own data is kept as you entered it; only live login
+secrets are blanked (Cookie, Set-Cookie, Authorization-type header values and password/token fields).
+`blink_admin` `recording` reports what is on disk right now; `sessions` lists every session with its folder.
+Nothing is deleted automatically: only `forget_capture` (offered once after a Blink is confirmed, Decline keeps
+the session) or a purge removes it. A Blink never contains session data or screenshots; its catalog uses real
+paths, `{id}` path templates and field names, never values.
 
-Review only persists method/origin/path placeholders, status, known header names and schema shapes.
-Values, dynamic path segments, query values and dynamic body keys are removed. Truncated captures, popups
-and workers that could not be recorded make a capture incomplete. Use `learn_propose` with `session`, `service`, explicitly selected `operations`
-and an explicit `auth` recipe. An authenticated capture cannot silently become anonymous. Proposals are
-untested and quarantined until reviewed and verified through the normal runtime path.
+The session catalog that proposals read holds real paths, path templates with `{id}` for id-like segments, query
+and body field names and types, never values.
 
 ## Approvals in Claude Code
 
