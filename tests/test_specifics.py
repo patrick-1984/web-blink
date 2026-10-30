@@ -144,6 +144,75 @@ class ParameterizationTests(unittest.TestCase):
         self.assertNotIn('specifics', result)
 
 
+class ReviewRegressionTests(ParameterizationTests):
+    """Defects found by the Codex review of 0.8.0."""
+    def test_a_failed_or_new_proposal_never_changes_values_already_kept(self):
+        private.set_private('workspace-cloud-example', {'variables': {'login': 'alice'}})
+        learner, summary = self.recorded([record(1, 'GET', '/api/me', response={'userName': 'bob'}),
+                                          record(2, 'GET', '/api/items?user=bob')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'})
+        self.assertEqual(private.variables('workspace-cloud-example')['login'], 'alice')
+        self.assertEqual(result['specifics']['conflicts']['login'], {'kept': 'alice', 'recorded': 'bob'})
+        learner, summary = self.recorded([record(1, 'GET', '/api/me', response={'email': 'x@formula5.com'}),
+                                          record(2, 'GET', '/api/items')])
+        with mock.patch.object(self.runtime, 'install_manifest', side_effect=BlinkError('invalid_manifest', 'boom')):
+            with self.assertRaises(BlinkError):
+                learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'})
+        self.assertNotIn('company', private.variables('workspace-cloud-example'))  # nothing saved for a failed proposal
+
+    def test_a_host_variable_cannot_choose_another_registrable_site(self):
+        manifest = self.propose()['manifest']
+        for template in ('https://{company}.co.uk', 'https://{company}.github.io', 'https://{company}.example.com.',
+                         'https://{company}.com'):
+            changed = json.loads(json.dumps(manifest))
+            changed['servers'][0]['url'] = template
+            changed['x-blink-service']['requestedOrigins'] = [template]
+            changed['x-blink-service']['appOrigin'] = template
+            with self.assertRaises(BlinkError, msg=template):
+                compile_manifest(changed, variables={'company': 'acme', 'login': 'pat.r'})
+        changed['servers'][0]['url'] = 'https://{company}.example.co.uk'
+        changed['x-blink-service']['requestedOrigins'] = [changed['servers'][0]['url']]
+        changed['x-blink-service']['appOrigin'] = changed['servers'][0]['url']
+        self.assertEqual(compile_manifest(changed, variables={'company': 'acme', 'login': 'pat.r'})['requestedOrigins'],
+                         ['https://acme.example.co.uk'])
+
+    def test_short_values_the_user_names_are_parameterized_and_reviewed(self):
+        learner, summary = self.recorded([record(1, 'GET', '/api/hp/tasks')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'},
+                                 specifics={'tenant': 'hp'})
+        manifest = result['manifest']
+        self.assertIn('/api/{tenant}/tasks', manifest['paths'])
+        self.assertNotIn('hp', specifics.words(json.dumps(manifest)))
+        self.assertTrue(result['specifics']['clean'])
+        _, remaining = specifics.review({'paths': {'/api/hp-x': {}}, 'info': {'title': 'php'}}, {'tenant': 'hp'})
+        self.assertEqual([r['text'] for r in remaining], ['"/api/hp-x": {}'])
+
+    def test_path_names_never_collide_and_the_query_field_is_kept(self):
+        learner, summary = self.recorded([record(1, 'GET', '/api/workspaces/acme/companies/acme?login=acme')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'},
+                                 specifics={'company': 'acme'})
+        path, = result['manifest']['paths']
+        get = result['manifest']['paths'][path]['get']
+        names = {p['name']: (p['in'], p.get('x-blink-variable')) for p in get['parameters']}
+        self.assertEqual(path, '/api/workspaces/{company}/companies/{company2}')
+        self.assertEqual(names, {'company': ('path', 'company'), 'company2': ('path', 'company'), 'login': ('query', 'company')})
+
+    def test_a_selection_by_index_also_gets_body_variables(self):
+        learner, summary = self.recorded([record(1, 'POST', '/api/entries', 201, {'workspace': 'formula5', 'hours': 1})])
+        result = learner.propose(summary['id'], 'workspace-cloud-example',
+                                 [{'index': 0, 'operationId': 'createEntry', 'effect': 'write'}], auth={'kind': 'none'},
+                                 specifics={'company': 'formula5'})
+        body = result['manifest']['paths']['/api/entries']['post']['requestBody']['content']['application/json']['schema']
+        self.assertEqual(body['properties']['workspace']['x-blink-variable'], 'company')
+
+    def test_long_numeric_ids_are_filled_as_numbers(self):
+        operation = {'variables': {'userId': 'userId'}, 'inputSchema': {'type': 'object', 'properties': {
+            'userId': {'type': 'integer'}}, 'required': ['userId']}}
+        private.set_private('numbers', {'variables': {'userId': '1234567890123456789'}})
+        filled = self.runtime._with_variables({'service': 'local:numbers'}, operation, {})
+        self.assertEqual(filled, {'userId': 1234567890123456789})
+
+
 class ScanTests(unittest.TestCase):
     def test_line_by_line_scan_finds_exact_and_partial_values(self):
         hints = specifics.collect_hints([], extra={'company': 'Formula5', 'caseId': 'CASE-1042'})
