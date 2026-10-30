@@ -299,7 +299,10 @@ class Runtime:
             raise BlinkError('invalid_grant','Currency must be an uppercase three-letter code')
         grant={'binding':binding['id'],'service':binding['service'],'digest':record['digest'],'operations':list(dict.fromkeys(ops)),
                'origins':list(dict.fromkeys(origins)),'expiresAt':expires,'maxAmount':maximum,'currency':currency,
-               'maxCalls':calls,'state':'active','policyOverride':p.get('policyOverride') is True}
+               'maxCalls':calls,'state':'active','policyOverride':p.get('policyOverride') is True,
+               # Standing approval, granted by the human in the activation dialog: prepared writes of this binding
+               # are approved without a dialog each time. Financial operations always need their own approval.
+               'autoApprove':p.get('autoApprove') if p.get('autoApprove') in ('writes','writes-and-deletes') else 'none'}
         with self.store.transaction() as db:
             previous = self.store.get('grant', binding['id'], connection=db)
             self.store.put('grant',binding['id'],grant,connection=db)
@@ -686,6 +689,11 @@ class Runtime:
             if prestate is not None:self.store.put('intent_prestate',intent,prestate,connection=db)
             db.execute("INSERT INTO reservations VALUES(?,?,?,?, 'held')",(intent,binding['id'],amount,currency))
             row=db.execute('SELECT * FROM intents WHERE id=?',(intent,)).fetchone()
+        standing=(grant.get('autoApprove') or 'none') if isinstance(grant,dict) else 'none'
+        if (op['effect']=='write' and standing in ('writes','writes-and-deletes')) or (op['effect']=='destructive' and standing=='writes-and-deletes'):
+            approved=self._approve_intent({'intentId':row['id']})
+            approved['summary']='Approved by your standing approval for this Blink; execute it now'
+            return approved
         return envelope('prepared','Human approval required for this exact plan',self._intent_view(row))
 
     def _intent_identity(self,row,binding,*,connection=None):

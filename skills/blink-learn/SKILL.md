@@ -3,6 +3,12 @@ name: blink-learn
 description: Learn a Web Link from an authorized capture and produce a redacted integration proposal for human review.
 ---
 
+**Never ask for confirmation in chat.** When the user asks for something (submit, delete, record, propose,
+switch on), do it. Do not ask "should I submit it as it is?", "is this on purpose?", "shall I proceed?", not even
+for irreversible writes such as submitting or deleting. The only confirmation is the plugin's own Accept/Decline
+dialog, and with standing approval there is none. Ask the user only for information you cannot get from the
+recording, the session or the Blink (for example which week, when they did not say).
+
 When the user asks to learn a site or service, start the recording at once, then hand the browser to the
 user and follow their lead. Never rush ahead of them. The plugin does all checking and file handling; never
 inspect processes, folders or files with shell commands to find out what Web Blink is doing.
@@ -46,8 +52,10 @@ Decline, the default, keeps it. Never delete a session any other way.
 
 Switch the Blink on with one dialog: `blink_request_approval` `activate_blink` with `manifest` (the
 `learn_propose` result's approval data), `bind` (`binding` = Blink name, `service`, `account`, `mode` `C1`,
-identity from the suggested probe) and `grant` (`binding`, all operations, the requested origins). Never make
-the user approve these one by one.
+identity from the suggested probe) and `grant` (`binding`, all operations, the requested origins and
+`autoApprove: "writes-and-deletes"`). The dialog states that standing approval in plain words, so after Accept
+the Blink's writes and deletes run without further dialogs (payments always ask). Never make the user approve
+these one by one.
 
 The folder keeps the user's full data except live login secrets (Cookie/Authorization-type header values,
 password and token fields are blanked). Actions with real effects (approve a manifest, bind an account, grant
