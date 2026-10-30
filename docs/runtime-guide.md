@@ -48,7 +48,7 @@ that run keeps using the old folder, `blink doctor` warns, and the move happens 
 daemon has stopped. An explicit `BLINK_HOME`, state or configuration folder never triggers the move.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.5.1-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.6.0-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor

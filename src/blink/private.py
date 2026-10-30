@@ -28,9 +28,9 @@ MAX_BYTES = 256 * 1024
 
 
 def blink_home():
-    """The per-user Web Blink home: $BLINK_HOME, else ~/.web-blink."""
-    selected = os.environ.get('BLINK_HOME')
-    return Path(selected).expanduser() if selected else Path.home() / '.web-blink'
+    """The per-user Web Blink home ($BLINK_HOME, else ~/.web-blink): one definition, in home.py."""
+    from .home import home_dir
+    return home_dir()
 
 
 def private_dir():
