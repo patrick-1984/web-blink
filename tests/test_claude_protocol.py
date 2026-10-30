@@ -381,8 +381,8 @@ def configure(runtime): return Extensions(runtime)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             responses.append(json.loads(proc.stdout))
         self.assertTrue(responses[0]['data']['recording'])
-        self.assertEqual(responses[1]['data']['records'][0]['path'], '/{segment1}')
-        self.assertNotIn('private-value', json.dumps(responses[1]))
+        self.assertEqual(responses[1]['data']['records'][0]['path'], '/private-value')  # real paths are kept (0.3.0)
+        self.assertIn('private-value', json.dumps(responses[1]))  # the user's real path is kept (0.3.0)
 
 
 if __name__ == '__main__':

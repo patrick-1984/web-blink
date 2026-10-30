@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.2.10'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.3.0'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -272,69 +272,88 @@ class BrowserBridge:
             raise BrowserUnavailable('Owned capture tab unavailable')
         return self._run_owned(owner, r'''
           if(p.__blinkCapture)throw Error('capture_already_running');
-          const schema=(x,depth=0)=>depth>8?{}:x===null?{type:'null'}:Array.isArray(x)?{type:'array',items:x.length?schema(x[0],depth+1):{}}:
-            typeof x==='object'?{type:'object',properties:Object.fromEntries(Object.values(x).slice(0,100).map((val,i)=>['field'+(i+1),schema(val,depth+1)]))}:{type:typeof x==='number'?'number':typeof x};
-          const records=[],missingOrigins=new Set(),assets={},shots=[];let overflow=false,incomplete=false,metadataBytes=0,shooting=null,shotTimer=null,last=null,assetsTruncated=false,shotErrors=0,lastShotError=null,shotsDropped=0;
-          // Static files from any host (CDN, fonts, analytics) are counted per host; every other request is recorded.
+          delete p.__blinkFinal;
+          // Everything the user does is kept for their local session folder: full URLs, query values, request and
+          // response bodies (256 KB each). Only live login secrets are blanked: Cookie/Authorization-type header
+          // values and password/token fields. The daemon drains this buffer to disk every few seconds.
+          const records=[],shots=[],missingOrigins=new Set(),assets={};
+          let seq=0,shotSeq=0,bufferBytes=0,overflow=false,incomplete=false,failedRequests=0,workers=0,serviceWorker=false;
+          let shooting=null,shotTimer=null,last=null,assetsTruncated=false,shotErrors=0,lastShotError=null,shotsDropped=0,queued=0,pending=null;
           const STATIC=new Set(['image','font','stylesheet','media','script','manifest','texttrack']);
-          const pageOf=url=>{try{const u=new URL(url);return u.origin+'/'+u.pathname.split('/').filter(Boolean).map((_,i)=>'{segment'+(i+1)+'}').join('/');}catch{return null;}};
-          // Screenshots of the owned tab, kept in this tab until the recording stops and they are saved privately.
-          // Labels are taken when the shot is requested, so later responses cannot shift it in the timeline.
-          // An unchanged page (same pixels as the last shot) is not stored again.
-          // Overlapping requests are queued (at most 10 waiting), never dropped.
-          let queued=0;
-          const shoot=reason=>{if(shots.length+queued>=200||queued>=10){shotsDropped++;return shooting||Promise.resolve();}queued++;
-            const mark={afterRecord:records.length,t:Date.now(),reason,page:pageOf(p.url())};
+          const SECRET_HEADER=/^(cookie|set-cookie|authorization|proxy-authorization|x-api-key|x-auth-token)$/i;
+          const SECRET_FIELD=/^(password|passwd|pwd|pass|passcode|client_secret|current_password|new_password|access_token|refresh_token|id_token)$/i;
+          const LIMIT=262144;
+          const pageOf=url=>{try{const u=new URL(url);return u.origin+u.pathname;}catch{return null;}};
+          const headersOf=h=>Object.fromEntries(Object.entries(h||{}).slice(0,100).map(([k,v])=>[k,SECRET_HEADER.test(k)?'<redacted>':String(v).slice(0,4000)]));
+          const scrub=text=>{if(typeof text!=='string'||!text)return text;
+            try{const walk=x=>Array.isArray(x)?x.map(walk):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,SECRET_FIELD.test(k)?'<redacted>':walk(v)])):x;
+              return JSON.stringify(walk(JSON.parse(text)));}catch{}
+            try{if(/^[^\s=&]+=[^\s]*$/.test(text)||/&/.test(text)&&!/\s/.test(text)){const q=new URLSearchParams(text);let hit=false;
+              for(const k of [...q.keys()])if(SECRET_FIELD.test(k)){q.set(k,'<redacted>');hit=true;}if(hit)return q.toString();}}catch{}
+            return text;};
+          const cut=t=>typeof t==='string'&&t.length>LIMIT?t.slice(0,LIMIT):t;
+          // Screenshots: labels taken when requested; queued (10 waiting), never dropped silently; unchanged pixels skipped.
+          const shoot=reason=>{if(shotSeq+queued>=1000||queued>=10){shotsDropped++;return shooting||Promise.resolve();}queued++;
+            const mark={afterRecord:seq,t:Date.now(),reason,page:pageOf(p.url())};
             shooting=(shooting||Promise.resolve()).then(async()=>{try{const b=await p.screenshot({type:'jpeg',quality:50});const data=b.toString('base64');
-              if(b.length>2097152)shotsDropped++;else if(data!==last){last=data;shots.push({index:shots.length,...mark,data});}}
+              if(b.length>1048576)shotsDropped++;else if(data!==last){last=data;shots.push({index:++shotSeq,...mark,data});}}
               catch(e){shotErrors++;lastShotError=String((e&&e.message)||e).slice(0,200);}queued--;});
             return shooting;};
-          let pending=null;
           const later=reason=>{clearTimeout(shotTimer);pending=reason;shotTimer=setTimeout(()=>{pending=null;shoot(reason);},700);};
-          // Clicks, typing (after a pause), changes and submits in the page report through the console, so local
-          // edits that send no request are shot too. The hook stays installed but is silent unless a recording runs.
-          // Clicks, changes and submits each get their own (queued) shot, so every edited box is captured;
-          // typing and a resting mouse (hover boxes) wait for a pause.
           const ui=msg=>{try{const t=msg.text();if(!t.startsWith('__blink_ui:'))return;const r=t.slice(11);
             if(r==='typing'||r==='hover')later(r);else shoot(r);}catch{}};
-          const hook=()=>{if(window.__blinkUi)return;window.__blinkUi=true;let k;const say=r=>console.debug('__blink_ui:'+r);
+          const hook=()=>{if(window.__blinkUi)return;window.__blinkUi=true;let k,h;const say=r=>console.debug('__blink_ui:'+r);
             addEventListener('click',()=>say('click'),true);addEventListener('change',()=>say('change'),true);
             addEventListener('submit',()=>say('submit'),true);addEventListener('input',()=>{clearTimeout(k);k=setTimeout(()=>say('typing'),800);},true);
-            let h;addEventListener('mousemove',()=>{clearTimeout(h);h=setTimeout(()=>say('hover'),1000);},true);};
+            addEventListener('mousemove',()=>{clearTimeout(h);h=setTimeout(()=>say('hover'),1000);},true);};
           try{if(typeof p.addInitScript==='function'){await p.addInitScript(hook);await p.evaluate(hook);}}catch{}
-          // Typing and local edits send nothing: a periodic shot (skipped when unchanged) records them too.
           const ticker=setInterval(()=>{shoot('periodic');},10000);
           const navigated=f=>{try{if(f===p.mainFrame())later('navigation');}catch{}};
-          // At submit time the page still shows what was typed: shoot before the request too, not only after.
           const submitting=req=>{try{const type=typeof req.resourceType==='function'?req.resourceType():'other';
             if(!STATIC.has(type)&&!['GET','HEAD','OPTIONS'].includes(req.method()))shoot('before '+req.method()+' '+(pageOf(req.url())||''));}catch{}};
+          // Only a popup window (not recorded) makes a capture incomplete; failed requests and workers are noted.
           const popup=child=>{incomplete=true;try{const u=new URL(child.url());if(['http:','https:'].includes(u.protocol))missingOrigins.add(u.origin);}catch{}};
-          const worker=()=>{incomplete=true;};
-          const failed=()=>{incomplete=true;};
-          const serviceworker=w=>{try{if(new URL(w.url()).origin===new URL(p.url()).origin)incomplete=true;}catch{}};
+          const worker=()=>{workers++;};
+          const failed=()=>{failedRequests++;};
+          const serviceworker=w=>{try{if(new URL(w.url()).origin===new URL(p.url()).origin)serviceWorker=true;}catch{}};
           p.on('popup',popup);p.on('worker',worker);p.on('requestfailed',failed);p.context().on('serviceworker',serviceworker);
-          try{if(await p.evaluate(()=>!!navigator.serviceWorker?.controller))incomplete=true;}catch{incomplete=true;}
-          const listener=async response=>{if(records.length>=1000||metadataBytes>=2097152){overflow=true;return;}try{
+          const listener=async response=>{try{
             const req=response.request(),u=new URL(req.url());if(!['http:','https:'].includes(u.protocol))return;
             const type=typeof req.resourceType==='function'?req.resourceType():'other';
             if(STATIC.has(type)){const key=u.origin+' '+type;if(key in assets||Object.keys(assets).length<500)assets[key]=(assets[key]||0)+1;else assetsTruncated=true;return;}
-            const segments=u.pathname.split('/').filter(Boolean);const path='/'+segments.map((_,i)=>'{segment'+(i+1)+'}').join('/');
-            let input={};try{const raw=req.postData();if(raw&&raw.length>262144)overflow=true;
-              else if(raw)input=schema(req.postDataJSON());}catch{}
-            const contentType=(req.headers()['content-type']||'').split(';')[0];
-            const record={method:req.method(),origin:u.origin,path,status:response.status(),
-              requestMediaType:['application/json','application/x-www-form-urlencoded'].includes(contentType)?contentType:null,
-              resourceType:type,queryNames:[...new Set([...u.searchParams.keys()])].map((_,i)=>'query'+(i+1)),headerNames:Object.keys(req.headers()).filter(k=>['authorization','cookie','content-type','accept','x-csrf-token','x-xsrf-token'].includes(k.toLowerCase())),requestSchema:input};
-            metadataBytes+=new TextEncoder().encode(JSON.stringify(record)).length;
-            if(metadataBytes>2097152){overflow=true;return;}records.push(record);
+            if(bufferBytes>20971520){overflow=true;return;}  // only if the daemon stopped draining
+            const raw=typeof req.postData==='function'?req.postData():null;
+            const responseHeaders=typeof response.headers==='function'?response.headers():{};
+            let body=null,bodyCut=false;
+            if(/json|text|xml|html|javascript|form/.test(responseHeaders['content-type']||'')&&typeof response.text==='function'){
+              try{const t=await response.text();bodyCut=t.length>LIMIT;body=scrub(cut(t));}catch{}}
+            const record={seq:++seq,t:Date.now(),method:req.method(),url:u.href,origin:u.origin,path:u.pathname,status:response.status(),
+              resourceType:type,requestHeaders:headersOf(req.headers()),requestBody:raw==null?null:scrub(cut(raw)),
+              requestBodyTruncated:raw!=null&&raw.length>LIMIT,responseHeaders:headersOf(responseHeaders),responseBody:body,responseBodyTruncated:bodyCut};
+            bufferBytes+=JSON.stringify(record).length;records.push(record);
             later('after '+record.method+' '+(pageOf(req.url())||''));
           }catch{}};
-          p.__blinkCapture={records,listener,popup,worker,failed,serviceworker,navigated,submitting,missingOrigins,assets,shots,
-            overflow:()=>overflow,incomplete:()=>incomplete,timer:()=>shotTimer,ticker,pending:()=>pending,inflight:()=>shooting,
-            assetsTruncated:()=>assetsTruncated,shoot,ui,errors:()=>({shotErrors,lastShotError,shotsDropped,shotsAbandoned:queued})};p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
+          const counters=()=>({seq,overflow,incomplete,failedRequests,workers,serviceWorker,assets,assetsTruncated,
+            missingOrigins:[...missingOrigins],shotErrors,lastShotError,shotsDropped,shotsAbandoned:queued});
+          p.__blinkCapture={records,shots,listener,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
+            timer:()=>shotTimer,pending:()=>pending,inflight:()=>shooting,drained:n=>{bufferBytes=Math.max(0,bufferBytes-n);}};
+          p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
           // Prove screenshots work now, so a failure shows when recording starts, not after a long session.
           await shoot('start');
           return {recording:true,screenshots:shots.length?'enabled':'failed',screenshotError:lastShotError};
+        ''')
+
+    def capture_drain(self, binding):
+        """Hand over what was recorded since the last call (about 3.5 MB at most) and free it in the tab."""
+        owner = self.owners.get(binding)
+        if not owner:
+            raise BrowserUnavailable('Owned capture tab unavailable')
+        return self._run_owned(owner, r'''
+          const c=p.__blinkCapture||p.__blinkFinal;if(!c)return {running:false,records:[],shots:[],more:false};
+          const take=(list,limit)=>{const out=[];let size=0;
+            while(list.length){const n=JSON.stringify(list[0]).length;if(out.length&&size+n>limit)break;out.push(list.shift());size+=n;}return [out,size];};
+          const [records,size]=take(c.records,2000000);c.drained(size);const [shots]=take(c.shots,1500000);
+          return {running:!!p.__blinkCapture,records,shots,more:c.records.length>0||c.shots.length>0,counters:c.counters()};
         ''')
 
     def capture_stop(self, binding):
@@ -346,40 +365,17 @@ class BrowserBridge:
           p.off('response',capture.listener);p.off('popup',capture.popup);p.off('worker',capture.worker);p.off('requestfailed',capture.failed);
           p.context().off('serviceworker',capture.serviceworker);p.off('framenavigated',capture.navigated);p.off('request',capture.submitting);p.off('console',capture.ui);
           clearTimeout(capture.timer());clearInterval(capture.ticker);
-          // Keep the last interaction: finish an in-flight shot, then take the pending one or a final one.
-          // Wait for queued shots at most 5 s so stopping never outlasts the browser call; then a final shot.
+          // Keep the last interaction: wait (bounded) for queued shots, then a final one. The rest is drained.
           const wait=ms=>new Promise(r=>setTimeout(r,ms));
           await Promise.race([capture.inflight(),wait(5000)]);await Promise.race([capture.shoot(capture.pending()||'stop'),wait(3000)]);
-          delete p.__blinkCapture;p.__blinkShots=capture.shots;
-          return {records:capture.records,overflow:capture.overflow(),incomplete:capture.incomplete(),
-            missingOrigins:[...capture.missingOrigins],assets:capture.assets,assetsTruncated:capture.assetsTruncated(),
-            screenshots:capture.shots.length,...capture.errors()};
+          delete p.__blinkCapture;p.__blinkFinal=capture;
+          return {stopped:true,...capture.counters(),pendingRecords:capture.records.length,pendingShots:capture.shots.length};
         ''')
-
-    def capture_shot(self, binding, index):
-        """One screenshot of a stopped recording (base64 JPEG), fetched singly to stay under the message limit."""
-        owner = self.owners.get(binding)
-        if not owner:
-            raise BrowserUnavailable('Owned capture tab unavailable')
-        return self._run_owned(owner, r'''
-          const shot=(p.__blinkShots||[])[v.payload.index];return {shot:shot||null};
-        ''', {'index': index})
-
-    def capture_shots(self, binding, start):
-        """A batch of a stopped recording's screenshots, about 3 MB per call (few calls, under the message limit)."""
-        owner = self.owners.get(binding)
-        if not owner:
-            raise BrowserUnavailable('Owned capture tab unavailable')
-        return self._run_owned(owner, r'''
-          const all=p.__blinkShots||[],out=[];let i=v.payload.start,size=0;
-          while(i<all.length&&(out.length===0||size+all[i].data.length<=3000000)){out.push(all[i]);size+=all[i].data.length;i++;}
-          return {shots:out,next:i,total:all.length};
-        ''', {'start': start})
 
     def capture_shots_clear(self, binding):
         owner = self.owners.get(binding)
         if owner:
-            self._run_owned(owner, 'delete p.__blinkShots;return {cleared:true};')
+            self._run_owned(owner, 'delete p.__blinkFinal;delete p.__blinkShots;return {cleared:true};')
 
     def close_tab(self, binding):
         with self.lock:
@@ -387,7 +383,7 @@ class BrowserBridge:
             if owner:
                 self._run_owned(owner, '''const c=p.__blinkCapture;if(c){p.off('response',c.listener);
                     p.off('popup',c.popup);p.off('worker',c.worker);p.off('requestfailed',c.failed);p.context().off('serviceworker',c.serviceworker);
-                    p.off('framenavigated',c.navigated);p.off('request',c.submitting);p.off('console',c.ui);clearTimeout(c.timer());clearInterval(c.ticker);delete p.__blinkCapture;}delete p.__blinkShots;await p.close();return {closed:true};''')
+                    p.off('framenavigated',c.navigated);p.off('request',c.submitting);p.off('console',c.ui);clearTimeout(c.timer());clearInterval(c.ticker);delete p.__blinkCapture;}delete p.__blinkFinal;delete p.__blinkShots;await p.close();return {closed:true};''')
                 self.owners.pop(binding, None)
 
     def _profile_call(self, name, payload):

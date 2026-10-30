@@ -43,7 +43,8 @@ class RecorderJavascriptTests(unittest.TestCase):
           EVENTS
           const result=await eval('('+code[1]+')')(p);
           result.listeners=['response','framenavigated','request','popup'].reduce((n,e)=>n+p.listenerCount(e),0);
-          result.kept=p.__blinkShots.map(s=>({reason:s.reason,page:s.page,afterRecord:s.afterRecord}));
+          const fin=p.__blinkFinal;result.records=fin.records;result.screenshots=fin.shots.length;
+          result.kept=fin.shots.map(s=>({reason:s.reason,page:s.page,afterRecord:s.afterRecord}));
           console.log(JSON.stringify(result));})().catch(e=>{console.error(e);process.exit(1);});
         '''.replace('EVENTS', events)
         run = subprocess.run(['node', '-e', script, json.dumps(client.code)], capture_output=True, text=True, timeout=15, check=True)
@@ -66,10 +67,10 @@ class RecorderJavascriptTests(unittest.TestCase):
           p.emit('request',post);await sleep(20);p.emit('response',res(post));await sleep(900);
           p.emit('framenavigated',frame);await sleep(900);''')
         reasons = [s['reason'] for s in result['kept']]
-        self.assertEqual(reasons, ['start', 'before POST https://app.example/{segment1}/{segment2}/{segment3}',
-                                   'after POST https://app.example/{segment1}/{segment2}/{segment3}', 'navigation', 'stop'])
+        self.assertEqual(reasons, ['start', 'before POST https://app.example/cart/42/items',
+                                   'after POST https://app.example/cart/42/items', 'navigation', 'stop'])
         self.assertEqual(result['screenshots'], 5)
-        self.assertNotIn('42', json.dumps(result['kept']))
+        self.assertIn('/cart/42/items', json.dumps(result['kept']))  # real page paths (0.3.0)
         self.assertEqual(result['listeners'], 0)
 
 
@@ -78,10 +79,10 @@ class RecorderJavascriptTests(unittest.TestCase):
           p.screenshot=async()=>{await sleep(300);shots++;return Buffer.from([0xff,0xd8,shots]);};
           p.emit('response',res(req('https://app.example/search','GET','fetch')));await sleep(750);
           p.emit('response',res(req('https://app.example/more','GET','fetch')));''')
-        self.assertEqual([s['reason'] for s in result['kept']][:2], ['start', 'after GET https://app.example/{segment1}'])
+        self.assertEqual([s['reason'] for s in result['kept']][:2], ['start', 'after GET https://app.example/search'])
         self.assertEqual(result['kept'][1]['afterRecord'], 1)
         self.assertEqual(result['screenshots'], len(result['kept']))
-        self.assertEqual(result['kept'][-1]['reason'], 'after GET https://app.example/{segment1}')
+        self.assertEqual(result['kept'][-1]['reason'], 'after GET https://app.example/more')
 
     def test_unchanged_pages_are_not_stored_twice_and_static_hosts_are_bounded(self):
         result = self.record('''
@@ -99,8 +100,8 @@ class RecorderJavascriptTests(unittest.TestCase):
           p.emit('request',req('https://app.example/a','POST','fetch'));
           p.emit('request',req('https://app.example/b','DELETE','fetch'));await sleep(50);''')
         reasons = [s['reason'] for s in result['kept']]
-        self.assertIn('before POST https://app.example/{segment1}', reasons)
-        self.assertIn('before DELETE https://app.example/{segment1}', reasons)
+        self.assertIn('before POST https://app.example/a', reasons)
+        self.assertIn('before DELETE https://app.example/b', reasons)
 
 
     def test_each_box_change_gets_its_own_shot_and_hover_waits_for_a_pause(self):
@@ -110,6 +111,22 @@ class RecorderJavascriptTests(unittest.TestCase):
         reasons = [s['reason'] for s in result['kept']]
         self.assertEqual(reasons.count('change'), 3)
         self.assertIn('hover', reasons)
+
+
+    def test_full_values_are_recorded_and_only_login_secrets_blanked(self):
+        result = self.record('''
+          const r={url:()=> 'https://app.example/api/time-entries?week=2026-11-02',method:()=> 'POST',resourceType:()=> 'fetch',
+            postData:()=> JSON.stringify({note:'banana banana apple',hours:1,password:'hunter2'}),
+            headers:()=>({'content-type':'application/json',cookie:'sid=SECRET',authorization:'Bearer SECRET'})};
+          p.emit('response',{request:()=>r,status:()=>201,headers:()=>({'content-type':'application/json','set-cookie':'sid=SECRET'}),
+            text:async()=>JSON.stringify({id:7,note:'banana banana apple',access_token:'SECRET'})});
+          await sleep(50);''')
+        record = result['records'][0]
+        self.assertEqual(record['url'], 'https://app.example/api/time-entries?week=2026-11-02')
+        self.assertIn('banana banana apple', record['requestBody'])
+        self.assertIn('banana banana apple', record['responseBody'])
+        self.assertNotIn('SECRET', json.dumps(record)); self.assertNotIn('hunter2', json.dumps(record))
+        self.assertEqual(record['requestHeaders']['cookie'], '<redacted>')
 
 
 class LocalSessionTests(unittest.TestCase):
@@ -145,12 +162,15 @@ class LocalSessionTests(unittest.TestCase):
         _, session = self.stop()
         folder = screenshot_dir(self.runtime.store, session['id'])
         self.assertEqual(session['folder'], str(folder))
-        self.assertEqual(sorted(p.name for p in folder.iterdir()), ['001.jpg', '003.jpg', 'session.json'])
+        self.assertEqual(sorted(p.name for p in folder.iterdir()),
+                         ['index.json', 'meta.json', 'requests.jsonl', 'screenshots', 'screenshots.jsonl', 'session.json'])
+        self.assertEqual(sorted(p.name for p in (folder / 'screenshots').iterdir()), ['001.jpg', '003.jpg'])
         self.assertEqual(stat.S_IMODE(folder.stat().st_mode), 0o700)
         for path in folder.iterdir():
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-        self.assertEqual((folder / '001.jpg').read_bytes(), JPEG)
-        self.assertEqual([s['file'] for s in session['screenshots']], [str(folder / '001.jpg'), str(folder / '003.jpg')])
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700 if path.is_dir() else 0o600)
+        self.assertEqual((folder / 'screenshots' / '001.jpg').read_bytes(), JPEG)
+        self.assertEqual([s['file'] for s in session['screenshots']],
+                         [str(folder / 'screenshots' / '001.jpg'), str(folder / 'screenshots' / '003.jpg')])
         self.assertEqual(json.loads((folder / 'session.json').read_text())['id'], session['id'])
         listed = Extensions(self.runtime).dispatch('admin', {'action': 'sessions'})
         self.assertEqual(listed['data'][0]['screenshots'], 2)
@@ -263,6 +283,63 @@ class LocalSessionTests(unittest.TestCase):
         session = learner.stop('b')
         self.assertEqual(Browser.calls, 2)
         self.assertEqual(session['unsavedScreenshots'], 200)
+
+
+class LiveSessionFolderTests(unittest.TestCase):
+    """The folder exists at start and fills while recording; the status tool reads what is on disk."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.runtime = Runtime(self.tmp.name)
+        outer = self
+        class Browser:
+            def __init__(self): self.batches = []
+            def open(self, binding, url): pass
+            def capture_start(self, binding): return {'recording': True, 'screenshots': 'enabled'}
+            def capture_drain(self, binding):
+                return self.batches.pop(0) if self.batches else {'records': [], 'shots': [], 'more': False}
+            def capture_stop(self, binding): return {'stopped': True, 'incomplete': False, 'failedRequests': 2}
+            def capture_shots_clear(self, binding): pass
+        self.browser = Browser()
+        self.learner = Learner(self.runtime, self.browser)
+
+    def batch(self, note):
+        record = {'seq': 1, 'method': 'POST', 'url': 'https://app.example/api/time-entries/123?week=1', 'origin': 'https://app.example',
+                  'path': '/api/time-entries/123', 'status': 201, 'resourceType': 'fetch',
+                  'requestHeaders': {'content-type': 'application/json', 'cookie': '<redacted>'},
+                  'requestBody': json.dumps({'note': note, 'hours': 1})}
+        shot = {'data': base64.b64encode(JPEG).decode(), 'afterRecord': 1, 't': 1000, 'reason': 'click', 'page': 'https://app.example/time'}
+        return {'records': [record], 'shots': [shot], 'more': False, 'counters': {'failedRequests': 0}}
+
+    def test_folder_exists_at_start_and_fills_while_recording(self):
+        started = self.learner.start('ruddr-io', 'https://app.example/time', ['https://app.example'])
+        folder = Path(started['folder'])
+        self.assertRegex(folder.name, r'^ruddr-io-\d{8}T\d{6}Z$')
+        meta = json.loads((folder / 'meta.json').read_text())
+        self.assertEqual((meta['blink'], meta['status'], meta['startUrl']), ('ruddr-io', 'recording', 'https://app.example/time'))
+        self.assertIn('user', meta['startedBy'])
+        self.browser.batches.append(self.batch('banana banana apple'))
+        self.learner.tick(now=10 ** 10)
+        self.assertIn('banana banana apple', (folder / 'requests.jsonl').read_text())
+        self.assertEqual(len(list((folder / 'screenshots').glob('*.jpg'))), 1)
+        live = Extensions(self.runtime).dispatch  # status through the admin action uses the daemon's learner
+        status = self.learner.status()['recording'][0]
+        self.assertEqual((status['requestsOnDisk'], status['screenshotsOnDisk'], status['healthy']), (1, 1, True))
+        session = self.learner.stop('ruddr-io')
+        self.assertEqual(session['status'], 'review')
+        self.assertNotIn('banana', json.dumps(session))  # the catalog has no values
+        self.assertEqual(session['records'][0]['pathTemplate'], '/api/time-entries/{id}')
+        self.assertEqual(session['records'][0]['queryNames'], ['week'])
+        self.assertEqual(json.loads((folder / 'meta.json').read_text())['status'], 'stopped')
+        self.assertEqual(session['failedRequests'], 2)
+
+    def test_a_drain_failure_is_recorded_not_silent(self):
+        self.learner.start('b', 'https://app.example/', ['https://app.example'])
+        def broken(binding): raise TimeoutError('browser gone')
+        self.browser.capture_drain = broken
+        self.learner.tick(now=10 ** 10)
+        status = self.learner.status()['recording'][0]
+        self.assertEqual(status['drainErrors'], 1); self.assertFalse(status['healthy'])
+        self.assertIn('browser gone', status['lastDrainError'])
 
 
 if __name__ == '__main__':

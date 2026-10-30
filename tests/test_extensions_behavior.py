@@ -321,7 +321,7 @@ class ExtensionBehaviorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             learner.propose(session['id'], 'learned', [{'index': 0, 'effect': 'write', 'operationId': 'change', 'path': '/cart'}], auth={'kind': 'none'})
 
-    def test_shared_capture_is_retemplated_and_overflow_is_incomplete(self):
+    def test_shared_capture_catalog_keeps_paths_but_no_query_values_and_overflow_is_incomplete(self):
         seed = 'DO-NOT-PERSIST'
         class Browser:
             def capture_stop(self, binding):
@@ -331,8 +331,8 @@ class ExtensionBehaviorTests(unittest.TestCase):
         browser = Browser(); browser.origin = self.origin
         learner = Learner(self.runtime, browser); learner.running['account'] = [self.origin]
         session = learner.stop('account')
-        self.assertNotIn(seed, json.dumps(session)); self.assertEqual(session['status'], 'incomplete')
-        self.assertEqual(session['records'][0]['path'], '/{segment1}/{segment2}')
+        self.assertNotIn('value=' + seed, json.dumps(session)); self.assertEqual(session['status'], 'incomplete')
+        self.assertEqual(session['records'][0]['path'], '/' + seed + '/items')
 
     def test_curated_proposal_is_explicitly_anonymous_quarantined_and_untested(self):
         entry = {'request': {'url': self.origin + '/products', 'method': 'GET'}, 'response': {'status': 200}}

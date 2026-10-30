@@ -34,8 +34,8 @@ class LiveLearningTests(unittest.TestCase):
             runtime = Runtime(temp, allow_http=True)
             learner = Learner(runtime, Browser()); learner.running['recording'] = [origin]
             session = learner.stop('recording')
-            self.assertNotIn('private-field-value', json.dumps(session))
-            self.assertNotIn('never-store-this', json.dumps(session))
+            self.assertIn('private-field-value', json.dumps(session))  # real field names are kept (0.3.0)
+            self.assertNotIn('never-store-this', json.dumps(session))  # values never reach the catalog
             shape = {'type': 'object', 'additionalProperties': False, 'required': ['quantity'],
                      'properties': {'quantity': {'type': 'integer'}}}
             proposed = learner.propose(session['id'], 'learned', [{'index': 0, 'operationId': 'create',
@@ -109,13 +109,15 @@ class CaptureCoverageJavascriptTests(unittest.TestCase):
         self.assertEqual(result['missingOrigins'], ['https://login.example'])
         self.assertNotIn('synthetic-private', json.dumps(result)); self.assertEqual(result['listeners'], 0)
 
-    def test_owned_worker_is_incomplete_but_unrelated_worker_is_ignored(self):
-        self.assertTrue(self.capture("p.emit('worker',{});")['incomplete'])
-        self.assertFalse(self.capture("ctx.emit('serviceworker',{url:()=> 'https://other.example/sw.js'});")['incomplete'])
-        self.assertTrue(self.capture("ctx.emit('serviceworker',{url:()=> 'https://app.example/sw.js'});")['incomplete'])
+    def test_workers_are_noted_but_do_not_make_the_capture_incomplete(self):
+        result = self.capture("p.emit('worker',{});")
+        self.assertFalse(result['incomplete']); self.assertEqual(result['workers'], 1)
+        self.assertFalse(self.capture("ctx.emit('serviceworker',{url:()=> 'https://other.example/sw.js'});")['serviceWorker'])
+        self.assertTrue(self.capture("ctx.emit('serviceworker',{url:()=> 'https://app.example/sw.js'});")['serviceWorker'])
 
-    def test_failed_owned_request_marks_capture_incomplete(self):
-        self.assertTrue(self.capture("p.emit('requestfailed',{});")['incomplete'])
+    def test_failed_requests_are_counted_not_marked_incomplete(self):
+        result = self.capture("p.emit('requestfailed',{});")
+        self.assertFalse(result['incomplete']); self.assertEqual(result['failedRequests'], 1)
 
 
 if __name__ == '__main__':

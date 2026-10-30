@@ -45,6 +45,9 @@ class LazyBrowser:
     def capture_shots(self, binding, start):
         return self.get().capture_shots(binding, start)
 
+    def capture_drain(self, binding):
+        return self.get().capture_drain(binding)
+
     def capture_shots_clear(self, binding):
         return self.get().capture_shots_clear(binding)
 
@@ -94,11 +97,11 @@ class Extensions:
         if method == 'admin':
             action = params.get('action')
             if action == 'sessions':
-                from .learner import screenshot_dir
-                return reply([{**{k: row.get(k) for k in ('id', 'createdAt', 'source', 'status')},
-                               'screenshots': len(row.get('screenshots') or []),
-                               'folder': str(screenshot_dir(self.store, row['id'])) if row.get('source') == 'shared-playwright' else None}
+                return reply([{**{k: row.get(k) for k in ('id', 'createdAt', 'source', 'status', 'folder')},
+                               'requests': len(row.get('records') or []), 'screenshots': len(row.get('screenshots') or [])}
                               for row in self.store.list('captures')], 'Capture sessions kept locally')
+            if action == 'recording':
+                return reply(self.learner.status(), 'Recording status (checked on disk)')
             if action == 'jobs':
                 return reply(self.scheduler.list(), 'Schedule status')
             if action == 'job':
@@ -311,6 +314,10 @@ class Extensions:
                 self.notify(listed['id'], 'maintenance_unavailable')
 
     def tick(self):
+        try:
+            self.learner.tick()  # write running recordings to their session folders every few seconds
+        except Exception:
+            pass
         if not self.started:
             self.scheduler.recover()
             self.started = True

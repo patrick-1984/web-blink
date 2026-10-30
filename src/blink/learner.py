@@ -19,13 +19,51 @@ METHODS = {'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'}
 HEADERS = {'accept', 'content-type', 'authorization', 'cookie', 'x-csrf-token', 'x-xsrf-token'}
 RESOURCE_TYPES = {'document', 'xhr', 'fetch', 'websocket', 'eventsource', 'other', 'ping', 'prefetch'}
 STATIC_TYPES = {'image', 'font', 'stylesheet', 'media', 'script', 'manifest', 'texttrack'}
-MAX_SHOTS, MAX_SHOT_BYTES = 200, 2 * 1024 * 1024
+MAX_SHOTS, MAX_SHOT_BYTES = 1000, 2 * 1024 * 1024
+SESSION_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,150}')
+MAX_CATALOG_RECORDS = 5000
+DYNAMIC_SEGMENT = re.compile(r'^(\d+|[0-9a-fA-F-]{8,}|[A-Za-z0-9_-]{24,}|[^/@]+@[^/]+)$')
+
+
+def _private_write(path, text, mode='w'):
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == 'a' else os.O_TRUNC), 0o600), mode) as handle:
+        handle.write(text)
+
+
+def path_template(path):
+    """The real path with id-like segments (numbers, UUIDs, long tokens, emails) as {id}."""
+    parts = [x for x in str(path or '').split('/') if x][:100]
+    return '/' + '/'.join('{id}' if DYNAMIC_SEGMENT.match(x) else x for x in parts)
+
+
+def named_types(value, depth=0):
+    """A given schema reduced to types and real field names: examples, defaults and other values are dropped."""
+    if depth > 8 or not isinstance(value, dict) or value.get('type') not in {
+            'object', 'array', 'string', 'number', 'integer', 'boolean', 'null'}:
+        return {}
+    result = {'type': value['type']}
+    if value['type'] == 'object' and isinstance(value.get('properties'), dict):
+        result['properties'] = {str(k)[:100]: named_types(v, depth + 1) for k, v in list(value['properties'].items())[:100]}
+    if value['type'] == 'array':
+        result['items'] = named_types(value.get('items'), depth + 1)
+    return result
+
+
+def named_shape(value, depth=0):
+    """Types with the real field names (no values): what a Blink proposal needs."""
+    if depth > 8:
+        return {}
+    if isinstance(value, dict):
+        return {'type': 'object', 'properties': {str(k)[:100]: named_shape(v, depth + 1) for k, v in list(value.items())[:100]}}
+    if isinstance(value, list):
+        return {'type': 'array', 'items': named_shape(value[0], depth + 1) if value else {}}
+    return schema_shape(value, depth)
 
 
 def screenshot_dir(store, session_id):
     """Private local session folder of one capture: session.json and its screenshots. Kept until the user
     explicitly cleans it up (forget_capture or purge); screenshots are not redacted."""
-    if not isinstance(session_id, str) or not re.fullmatch('[a-f0-9]{32}', session_id):
+    if not isinstance(session_id, str) or not SESSION_ID.fullmatch(session_id) or '..' in session_id:
         raise ValueError('Invalid capture session')
     return Path(store.path) / 'captures' / session_id
 
@@ -168,7 +206,8 @@ class Learner:
                    'records': records, 'missingOrigins': sorted(set(missing)),
                    'status': 'incomplete' if missing or reasons else 'review',
                    'incompleteReasons': sorted(set(reasons)),
-                   'note': 'Values and observed path segments/field names were removed. Human curation is required.'}
+                   'note': 'Catalog of the recording for proposals: real paths, path templates and field names, no values. '
+                           'The full recording (values included) is in the session folder. Human curation is required.'}
         session.update(extra or {})
         self.store.put('captures', session['id'], session)
         return session
@@ -210,69 +249,268 @@ class Learner:
             raise ValueError('Application origin is outside capture scope')
         self.browser.open(binding, url)
         started = self.browser.capture_start(binding)
-        self.running[binding] = origins
         # 'enabled' only when a real screenshot was just taken; anything else must be told to the user now.
         state = started.get('screenshots') if isinstance(started, dict) else None
-        result = {'binding': binding, 'recording': True,
-                  'screenshots': state if state in ('enabled', 'failed') else 'unsupported'}
-        if result['screenshots'] != 'enabled':
+        state = state if state in ('enabled', 'failed') else 'unsupported'
+        run = self._open_session(binding, url, origins, state)
+        self.running[binding] = run
+        result = {'binding': binding, 'recording': True, 'screenshots': state, 'session': run['session'],
+                  'folder': str(run['folder'])}
+        if state != 'enabled':
             error = started.get('screenshotError') if isinstance(started, dict) else None
             result['screenshotError'] = str(error)[:200] if error else 'The browser did not return a screenshot'
         return result
 
+    def _open_session(self, binding, url, origins, screenshots='unsupported'):
+        """The session folder exists from the first second: <blink>-<UTC start time>, with meta.json, an append-only
+        requests.jsonl, screenshots/ and index.json, all written while recording (drained every few seconds)."""
+        import getpass
+        import socket
+        from . import __version__
+        stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+        session_id, n = f'{binding}-{stamp}', 1
+        while screenshot_dir(self.store, session_id).exists() or self.store.get('captures', session_id):
+            n += 1
+            session_id = f'{binding}-{stamp}-{n}'
+        folder = screenshot_dir(self.store, session_id)
+        (folder / 'screenshots').mkdir(mode=0o700, parents=True)
+        os.chmod(folder, 0o700)
+        try:
+            user = getpass.getuser()
+        except Exception:
+            user = None
+        meta = {'id': session_id, 'blink': binding, 'startUrl': url, 'origins': list(origins),
+                'startedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                'startedBy': {'user': user, 'host': socket.gethostname()}, 'webBlink': __version__,
+                'status': 'recording', 'screenshots': screenshots,
+                'files': {'requests': 'requests.jsonl', 'screenshots': 'screenshots/', 'screenshotIndex': 'screenshots.jsonl',
+                          'index': 'index.json', 'session': 'session.json (written at stop)'},
+                'note': 'Full local recording: URLs, query values, request and response bodies (256 KB each). Cookie, '
+                        'Authorization-type headers and password/token fields are blanked. Kept until you clean it up.'}
+        _private_write(folder / 'meta.json', json.dumps(meta, indent=2))
+        _private_write(folder / 'requests.jsonl', '')
+        _private_write(folder / 'screenshots.jsonl', '')
+        run = {'session': session_id, 'folder': folder, 'origins': list(origins), 'meta': meta, 'requests': 0, 'shots': 0,
+               'startedAt': time.time(), 'lastDrain': 0.0, 'lastWrite': time.time(), 'drainErrors': 0, 'lastDrainError': None,
+               'counters': {}, 'screenshots': screenshots}
+        self.store.put('captures', session_id, {'id': session_id, 'createdAt': time.time(), 'source': 'shared-playwright',
+                                                'status': 'recording', 'records': [], 'folder': str(folder)})
+        self._write_index(run)
+        return run
+
+    def _run(self, binding):
+        run = self.running[binding]
+        if not isinstance(run, dict):  # an origin list from older callers: open the session folder now
+            run = self._open_session(binding, None, run)
+            self.running[binding] = run
+        return run
+
+    def _write_index(self, run, status='recording'):
+        counters = run.get('counters') or {}
+        index = {'id': run['session'], 'status': status, 'requests': run['requests'], 'screenshots': run['shots'],
+                 'screenshotStatus': run['screenshots'], 'lastWrite': run['lastWrite'], 'drainErrors': run['drainErrors'],
+                 'lastDrainError': run['lastDrainError'],
+                 'screenshotErrors': sum(counters.get(k, 0) for k in ('shotErrors', 'shotsDropped', 'shotsAbandoned')
+                                         if isinstance(counters.get(k), int) and not isinstance(counters.get(k), bool)),
+                 'failedRequests': counters.get('failedRequests', 0), 'popups': counters.get('missingOrigins', [])}
+        _private_write(run['folder'] / 'index.json', json.dumps(index, indent=2))
+
+    def _persist(self, run, data):
+        """Append one drained batch to the session folder."""
+        records = [r for r in (data.get('records') or []) if isinstance(r, dict)]
+        if records:
+            _private_write(run['folder'] / 'requests.jsonl',
+                           ''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in records), 'a')
+            run['requests'] += len(records)
+        lines = []
+        for shot in data.get('shots') or []:
+            try:
+                image = base64.b64decode(shot['data'], validate=True)
+                if not image.startswith(b'\xff\xd8') or len(image) > MAX_SHOT_BYTES or run['shots'] >= MAX_SHOTS:
+                    continue
+                run['shots'] += 1
+                name = f'screenshots/{run["shots"]:04d}.jpg'
+                with os.fdopen(os.open(run['folder'] / name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'wb') as handle:
+                    handle.write(image)
+                lines.append(json.dumps({'file': name, 'afterRecord': shot.get('afterRecord'), 'time': (shot.get('t') or 0) / 1000,
+                                         'reason': str(shot.get('reason', ''))[:100], 'page': shot.get('page')}) + '\n')
+            except Exception:
+                continue
+        if lines:
+            _private_write(run['folder'] / 'screenshots.jsonl', ''.join(lines), 'a')
+        if isinstance(data.get('counters'), dict):
+            run['counters'] = data['counters']
+        if records or lines:
+            run['lastWrite'] = time.time()
+        self._write_index(run)
+        return bool(data.get('more'))
+
+    def drain(self, binding, *, rounds=5):
+        run = self._run(binding)
+        fetch = getattr(self.browser, 'capture_drain', None)
+        if not callable(fetch):
+            return False
+        more = True
+        while more and rounds > 0:
+            rounds -= 1
+            more = self._persist(run, fetch(binding) or {})
+        return more
+
+    def tick(self, now=None):
+        """Called by the daemon about every second: drain each recording to disk every 3 seconds."""
+        now = time.time() if now is None else now
+        for binding in list(self.running):
+            run = self._run(binding)
+            if now - run['lastDrain'] < 3:
+                continue
+            run['lastDrain'] = now
+            try:
+                self.drain(binding)
+            except Exception as exc:
+                run['drainErrors'] += 1
+                run['lastDrainError'] = str(exc)[:200]
+                self._write_index(run)
+
+    def status(self):
+        """Deterministic recording status for the status tool: what is on disk right now, per session."""
+        now, running = time.time(), []
+        for binding in list(self.running):
+            run = self._run(binding)
+            shots_on_disk = len(list((run['folder'] / 'screenshots').glob('*.jpg')))
+            requests_on_disk = 0
+            if (run['folder'] / 'requests.jsonl').exists():
+                with (run['folder'] / 'requests.jsonl').open() as handle:
+                    requests_on_disk = sum(1 for _ in handle)
+            running.append({'blink': binding, 'session': run['session'], 'folder': str(run['folder']),
+                            'recordingFor': round(now - run['startedAt']), 'screenshots': run['screenshots'],
+                            'requestsOnDisk': requests_on_disk, 'screenshotsOnDisk': shots_on_disk,
+                            'secondsSinceLastWrite': round(now - run['lastWrite']), 'drainErrors': run['drainErrors'],
+                            'lastDrainError': run['lastDrainError'],
+                            'healthy': run['screenshots'] == 'enabled' and run['drainErrors'] == 0 and shots_on_disk > 0})
+        recent = sorted(self.store.list('captures'), key=lambda c: c.get('createdAt', 0), reverse=True)[:5]
+        return {'recording': running, 'recentSessions': [
+            {'session': c.get('id'), 'status': c.get('status'), 'folder': c.get('folder'),
+             'requests': len(c.get('records') or []), 'screenshots': len(c.get('screenshots') or [])} for c in recent]}
+
     def stop(self, binding):
         if binding not in self.running:
             raise ValueError('Capture is not running in this process')
-        data = self.browser.capture_stop(binding)
-        origins = self.running.pop(binding)
-        records, missing = [], set()
-        for value in data.get('missingOrigins', []):
+        run = self._run(binding)
+        data = self.browser.capture_stop(binding) or {}
+        if isinstance(data.get('records'), list):  # recorders that hand everything over at stop
+            self._persist(run, {'records': data['records'], 'counters': data})
+        run['counters'] = {**run.get('counters', {}), **{k: v for k, v in data.items() if k not in ('records',)}}
+        deadline = time.monotonic() + 60
+        try:
+            while callable(getattr(self.browser, 'capture_drain', None)) and time.monotonic() < deadline:
+                if not self.drain(binding, rounds=1):
+                    break
+        except Exception as exc:
+            run['drainErrors'] += 1
+            run['lastDrainError'] = str(exc)[:200]
+        legacy = []
+        if not callable(getattr(self.browser, 'capture_drain', None)):
+            legacy = self._screenshots(binding, data.get('screenshots'), run)
+        clear = getattr(self.browser, 'capture_shots_clear', None)
+        if callable(clear):
+            try:
+                clear(binding)
+            except Exception:
+                pass
+        self.running.pop(binding, None)
+        return self._close_session(run, legacy)
+
+    def _close_session(self, run, legacy_shots=()):
+        counters, records, other = run.get('counters') or {}, [], set()
+        with (run['folder'] / 'requests.jsonl').open() as handle:
+            for line in handle:
+                try:
+                    item = json.loads(line)
+                    if len(records) < MAX_CATALOG_RECORDS:
+                        record = self._catalog_record(item, run['origins'])
+                        if record:
+                            records.append(record)
+                except ValueError:
+                    continue
+        missing = set()
+        for value in counters.get('missingOrigins', []) or []:
             try:
                 missing.add(canonical_origin(value, allow_http=True))
             except Exception:
                 pass
-        for item in data.get('records', [])[:1000]:
-            if not isinstance(item, dict):
-                continue
-            try:
-                source = canonical_origin(item.get('origin'), allow_http=True)
-            except Exception:
-                continue
-            path = _template(item.get('path', ''))
-            method = item.get('method')
-            if path is None or not isinstance(method, str) or method.upper() not in METHODS:
-                continue
-            names = item.get('headerNames', [])
-            query = item.get('queryNames', [])
-            records.append({'method': method.upper(), 'origin': source, 'path': path,
-                            # Every host is recorded; inScope marks the origins the capture was started for.
-                            'inScope': source in origins,
-                            'resourceType': item.get('resourceType') if item.get('resourceType') in RESOURCE_TYPES else 'other',
-                            'status': _status(item.get('status', 0)),
-                            'headerNames': sorted({x.lower() for x in names[:100] if isinstance(x, str) and x.lower() in HEADERS}),
-                            'queryCount': min(len(query), 100) if isinstance(query, list) else 0,
-                            'requestMediaType': item.get('requestMediaType') if item.get('requestMediaType') in
-                                ('application/json', 'application/x-www-form-urlencoded') else None,
-                            'requestSchema': sanitized_shape(item.get('requestSchema'))})
-        reasons = ['capture_limit_or_incomplete'] if any(data.get(key) for key in ('overflow', 'truncated', 'incomplete')) else []
-        session_id = uuid.uuid4().hex
+        reasons = ['capture_limit_or_incomplete'] if counters.get('overflow') or counters.get('truncated') or (
+            counters.get('incomplete') and not missing) else []
+        shots = []
+        with (run['folder'] / 'screenshots.jsonl').open() as handle:
+            for line in handle:
+                try:
+                    entry = json.loads(line)
+                    shots.append(dict(entry, file=str(run['folder'] / entry['file'])))
+                except (ValueError, KeyError):
+                    continue
+        shots += list(legacy_shots)
         extra = {'otherHosts': sorted({r['origin'] for r in records if not r['inScope']}),
-                 'staticAssets': self._assets(data.get('assets')),
-                 'screenshots': self._screenshots(binding, data.get('screenshots'), session_id),
-                 'assetsTruncated': bool(data.get('assetsTruncated')),
-                 'screenshotErrors': sum(data[k] for k in ('shotErrors', 'shotsDropped', 'shotsAbandoned')
-                                         if isinstance(data.get(k), int) and not isinstance(data.get(k), bool))}
-        if data.get('lastShotError'):
-            extra['lastScreenshotError'] = str(data['lastShotError'])[:200]
+                 'staticAssets': self._assets(counters.get('assets')), 'screenshots': shots,
+                 'assetsTruncated': bool(counters.get('assetsTruncated')), 'folder': str(run['folder']),
+                 'screenshotErrors': sum(counters[k] for k in ('shotErrors', 'shotsDropped', 'shotsAbandoned')
+                                         if isinstance(counters.get(k), int) and not isinstance(counters.get(k), bool)),
+                 'failedRequests': counters.get('failedRequests', 0), 'requestsFile': str(run['folder'] / 'requests.jsonl')}
+        if counters.get('lastShotError'):
+            extra['lastScreenshotError'] = str(counters['lastShotError'])[:200]
         if getattr(self, 'unsaved_screenshots', 0):
             extra['unsavedScreenshots'] = self.unsaved_screenshots
-        session = self._save(records, 'shared-playwright', missing, reasons, session_id=session_id, extra=extra)
-        folder = screenshot_dir(self.store, session_id)
-        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with os.fdopen(os.open(folder / 'session.json', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as handle:
-            json.dump(session, handle, indent=2)
-        session['folder'] = str(folder)
+        if run['drainErrors']:
+            extra['drainErrors'], extra['lastDrainError'] = run['drainErrors'], run['lastDrainError']
+        session = self._save(records, 'shared-playwright', missing, reasons, session_id=run['session'], extra=extra)
+        _private_write(run['folder'] / 'session.json', json.dumps(session, indent=2))
+        meta = dict(run['meta'], status='stopped', stoppedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+        _private_write(run['folder'] / 'meta.json', json.dumps(meta, indent=2))
+        self._write_index(run, status=session['status'])
         return session
+
+    @staticmethod
+    def _catalog_record(item, origins):
+        """One request as a proposal can use it: real path and field names, path template, no values."""
+        try:
+            source = canonical_origin(item.get('origin'), allow_http=True)
+        except Exception:
+            return None
+        method = item.get('method')
+        if not isinstance(method, str) or method.upper() not in METHODS:
+            return None
+        url = item.get('url') or ''
+        path = item.get('path') or urlsplit(url).path or '/'
+        if not isinstance(path, str) or len(path) > 4000:
+            return None
+        path = urlsplit(path).path or '/'  # never query values in the catalog
+        if not path.startswith('/'):
+            path = '/' + path
+        headers = item.get('requestHeaders')
+        names = sorted({str(k).lower() for k in headers}) if isinstance(headers, dict) else \
+            sorted({str(k).lower() for k in item.get('headerNames', []) if isinstance(k, str)})
+        lowered = {str(k).lower(): v for k, v in headers.items()} if isinstance(headers, dict) else {}
+        content = lowered.get('content-type', '')
+        media = request_media_type(content) or (item.get('requestMediaType') if item.get('requestMediaType') in
+                                                ('application/json', 'application/x-www-form-urlencoded') else None)
+        shape = named_types(item.get('requestSchema'))
+        body = item.get('requestBody')
+        if isinstance(body, str) and body:
+            try:
+                shape = named_shape(json.loads(body))
+            except ValueError:
+                from urllib.parse import parse_qsl
+                pairs = parse_qsl(body, keep_blank_values=True)
+                if pairs:
+                    shape = {'type': 'object', 'properties': {k[:100]: {'type': 'string'} for k, _ in pairs[:100]}}
+        from urllib.parse import parse_qsl
+        query = [k for k, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)]
+        return {'seq': item.get('seq'), 'method': method.upper(), 'origin': source, 'path': path,
+                'pathTemplate': path_template(path), 'inScope': source in origins,
+                'resourceType': item.get('resourceType') if item.get('resourceType') in RESOURCE_TYPES else 'other',
+                'status': _status(item.get('status', 0)), 'headerNames': names[:100],
+                'queryNames': list(dict.fromkeys(query))[:100] or [x for x in item.get('queryNames', []) if isinstance(x, str)][:100],
+                'queryCount': len(query) or (len(item['queryNames']) if isinstance(item.get('queryNames'), list) else 0),
+                'requestMediaType': media, 'requestSchema': shape}
 
     @staticmethod
     def _assets(value):
@@ -327,7 +565,7 @@ class Learner:
             result = attempt(single, index)
             yield index, result.get('shot') if isinstance(result, dict) else None
 
-    def _screenshots(self, binding, count, session_id):
+    def _screenshots(self, binding, count, run):
         """Pull the recording's screenshots into the private session folder. Unsaved ones are counted, then the
         browser copy is cleared either way (there is no later recovery path, and it must not linger in the tab)."""
         self.unsaved_screenshots = 0
@@ -335,7 +573,7 @@ class Learner:
             return []
         if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
             return []
-        folder, saved, failed = screenshot_dir(self.store, session_id), [], 0
+        folder, saved, failed = run['folder'] / 'screenshots', [], 0
         for index, shot in self._fetch_shots(binding, min(count, MAX_SHOTS)):
             try:
                 data = base64.b64decode(shot['data'], validate=True)
@@ -398,7 +636,7 @@ class Learner:
             effect = selection.get('effect')
             if effect not in {'read', 'write', 'financial', 'destructive'}:
                 raise ValueError('Human effect classification required')
-            path = selection.get('path', record['path'])
+            path = selection.get('path', record.get('pathTemplate', record['path']))
             if not isinstance(path, str) or not path.startswith('/') or '?' in path or '#' in path:
                 raise ValueError('An operation path must be a path template')
             operation_id = selection.get('operationId')
