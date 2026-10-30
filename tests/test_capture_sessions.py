@@ -129,6 +129,43 @@ class RecorderJavascriptTests(unittest.TestCase):
         self.assertEqual(record['requestHeaders']['cookie'], '<redacted>')
 
 
+    def test_stop_waits_for_loading_bodies_and_secrets_are_blanked_before_cutting(self):
+        result = self.record('''
+          const big=JSON.stringify({password:'hunter2',access_token:'SECRET',filler:'x'.repeat(300000)});
+          const r={url:()=> 'https://app.example/login?access_token=SECRET&week=1',method:()=> 'POST',resourceType:()=> 'fetch',
+            postData:()=>big,headers:()=>({'content-type':'application/json','x-csrf-token':'SECRET'})};
+          p.emit('response',{request:()=>r,status:()=>200,headers:()=>({'content-type':'application/json'}),
+            text:async()=>{await sleep(400);return big;}});''')
+        self.assertEqual(len(result['records']), 1)  # stop waited for the slow body
+        record = result['records'][0]
+        self.assertTrue(record['requestBodyTruncated']); self.assertTrue(record['responseBodyTruncated'])
+        self.assertNotIn('hunter2', json.dumps(record)); self.assertNotIn('SECRET', json.dumps(record))
+        self.assertIn('week=1', record['url'])
+
+    def test_a_batch_stays_in_the_tab_until_it_is_acknowledged(self):
+        class Client:
+            def __init__(self): self.code = []
+            def run(self, code): self.code.append(code); return {}
+        client = Client(); bridge = BrowserBridge(client); bridge.owners['b'] = 'owned'
+        bridge.capture_start('b'); bridge.capture_drain('b', None); bridge.capture_drain('b', 1); bridge.capture_drain('b', 2)
+        script = '''
+          const {EventEmitter}=require('node:events');
+          const ctx=new EventEmitter(),p=new EventEmitter(),frame={};p.__blinkOwner='owned';
+          p.context=()=>ctx;p.url=()=> 'https://app.example/';p.evaluate=async fn=>fn();ctx.pages=()=>[p];p.mainFrame=()=>frame;
+          p.screenshot=async()=>Buffer.from([0xff,0xd8,1]);
+          const req={url:()=> 'https://app.example/a',method:()=> 'GET',resourceType:()=> 'fetch',postData:()=>null,headers:()=>({})};
+          (async()=>{const code=JSON.parse(process.argv[1]);const run=c=>eval('('+c+')')(p);
+            await run(code[0]);p.emit('response',{request:()=>req,status:()=>200,headers:()=>({})});await new Promise(r=>setTimeout(r,30));
+            const a=await run(code[1].replace('"ack":null','"ack":null'));const again=await run(code[1]);const acked=await run(code[2]);const empty=await run(code[3]);
+            console.log(JSON.stringify({a:[a.batch,a.records.length],again:[again.batch,again.records.length],acked:[acked.batch,acked.records.length],empty:[empty.batch,empty.records.length]}));
+            process.exit(0);})().catch(e=>{console.error(e);process.exit(1);});
+        '''
+        run = subprocess.run(['node', '-e', script, json.dumps(client.code)], capture_output=True, text=True, timeout=15, check=True)
+        out = json.loads(run.stdout)
+        self.assertEqual(out['a'], [1, 1]); self.assertEqual(out['again'], [1, 1])  # unacknowledged: sent again
+        self.assertEqual(out['acked'], [2, 0])
+
+
 class LocalSessionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -340,6 +377,80 @@ class LiveSessionFolderTests(unittest.TestCase):
         status = self.learner.status()['recording'][0]
         self.assertEqual(status['drainErrors'], 1); self.assertFalse(status['healthy'])
         self.assertIn('browser gone', status['lastDrainError'])
+
+
+class ResilienceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.runtime = Runtime(self.tmp.name)
+
+    def browser(self, **overrides):
+        class Browser:
+            def open(self, binding, url): pass
+            def capture_start(self, binding): return {'recording': True, 'screenshots': 'enabled'}
+            def capture_drain(self, binding, ack=None):
+                record = {'seq': 1, 'method': 'GET', 'url': 'https://app.example/a/', 'origin': 'https://app.example', 'path': '/a/',
+                          'status': 200, 'requestHeaders': {}}
+                return {'batch': 1, 'records': [record] if ack != 1 else [], 'shots': [], 'more': False}
+            def capture_stop(self, binding): return {'stopped': True}
+            def capture_shots_clear(self, binding): pass
+        browser = Browser()
+        for name, value in overrides.items():
+            setattr(browser, name, value)
+        return browser
+
+    def test_path_templates_use_distinct_names_and_keep_slashes(self):
+        from blink.learner import path_template
+        self.assertEqual(path_template('/accounts/123/items/456/'), '/accounts/{id}/items/{id2}/')
+        self.assertEqual(path_template('/api//v2/x'), '/api//v2/x')
+
+    def test_text_bodies_never_become_field_names(self):
+        record = Learner._catalog_record({'method': 'POST', 'origin': 'https://app.example', 'path': '/n',
+                                          'requestHeaders': {'content-type': 'text/plain'}, 'requestBody': 'my=private note'}, ['https://app.example'])
+        self.assertEqual(record['requestSchema'], {})
+
+    def test_tab_lost_at_stop_keeps_what_was_saved(self):
+        def gone(binding): raise RuntimeError('Target closed')
+        learner = Learner(self.runtime, self.browser(capture_stop=gone))
+        learner.start('b', 'https://app.example/', ['https://app.example'])
+        learner.tick(now=10 ** 10)
+        session = learner.stop('b')
+        self.assertEqual(session['requests'], 1)
+        self.assertIn('Target closed', session['interrupted'])
+
+    def test_a_restarted_daemon_finalizes_the_saved_recording(self):
+        learner = Learner(self.runtime, self.browser())
+        learner.start('b', 'https://app.example/', ['https://app.example'])
+        learner.tick(now=10 ** 10); learner.close()
+        fresh = Learner(self.runtime, self.browser())  # a new daemon: nothing running in memory
+        fresh.recover_once()
+        rows = [r for r in self.runtime.store.list('captures') if r['id'].startswith('b-')]
+        self.assertEqual(rows[0]['status'], 'incomplete')
+        self.assertEqual(len(rows[0]['records']), 1)
+        self.assertIn('daemon restarted', rows[0]['interrupted'])
+
+    def test_a_failed_start_leaves_nothing_running(self):
+        def broken(binding): raise RuntimeError('no browser')
+        learner = Learner(self.runtime, self.browser(capture_start=broken))
+        with self.assertRaises(RuntimeError):
+            learner.start('b', 'https://app.example/', ['https://app.example'])
+        self.assertEqual(learner.running, {})
+        self.assertEqual([r['status'] for r in self.runtime.store.list('captures')], ['start_failed'])
+
+    def test_status_names_the_problem_when_the_recorder_died(self):
+        learner = Learner(self.runtime, self.browser())
+        learner.start('b', 'https://app.example/', ['https://app.example'])
+        learner.running['b']['recorderAlive'] = False
+        status = learner.status()['recording'][0]
+        self.assertFalse(status['healthy'])
+        self.assertTrue(any('no longer running' in p for p in status['problems']))
+        learner.close()
+
+    def test_long_sessions_return_a_bounded_summary(self):
+        session = {'id': 'x', 'records': [{'path': '/a'}] * 5000, 'screenshots': []}
+        view = Learner.summary(session)
+        self.assertEqual((view['requests'], view['recordsShown']), (5000, 50))
+        self.assertIn('more', view)
 
 
 if __name__ == '__main__':
