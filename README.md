@@ -1,5 +1,25 @@
 # Web Blink
 
+It takes just a blink to control the web. Web Blink learns how web services and web apps work, then hands
+them to you as reviewed, ready-to-run actions, so you can automate your work from Claude Code or the command
+line (`web-blink`, or just `blink`).
+
+## Install in Claude Code
+
+From the [patrick-1984 plugin marketplace](https://github.com/patrick-1984/marketplace):
+
+```text
+/plugin marketplace add patrick-1984/marketplace
+/plugin install web-blink@patrick-1984
+```
+
+Approvals happen inside Claude Code: when Claude needs your go-ahead (start recording a site, run a
+prepared write, bind an account, grant operations), it shows an **Approve / Decline** dialog with the exact
+action. Only your click approves it; Claude cannot answer the dialog. Account secrets are never entered
+through Claude.
+
+## What it is
+
 Web Blink is a Claude plugin and scriptable CLI for reviewed, declarative integrations with web
 services. Blinks live under `blinks/`; runtime credentials, grants and journals remain in private per-user
 state. Global and per-Blink CLI preferences use a separate persistent configuration directory.

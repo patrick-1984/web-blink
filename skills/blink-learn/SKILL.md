@@ -9,5 +9,11 @@ Playwright MCP; never start an isolated browser or touch another session's tabs.
 
 Capture output must be redacted before persistence or tool return. Keep inferred mutations untested and
 quarantined. Review endpoint, parameter, origin and effect proposals with the human before replay or
-installation. Approval, grants and persistent credential custody are separate host CLI operations and
-cannot be authorized by a model-relayed answer. Use doctor/status to report unavailable learner modes.
+installation. To start or stop a capture (`learn_start` with `binding`, `url` and exact `origins`;
+`learn_stop` with `binding`), stage a proposal, approve it, bind an account or grant operations,
+call `blink_request_approval` with the exact method and parameters; Claude Code shows the human an
+Approve/Decline dialog and the action runs only if they approve it. Never ask the human to type shell commands
+or write input files for this, unless the tool returns `approval_unavailable` (then give them its `command`).
+A model-relayed answer is never an approval. Credential entry (`custody_authorize`) stays a CLI step the
+human runs themselves; never ask for or handle account secrets. Use doctor/status to report unavailable
+learner modes.

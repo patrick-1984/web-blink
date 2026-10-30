@@ -21,8 +21,13 @@ configured `BLINK_PYTHON` executable, or uv with the pinned JSON Schema dependen
 Unix-socket client. `BLINK_DISABLE_UV=1` selects the plain Python fallback. A custom `BLINK_PYTHON` must be
 one executable path; it is not parsed as a shell command.
 
-Human approval, grants, bindings and custody operations run through the local CLI and its explicit
-confirmation. They are never public daemon methods and are not actions of the MCP admin tool. Supplying
+Human approval, grants, bindings and custody operations run either through the local CLI and its
+explicit confirmation, or through the in-app approval dialog (`blink_request_approval`, MCP elicitation):
+the MCP server builds the dialog from the exact parameters, Claude Code shows it to the human, and the
+server applies the action through the same one-time native permit only when the human answers Approve.
+The model proposes but never answers the dialog. An `Elicitation` hook you configure yourself could
+auto-answer it, which is the same owner choice as passing `--yes`. Credential entry stays CLI-only.
+The human-only methods are never public daemon methods and are not actions of the MCP admin tool. Supplying
 `human:true` in a public request cannot upgrade its authority. Runtime policy and journal checks apply
 again at execution; the SessionStart hook is advisory only.
 
@@ -36,8 +41,8 @@ are rejected. Both sockets are mode 0600 inside the checked mode-0700 state dire
 
 This follows the existing same-user host boundary: code permitted to run as the owner can access owner
 state. The permit proves that the native CLI path issued an exact-command authorization; it does not
-claim to distinguish a person from arbitrary same-user code. MCP exposes neither permit issuance nor
-the native control helper. Existing host command permissions and explicit CLI confirmation remain
+claim to distinguish a person from arbitrary same-user code. MCP exposes permit issuance only behind
+the human's accepted approval dialog. Existing host command permissions and explicit confirmation (CLI or dialog) remain
 necessary. Losing a native command response produces an unknown-control outcome, not an automatic retry.
 
 ## Supported host scope
