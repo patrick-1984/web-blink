@@ -557,9 +557,11 @@ class DistributionRuntimeTests(unittest.TestCase):
             self.assertEqual(result['distributionSchemas'], 4)
             self.assertEqual(result['executionSchemas'], 2)
             self.assertEqual(result['configurationSchemas'], 1)
-            self.assertEqual(result['schemas'], 7)
+            self.assertEqual(result['privateSchemas'], 1)
+            self.assertEqual(result['schemas'], 8)
             self.assertEqual((ROOT / 'schemas/index.json').read_bytes(), (destination / 'index.json').read_bytes())
-            for entry in index['schemas'] + index['executionProfile']['schemas'] + index['configProfile']['schemas']:
+            for entry in (index['schemas'] + index['executionProfile']['schemas'] + index['configProfile']['schemas']
+                          + index['privateProfile']['schemas']):
                 self.assertEqual(digest((destination / entry['path']).read_bytes()), entry['sha256'])
             with self.assertRaises(ValueError):
                 export_schemas(ROOT, destination)

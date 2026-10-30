@@ -27,6 +27,9 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 PATH_RE = re.compile(r'^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\.json$')
+SEMVER_RE = re.compile(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)')
+DATE_RE = re.compile(r'[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])')
+EDITIONS = {}  # schema name -> (version, released) the schema declares about itself
 
 
 def unique_pairs(pairs):
@@ -100,7 +103,30 @@ def semantics(name, document):
                 raise ValueError(f'installed Web Link names an unknown source: {item["sourceId"]}')
 
 
+def edition(schema):
+    meta = schema.get('x-blink-schema')
+    if (not isinstance(meta, dict) or not SEMVER_RE.fullmatch(str(meta.get('version')))
+            or not DATE_RE.fullmatch(str(meta.get('released')))):
+        raise ValueError(f'schema {schema.get("$id")} lacks x-blink-schema version/release date')
+    return meta['version'], meta['released']
+
+
+def compatible(name, document):
+    """Newer readers accept older and higher-MINOR documents; a different MAJOR is refused clearly."""
+    reader = EDITIONS[name][0]
+    major = int(reader.split('.')[0])
+    declared = document.get('x-blink-schema')
+    if declared is not None:
+        version = declared.get('version') if isinstance(declared, dict) else None
+        if not isinstance(version, str) or not SEMVER_RE.fullmatch(version):
+            raise ValueError(f'{name} document has an invalid x-blink-schema.version')
+        if int(version.split('.')[0]) != major:
+            raise ValueError(f'{name} document declares schema {version}; this reader supports MAJOR {major} '
+                             f'(up to {reader}); a new MAJOR edition is a breaking change')
+
+
 def validate(validators, name, document):
+    compatible(name, document)
     validators[name].validate(document)
     semantics(name, document)
 
@@ -123,10 +149,21 @@ def validate_shipped():
         Draft202012Validator.check_schema(schema)
         if schema['$id'] != entry['id']:
             raise ValueError('schema index ID disagrees with schema')
+        if (entry.get('version'), entry.get('released')) != edition(schema):
+            raise ValueError(f'schema index edition disagrees with {entry["path"]}')
+        EDITIONS[path.name.removesuffix('.schema.json')] = edition(schema)
         validators[path.name.removesuffix('.schema.json')] = Draft202012Validator(schema)
     expected = {'sources', 'catalog', 'weblink', 'source-lock'}
     if set(validators) != expected:
         raise ValueError('schema index must publish all four distribution schemas')
+    for section in ('executionProfile', 'configProfile', 'privateProfile'):
+        for entry in index.get(section, {}).get('schemas', []):
+            path = safe_file(ROOT / 'schemas', entry['path'])
+            check_hash(path, entry['sha256'])
+            schema = load(path)
+            Draft202012Validator.check_schema(schema)
+            if schema['$id'] != entry['id'] or (entry.get('version'), entry.get('released')) != edition(schema):
+                raise ValueError(f'schema index entry disagrees with {entry["path"]}')
 
     repository = ROOT
     config = load(ROOT / 'examples/sources.json')
@@ -185,6 +222,14 @@ def self_test(validators, documents):
         raise AssertionError(f'negative {name} example unexpectedly passed')
 
     for name in validators:
+        reject(name, lambda d: d.update({'x-blink-schema': {'version': '2.0.0'}}))
+        reject(name, lambda d: d.update({'x-blink-schema': {'version': '1.0'}}))
+        reject(name, lambda d: d.update({'x-blink-unknown': True}))
+        # Growth: a higher MINOR edition and vendor extension keys are still read.
+        grown = copy.deepcopy(documents[name])
+        grown.update({'x-blink-schema': {'version': '1.99.0', 'released': '2030-01-01'}, 'x-vendor-note': {'any': 1},
+                      'x-blink-ext': {'future': True}})
+        validate(validators, name, grown)
         reject(name, lambda d: d.update(schemaVersion=2))
         reject(name, lambda d: d.update({'$schema': d['$schema'].removesuffix(':1') + ':2'}))
     for relative in ('../openapi.json', '/tmp/openapi.json', 'x/../openapi.json',
@@ -277,7 +322,7 @@ def main():
     except Exception as exc:
         print(f'FAILED: {exc}', file=sys.stderr)
         return 1
-    print(f'OK: 4 schemas, 4 distribution document types, raw-byte example hashes; '
+    print(f'OK: 4 distribution schemas (+ execution, config and private Blink editions), 4 distribution document types, raw-byte example hashes; '
           f'{negatives} negative cases rejected. Git provenance and full execution-profile validation not run.')
     return 0
 

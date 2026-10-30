@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:web-blink:schema:settings:1",
   "title": "Web Blink persistent CLI settings v1",
+  "x-blink-schema": {
+    "version": "1.0.0",
+    "released": "2026-10-30"
+  },
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -2,10 +2,29 @@
 
 The runtime compiles `schemas/execution-v1/openapi.schema.json`; it does not execute arbitrary OpenAPI.
 The format is OpenAPI 3.1.0 with the reviewed `x-blink-service` recipe and explicit operation effect.
-Unknown fields, references, custom regex/format assertions, external schemas and unsupported media types
+Unknown fields (other than the extension keys described below), references, custom regex/format assertions, external schemas and unsupported media types
 reject before registry activation. Nested JSON Schema type/enum/required/bounds/composition constraints
 are validated with the pinned Draft 2020-12 implementation. Requests support JSON or explicitly declared
 closed flat `application/x-www-form-urlencoded` bodies; responses remain JSON.
+
+## Editions, versions, notes and extensions
+
+The profile schema states its edition (`x-blink-schema`, currently 1.1.0, released 2026-10-30). A manifest may
+declare the edition it was written for with `"x-blink-schema": {"version": "1.x.y"}`: a higher MINOR is
+accepted, another MAJOR is refused (`unsupported_schema_version`). See `schemas/README.md` for the rule.
+
+- **Blink version and history:** `x-blink-service.version` (MAJOR.MINOR.PATCH) and
+  `x-blink-service.history: [{version, date: "YYYY-MM-DD", note}]`, strictly increasing and ending at
+  `version`. History is append-only: staging a manifest whose history rewrites the active one's is refused.
+  `learn_propose` writes 0.1.0 with today's date, and bumps the minor version for a re-learned Blink.
+- **Field notes:** `x-blink-notes` (at most 2000 characters) on operations, parameters and inline schema
+  properties, e.g. "keep this usually empty because PTO is booked elsewhere". They are compiled into the
+  operation (`notes`, `fieldNotes` keyed by parameter name or `body.<field>`) and shown by `describe`.
+- **Extensions:** `x-` keys (not the reserved `x-blink-` namespace) and an `x-blink-ext` object are accepted
+  and ignored on the document, `info`, `x-blink-service`, operations and parameters. Auth, origins,
+  effects, exec, request bodies and responses stay closed.
+- **Private data:** `describe` also returns the user's own private Blink for that operation (`private`:
+  identity hints, defaults, preferences, applicable process notes; never secrets). It is not manifest content.
 
 ## Supported operations
 

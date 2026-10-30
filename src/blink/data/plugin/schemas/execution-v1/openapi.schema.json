@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:web-blink:schema:execution:1",
   "title": "Web Blink execution profile v1",
+  "x-blink-schema": {
+    "version": "1.1.0",
+    "released": "2026-10-30"
+  },
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -32,12 +36,20 @@
         "description": {
           "type": "string",
           "maxLength": 2000
+        },
+        "x-blink-ext": {
+          "type": "object",
+          "maxProperties": 100,
+          "description": "Reserved extension object for additive data; readers ignore what they do not understand."
         }
       },
       "required": [
         "title",
         "version"
-      ]
+      ],
+      "patternProperties": {
+        "^x-(?!blink-)": {}
+      }
     },
     "servers": {
       "type": "array",
@@ -389,6 +401,43 @@
               "maxLength": 1000
             }
           }
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "history": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "date"
+            ],
+            "properties": {
+              "version": {
+                "type": "string",
+                "maxLength": 60,
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+              },
+              "date": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?![\\s\\S])"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 500
+              }
+            }
+          }
+        },
+        "x-blink-ext": {
+          "type": "object",
+          "maxProperties": 100,
+          "description": "Reserved extension object for additive data; readers ignore what they do not understand."
         }
       },
       "required": [
@@ -396,7 +445,10 @@
         "requestedOrigins",
         "auth",
         "exec"
-      ]
+      ],
+      "patternProperties": {
+        "^x-(?!blink-)": {}
+      }
     },
     "paths": {
       "type": "object",
@@ -467,13 +519,26 @@
                           "object",
                           "boolean"
                         ]
+                      },
+                      "x-blink-ext": {
+                        "type": "object",
+                        "maxProperties": 100,
+                        "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                      },
+                      "x-blink-notes": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                       }
                     },
                     "required": [
                       "name",
                       "in",
                       "schema"
-                    ]
+                    ],
+                    "patternProperties": {
+                      "^x-(?!blink-)": {}
+                    }
                   }
                 },
                 "requestBody": {
@@ -713,13 +778,26 @@
                       }
                     }
                   }
+                },
+                "x-blink-ext": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                },
+                "x-blink-notes": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                 }
               },
               "required": [
                 "operationId",
                 "x-blink-effect",
                 "responses"
-              ]
+              ],
+              "patternProperties": {
+                "^x-(?!blink-)": {}
+              }
             },
             "post": {
               "type": "object",
@@ -781,13 +859,26 @@
                           "object",
                           "boolean"
                         ]
+                      },
+                      "x-blink-ext": {
+                        "type": "object",
+                        "maxProperties": 100,
+                        "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                      },
+                      "x-blink-notes": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                       }
                     },
                     "required": [
                       "name",
                       "in",
                       "schema"
-                    ]
+                    ],
+                    "patternProperties": {
+                      "^x-(?!blink-)": {}
+                    }
                   }
                 },
                 "requestBody": {
@@ -1027,13 +1118,26 @@
                       }
                     }
                   }
+                },
+                "x-blink-ext": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                },
+                "x-blink-notes": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                 }
               },
               "required": [
                 "operationId",
                 "x-blink-effect",
                 "responses"
-              ]
+              ],
+              "patternProperties": {
+                "^x-(?!blink-)": {}
+              }
             },
             "put": {
               "type": "object",
@@ -1095,13 +1199,26 @@
                           "object",
                           "boolean"
                         ]
+                      },
+                      "x-blink-ext": {
+                        "type": "object",
+                        "maxProperties": 100,
+                        "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                      },
+                      "x-blink-notes": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                       }
                     },
                     "required": [
                       "name",
                       "in",
                       "schema"
-                    ]
+                    ],
+                    "patternProperties": {
+                      "^x-(?!blink-)": {}
+                    }
                   }
                 },
                 "requestBody": {
@@ -1341,13 +1458,26 @@
                       }
                     }
                   }
+                },
+                "x-blink-ext": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                },
+                "x-blink-notes": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                 }
               },
               "required": [
                 "operationId",
                 "x-blink-effect",
                 "responses"
-              ]
+              ],
+              "patternProperties": {
+                "^x-(?!blink-)": {}
+              }
             },
             "patch": {
               "type": "object",
@@ -1409,13 +1539,26 @@
                           "object",
                           "boolean"
                         ]
+                      },
+                      "x-blink-ext": {
+                        "type": "object",
+                        "maxProperties": 100,
+                        "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                      },
+                      "x-blink-notes": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                       }
                     },
                     "required": [
                       "name",
                       "in",
                       "schema"
-                    ]
+                    ],
+                    "patternProperties": {
+                      "^x-(?!blink-)": {}
+                    }
                   }
                 },
                 "requestBody": {
@@ -1655,13 +1798,26 @@
                       }
                     }
                   }
+                },
+                "x-blink-ext": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                },
+                "x-blink-notes": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                 }
               },
               "required": [
                 "operationId",
                 "x-blink-effect",
                 "responses"
-              ]
+              ],
+              "patternProperties": {
+                "^x-(?!blink-)": {}
+              }
             },
             "delete": {
               "type": "object",
@@ -1723,13 +1879,26 @@
                           "object",
                           "boolean"
                         ]
+                      },
+                      "x-blink-ext": {
+                        "type": "object",
+                        "maxProperties": 100,
+                        "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                      },
+                      "x-blink-notes": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                       }
                     },
                     "required": [
                       "name",
                       "in",
                       "schema"
-                    ]
+                    ],
+                    "patternProperties": {
+                      "^x-(?!blink-)": {}
+                    }
                   }
                 },
                 "requestBody": {
@@ -1969,13 +2138,26 @@
                       }
                     }
                   }
+                },
+                "x-blink-ext": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                },
+                "x-blink-notes": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                 }
               },
               "required": [
                 "operationId",
                 "x-blink-effect",
                 "responses"
-              ]
+              ],
+              "patternProperties": {
+                "^x-(?!blink-)": {}
+              }
             },
             "head": {
               "type": "object",
@@ -2037,13 +2219,26 @@
                           "object",
                           "boolean"
                         ]
+                      },
+                      "x-blink-ext": {
+                        "type": "object",
+                        "maxProperties": 100,
+                        "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                      },
+                      "x-blink-notes": {
+                        "type": "string",
+                        "maxLength": 2000,
+                        "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                       }
                     },
                     "required": [
                       "name",
                       "in",
                       "schema"
-                    ]
+                    ],
+                    "patternProperties": {
+                      "^x-(?!blink-)": {}
+                    }
                   }
                 },
                 "requestBody": {
@@ -2283,19 +2478,58 @@
                       }
                     }
                   }
+                },
+                "x-blink-ext": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+                },
+                "x-blink-notes": {
+                  "type": "string",
+                  "maxLength": 2000,
+                  "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
                 }
               },
               "required": [
                 "operationId",
                 "x-blink-effect",
                 "responses"
-              ]
+              ],
+              "patternProperties": {
+                "^x-(?!blink-)": {}
+              }
             }
           },
           "required": []
         }
       },
       "additionalProperties": false
+    },
+    "x-blink-schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "released": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?![\\s\\S])"
+        }
+      }
+    },
+    "x-blink-ext": {
+      "type": "object",
+      "maxProperties": 100,
+      "description": "Reserved extension object for additive data; readers ignore what they do not understand."
     }
+  },
+  "patternProperties": {
+    "^x-(?!blink-)": {}
   }
 }

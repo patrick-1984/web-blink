@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:web-blink:schema:private-blink:1",
+  "title": "Web Blink private Blink v1: one user's own data for one Blink, never shared",
+  "x-blink-schema": {
+    "version": "1.0.0",
+    "released": "2026-10-30"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "blink"
+  ],
+  "patternProperties": {
+    "^x-(?!blink-)": {}
+  },
+  "properties": {
+    "$schema": {
+      "const": "urn:web-blink:schema:private-blink:1"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "x-blink-schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "released": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?![\\s\\S])"
+        }
+      }
+    },
+    "x-blink-ext": {
+      "type": "object",
+      "maxProperties": 100
+    },
+    "blink": {
+      "description": "The Blink (integration) ID this private data belongs to, without the source prefix.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?![\\s\\S])"
+    },
+    "updatedAt": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "identity": {
+      "description": "Who the user is on this service: login name and hints, never a password.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x-(?!blink-)": {}
+      },
+      "properties": {
+        "loginName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "defaults": {
+      "description": "Field defaults per operation: operationId -> field (parameter name or body.path) -> value.",
+      "type": "object",
+      "maxProperties": 1000,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_]{0,99}(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "maxProperties": 200,
+        "propertyNames": {
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "preferences": {
+      "description": "Free preferences: key -> value (e.g. leavePtoEmpty: true).",
+      "type": "object",
+      "maxProperties": 500,
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 100,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*(?![\\s\\S])"
+      }
+    },
+    "processNotes": {
+      "description": "How this user does things with the Blink, e.g. how to fill a week.",
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "note"
+        ],
+        "patternProperties": {
+          "^x-(?!blink-)": {}
+        },
+        "properties": {
+          "topic": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "appliesTo": {
+            "description": "Operation IDs the note applies to; empty or absent means every operation.",
+            "type": "array",
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,99}(?![\\s\\S])"
+            }
+          }
+        }
+      }
+    },
+    "secrets": {
+      "description": "Optional private values (name -> value). Stored only in the separate <blink>.secrets.json file and never returned by public reads.",
+      "type": "object",
+      "maxProperties": 50,
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 100,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 4096
+      }
+    }
+  }
+}

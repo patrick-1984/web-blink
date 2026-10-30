@@ -25,11 +25,13 @@ METHODS = frozenset({
     'trust_pin', 'trust_unpin', 'health_enable', 'health_disable', 'health_clear',
     'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover', 'custody_forget',
     'forget_service', 'purge_state', 'restart_daemon', 'activate_blink', 'approve_intents',
+    'private_set', 'private_secret_set',
 })
 # Local, reversible actions with no effect on any web service: they run as soon as the user asks for
 # them (no dialog). Recording stays limited to the exact origins given; proposals stay quarantined.
+# private_set only changes the user's own local private Blink (preferences, defaults, notes; never secrets).
 IMMEDIATE = frozenset({'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
-                       'browser_open', 'browser_close', 'workflow_validate'})
+                       'browser_open', 'browser_close', 'workflow_validate', 'private_set'})
 TITLES = {
     'approve_intent': 'Run a prepared write', 'approve_manifest': 'Approve a reviewed integration',
     'set_trust': 'Set integration trust', 'bind': 'Bind an account', 'grant': 'Grant operations to an account',
@@ -40,6 +42,8 @@ TITLES = {
     'restart_daemon': 'Restart the outdated Web Blink daemon (a recording in progress would be lost)',
     'activate_blink': 'Switch on a Blink: approve it, connect your account and allow its operations',
     'approve_intents': 'Run these prepared writes',
+    'private_set': 'Save your own private preferences for a Blink',
+    'private_secret_set': 'Store a private secret for a Blink on this computer',
 }
 
 
@@ -106,8 +110,12 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
         context = review.get('data')
     # Parameters are shown exactly as given: the dialog never carries credentials (custody_authorize is
     # CLI-only), and redacting would let a model hide an action's real target under a secret-like key.
+    shown = params
+    if method == 'private_secret_set' and isinstance(params.get('value'), str):
+        # The dialog names the secret, never its value; the digest still binds the exact value.
+        shown = dict(params, value=f"[hidden: {len(params['value'])} characters]")
     data = {'method': method, 'title': TITLES.get(method, method.replace('_', ' ').capitalize()),
-            'parameters': params, 'exactParametersSha256': digest(params)}
+            'parameters': shown, 'exactParametersSha256': digest(params)}
     if method == 'activate_blink':
         # One dialog instead of three: the exact approve_manifest, bind and grant parameters, each shown below.
         if set(params) - {'manifest', 'bind', 'grant'} or not isinstance(params.get('manifest'), dict):
@@ -136,7 +144,7 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
     data['immediate'] = method in IMMEDIATE
     # The dialog text is built here from the exact JSON, so no number is rounded on the way to the human.
     lines = [f"Web Blink asks for your approval: {data['title']}", '', f'Action: {method}', 'Exact parameters:',
-             json.dumps(params, indent=2, ensure_ascii=False)]
+             json.dumps(shown, indent=2, ensure_ascii=False)]
     if context is not None:
         lines += ['', 'What it will do (from the local runtime):', json.dumps(context, indent=2, ensure_ascii=False)]
     lines += ['', f"Parameters SHA-256: {data['exactParametersSha256']}"]
