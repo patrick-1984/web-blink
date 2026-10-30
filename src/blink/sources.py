@@ -337,7 +337,7 @@ class SourceManager:
                         compile_workflow(document)
                         workflow_document = document
                 from .profile import compile_manifest
-                compiled_manifest = compile_manifest(manifest)
+                compiled_manifest = compile_manifest(manifest, require_variables=False)  # each user's values come at install
                 if workflow_document is not None:
                     if workflow_document['sourceDescriptions'][0]['url'] != openapi_path:
                         raise ValueError('Workflow source must be the declared OpenAPI artifact')
