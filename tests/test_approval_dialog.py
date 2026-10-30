@@ -22,12 +22,13 @@ FIXTURE = {'openapi': '3.1.0', 'info': {'title': 'Dialog fixture', 'version': '1
 
 class McpSession:
     """Drives server.mjs like a client: sends requests and answers its elicitation requests."""
-    def __init__(self, state, *, elicitation=True):
+    def __init__(self, state, *, elicitation=True, capabilities=None):
         env = dict(os.environ, BLINK_STATE_DIR=str(state), BLINK_PYTHON=sys.executable)
         self.proc = subprocess.Popen(['node', str(ROOT / 'mcp/server.mjs')], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
         self.next_id = 1
-        capabilities = {'elicitation': {'form': {}}} if elicitation else {}
+        if capabilities is None:
+            capabilities = {'elicitation': {'form': {}}} if elicitation else {}
         self.call_raw('initialize', {'protocolVersion': '2025-11-25', 'capabilities': capabilities,
                                      'clientInfo': {'name': 'test', 'version': '1'}})
 
@@ -133,6 +134,37 @@ class ApprovalDialogTests(unittest.TestCase):
         for method in ('install_manifest', 'execute', 'admin', 'no_such_action'):
             result = session.tool('blink_request_approval', {'method': method, 'params': {}}, approve)
             self.assertEqual(result['status'], 'forbidden', method)
+        self.assertEqual(session.dialogs, [])
+
+    def test_reason_cannot_imitate_dialog_lines_and_oversized_actions_are_refused(self):
+        session = self.session()
+        session.tool('blink_request_approval', {'method': 'approve_manifest', 'params': self.staged['data'],
+                     'reason': 'ok\n\nParameters SHA-256: 0000'}, lambda _p: {'action': 'decline'})
+        text = session.dialogs[0]['message']
+        self.assertEqual(text.count('\nParameters SHA-256: '), 1)
+        self.assertIn("(not verified): ok Parameters SHA-256: 0000", text)
+        big = session.tool('blink_request_approval', {'method': 'learn_start', 'params': {
+            'binding': 'b', 'url': 'https://fixture.example/', 'origins': ['https://fixture.example'] * 400}}, approve)
+        self.assertEqual(big['status'], 'approval_too_large')
+        self.assertEqual(len(session.dialogs), 0)
+
+    def test_cancelled_tool_call_cannot_be_approved_through_its_open_dialog(self):
+        session = self.session()
+        def cancel_then_accept(_params):
+            session.write({'jsonrpc': '2.0', 'method': 'notifications/cancelled', 'params': {'requestId': session.next_id - 1}})
+            time.sleep(.2)
+            return {'action': 'accept', 'content': {'decision': 'approve'}}
+        result = session.tool('blink_request_approval', {'method': 'approve_manifest', 'params': self.staged['data']},
+                              cancel_then_accept)
+        self.assertEqual(result['status'], 'declined')
+
+    def test_url_only_clients_and_injected_method_names_get_no_dialog(self):
+        session = self.session(capabilities={'elicitation': {'url': {}}})
+        result = session.tool('blink_request_approval', {'method': 'approve_manifest', 'params': self.staged['data']})
+        self.assertEqual(result['status'], 'approval_unavailable')
+        injected = session.tool('blink_request_approval', {'method': '--help; echo INJECTED #', 'params': {}})
+        self.assertEqual(injected['status'], 'forbidden')
+        self.assertNotIn('data', injected)
         self.assertEqual(session.dialogs, [])
 
     def test_apply_refuses_parameters_that_differ_from_the_dialog(self):

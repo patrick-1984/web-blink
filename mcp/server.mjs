@@ -28,8 +28,8 @@ const tools = definitions.map(([name,description,properties,required,method,read
 }));
 const methods = new Map(definitions.map(d => [d[0], d[4]]));
 let initialized = false, canElicit = false, nextRequest = 0;
-const awaiting = new Map();
-const APPROVAL_WAIT = 600000;
+const awaiting = new Map(), dialogs = new Map(); // dialog id -> resolver; tool call id -> dialog id
+const APPROVAL_WAIT = 600000, DIALOG_LIMIT = 6000;
 
 function binaryAvailable(command) {
  const result=spawnSync(command,['--version'],{stdio:'ignore',cwd:root,timeout:2000,windowsHide:true});
@@ -87,11 +87,12 @@ function backend(method,params,module=['blink.client'],timeout=45000) {
   child.stdin.end(JSON.stringify({method,params})+'\n');
  });
 }
-function elicit(message,requestedSchema){
+function elicit(message,requestedSchema,callId){
  return new Promise(resolve=>{
   const id=`blink-approval-${++nextRequest}`;
-  const timer=setTimeout(()=>{awaiting.delete(id);resolve({action:'cancel'});},APPROVAL_WAIT);
-  awaiting.set(id,reply=>{clearTimeout(timer);resolve(reply);});
+  const timer=setTimeout(()=>{awaiting.delete(id);dialogs.delete(callId);resolve({action:'cancel'});},APPROVAL_WAIT);
+  dialogs.set(callId,id);
+  awaiting.set(id,reply=>{clearTimeout(timer);dialogs.delete(callId);resolve(reply);});
   send({jsonrpc:'2.0',id,method:'elicitation/create',params:{message,requestedSchema}});
  });
 }
@@ -99,17 +100,21 @@ function approvalText(d,reason){
  const lines=[`Web Blink asks for your approval: ${d.title}`,'',`Action: ${d.method}`,'Exact parameters:',JSON.stringify(d.parameters,null,2)];
  if(d.context!==undefined)lines.push('','What it will do (from the local runtime):',JSON.stringify(d.context,null,2));
  lines.push('',`Parameters SHA-256: ${d.exactParametersSha256}`);
- if(reason)lines.push('',`Claude's stated reason (not verified): ${reason}`);
+ // One line, bounded: a model-written reason must not imitate the dialog's own lines.
+ if(reason)lines.push('',`Claude's stated reason (not verified): ${reason.replace(/\s+/g,' ').slice(0,300)}`);
  lines.push('','Only approve if this is what you want. Claude cannot approve this for you.');
  return lines.join('\n');
 }
-async function approval(args){
+async function approval(args,callId){
+ if(!/^[a-z][a-z0-9_]{0,99}$/.test(args.method))return {status:'forbidden',summary:'This action cannot be approved in the dialog',warnings:[]};
  const request={method:args.method,params:args.params};
  const fallback={method:args.method,command:`blink human ${args.method} --input <file with the parameters JSON>`};
  if(!canElicit)return {status:'approval_unavailable',summary:'This client cannot show an approval dialog; the human must run the CLI command',data:fallback,warnings:[]};
  const described=await backend('describe',request,['blink.approval','describe']);
  if(described.status!=='ok')return described;
- const answer=await elicit(approvalText(described.data,args.reason),{type:'object',properties:{decision:{type:'string',title:'Decision',enum:['approve','decline'],enumNames:['Approve','Decline']}},required:['decision']});
+ const text=approvalText(described.data,args.reason);
+ if(text.length>DIALOG_LIMIT)return {status:'approval_too_large',summary:'This action is too large to review in a dialog; the human must use the CLI command',data:fallback,warnings:[]};
+ const answer=await elicit(text,{type:'object',properties:{decision:{type:'string',title:'Decision',enum:['approve','decline'],enumNames:['Approve','Decline']}},required:['decision']},callId);
  if(answer?.action!=='accept'||answer?.content?.decision!=='approve')
   return {status:'declined',summary:'The human did not approve this action; nothing was changed',data:{method:args.method},warnings:[]};
  return backend('apply',{...request,digest:described.data.exactParametersSha256},['blink.approval','apply'],APPROVAL_WAIT);
@@ -140,7 +145,8 @@ async function handle(message){
   const p=message.params;
   if(!p||typeof p!=='object'||typeof p.protocolVersion!=='string'||!p.capabilities||typeof p.capabilities!=='object'||Array.isArray(p.capabilities)||!p.clientInfo||typeof p.clientInfo!=='object'||typeof p.clientInfo.name!=='string'||typeof p.clientInfo.version!=='string')return rpcError(id,-32602,'Invalid initialize parameters');
   initialized=true;
-  canElicit=!!p.capabilities.elicitation&&typeof p.capabilities.elicitation==='object'&&!Array.isArray(p.capabilities.elicitation);
+  const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
+  canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
   return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.2.2'},instructions:'Human grants, custody and intent approvals are never issued by the model. To get one, call blink_request_approval: the human approves or declines it in a Claude Code dialog. Do not ask the human to type shell commands unless that tool reports approval_unavailable.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
@@ -156,8 +162,8 @@ async function handle(message){
   if(!tool)return rpcError(id,-32602,'Unknown tool');
   const args=p.arguments??{};
   if(!validArguments(tool,args))return rpcError(id,-32602,'Invalid tool arguments');
-  const result=p.name==='blink_doctor'?doctor():p.name==='blink_request_approval'?await approval(args):await backend(methods.get(p.name),args);
-  return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable'].includes(result.status)}};
+  const result=p.name==='blink_doctor'?doctor():p.name==='blink_request_approval'?await approval(args,id):await backend(methods.get(p.name),args);
+  return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large'].includes(result.status)}};
  }
  return rpcError(id,-32601,'Method not found');
 }
@@ -178,6 +184,10 @@ process.stdin.on('data',chunk=>{
   if(message&&typeof message==='object'&&!Array.isArray(message)&&!Object.hasOwn(message,'method')&&awaiting.has(message.id)){
    // A client answer to our own approval dialog: never queued behind the tool call that waits for it.
    const done=awaiting.get(message.id);awaiting.delete(message.id);done(message.error?{action:'cancel'}:message.result);continue;
+  }
+  if(message?.method==='notifications/cancelled'&&dialogs.has(message.params?.requestId)){
+   // A cancelled tool call must not stay approvable through its still-open dialog.
+   const dialog=dialogs.get(message.params.requestId);const done=awaiting.get(dialog);awaiting.delete(dialog);done?.({action:'cancel'});continue;
   }
   queue=queue.then(async()=>{
    try{send(await handle(message));}catch{send(rpcError(message?.id??null,-32603,'Internal error'));}

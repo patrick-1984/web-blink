@@ -45,9 +45,13 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
         from .client import request
         review = request('admin', {'action': 'intent', 'intentId': params['intentId']},
                          state_dir=state_dir, plugin_root=plugin_root)
-        context = safe_preview(review.get('data')) if review.get('status') == 'ok' else None
+        if review.get('status') != 'ok':
+            return {'status': 'approval_unavailable', 'summary': 'The write cannot be shown for review; nothing was approved', 'warnings': []}
+        context = safe_preview(review.get('data'))
+    # Parameters are shown exactly as given: the dialog never carries credentials (custody_authorize is
+    # CLI-only), and redacting would let a model hide an action's real target under a secret-like key.
     data = {'method': method, 'title': TITLES.get(method, method.replace('_', ' ').capitalize()),
-            'parameters': safe_preview(params), 'exactParametersSha256': digest(params)}
+            'parameters': params, 'exactParametersSha256': digest(params)}
     if context is not None:
         data['context'] = context
     return {'status': 'ok', 'summary': 'Approval dialog content', 'data': data, 'warnings': []}

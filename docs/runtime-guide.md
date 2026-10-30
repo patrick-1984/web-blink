@@ -100,7 +100,7 @@ untested and quarantined until reviewed and verified through the normal runtime 
 Every human-only action (approve a prepared write, approve or classify an integration, bind an account,
 grant operations, start or stop a capture, create or run jobs, revoke, forget) can be approved inside
 Claude Code. Claude calls `blink_request_approval`; the plugin's MCP server shows you a dialog with the
-exact action, its parameters (secret-looking fields hidden), their SHA-256 and, for a write, the local
+exact action, its exact parameters, their SHA-256 and, for a write, the local
 runtime's own review of what will run. Claude's stated reason is labelled as unverified. Only **Approve**
 runs the action, once, with exactly the parameters shown; Decline, Esc or no answer within 10 minutes
 changes nothing.
