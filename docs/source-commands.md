@@ -36,7 +36,7 @@ capability, not permission to ignore that artifact.
 ## Approval and rollback
 
 The source candidate records its configuration hash, descriptor hash, expected previous pin, core candidate
-ID and semantic digest. Human approval verifies all of them under the same transaction that updates the
+ID and semantic digest. Approval (the user's order) verifies all of them under the same transaction that updates the
 core active manifest. A removed/reconfigured source, expired candidate, changed active pointer, reused
 candidate approval or conflicting ID/version cannot activate. No grant or tier is imported from a repository.
 

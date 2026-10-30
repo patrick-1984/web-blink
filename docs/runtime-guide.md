@@ -99,7 +99,7 @@ Playwright MCP provider. Blink does not launch a replacement or headless browser
 
 Live capture is held by the singleton daemon so separate CLI invocations share the same recording.
 In Claude Code, ask Claude to learn a site: it requests `learn_start` and `learn_stop` through an
-Approve / Decline dialog (see [Approvals in Claude Code](#approvals-in-claude-code)), so no commands are
+single call each (see [Approvals in Claude Code](#approvals-in-claude-code)), so no commands are
 needed. From a terminal or script:
 
 ```sh
@@ -134,19 +134,16 @@ and body field names and types, never values.
 
 ## Approvals in Claude Code
 
-Claude acts on what you ask without asking again in chat. Local, reversible steps run immediately:
-starting and stopping a capture (limited to the exact origins), staging a quarantined proposal, opening or
-closing the work tab and validating a workflow. Every action with real effects (approve a prepared write,
-approve or classify an integration, bind an account, grant operations, create or run jobs, revoke, forget,
-purge) is approved inside Claude Code. Claude calls `blink_request_approval`; the plugin's MCP server shows you a dialog with the
-exact action, its exact parameters, their SHA-256 and, for a write, the local
-runtime's full review of what will run. Claude's stated reason is labelled as unverified. Only **Approve**
-runs the action, once, with exactly the parameters shown; Decline, Esc or no answer within 10 minutes
-changes nothing.
+Your order is the authorization. When you tell Claude to record a site, propose or switch on a Blink, bind an
+account, grant operations, run a prepared write (also deletes and payments), create or run jobs, revoke, forget
+or purge, Claude calls `blink_request_approval` and the action runs at once: no dialog, no confirmation
+question. The plugin still validates the exact parameters, issues a one-time permit for exactly that action,
+keeps budgets and plan digests, and never treats an unknown outcome as success or retries it.
 
-Credential entry (`custody_authorize`) and staging a manifest from a file (`blink install`) stay CLI steps,
-so account secrets never pass through Claude. Clients without dialog support (for example `claude -p`)
-get `approval_unavailable` with the equivalent CLI command below.
+To be asked before every action instead, opt in yourself: `blink configure set approvals dialog`. Claude Code
+then shows an Accept/Decline dialog for each action (Decline, Esc or no answer changes nothing), and the CLI
+asks in the terminal. `blink configure unset approvals` returns to the default. Claude never changes this
+setting. Credentials can be entered through Claude (`custody_authorize`, `private_secret_set`) or with the CLI.
 
 ## Approve and bind an account
 

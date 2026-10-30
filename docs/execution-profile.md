@@ -32,7 +32,7 @@ An integration has a default exact server origin, explicit requested origins and
 A standard operation-level `servers: [{url: "https://login.example"}]` can select one other exact origin
 only when it is explicitly requested and separately granted for that operation. Server URLs cannot carry
 path prefixes, credentials, query strings, templates or runtime substitutions.
-GET/HEAD may be labelled read. POST may be read only after exact host-human confirmation as described
+GET/HEAD may be labelled read. POST may be read only after exact confirmation of the read operations (filled in by the plugin from the proposal) as described
 below; PUT/PATCH/DELETE require an explicit mutation or maintenance effect.
 Body arguments are under `arguments.body`; scalar path/query/header parameters use their declared names.
 Parameter properties cannot target transport/auth/CSRF/idempotency headers. Dot paths, encoded separators,
