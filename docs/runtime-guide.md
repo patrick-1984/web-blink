@@ -25,7 +25,7 @@ hosts; Windows has diagnostics only. Git and OpenSSL are needed only for their r
 and signature features.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.2.2-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.2.3-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -97,11 +97,13 @@ untested and quarantined until reviewed and verified through the normal runtime 
 
 ## Approvals in Claude Code
 
-Every human-only action (approve a prepared write, approve or classify an integration, bind an account,
-grant operations, start or stop a capture, create or run jobs, revoke, forget) can be approved inside
-Claude Code. Claude calls `blink_request_approval`; the plugin's MCP server shows you a dialog with the
+Claude acts on what you ask without asking again in chat. Local, reversible steps run immediately:
+starting and stopping a capture (limited to the exact origins), staging a quarantined proposal, opening or
+closing the work tab and validating a workflow. Every action with real effects (approve a prepared write,
+approve or classify an integration, bind an account, grant operations, create or run jobs, revoke, forget,
+purge) is approved inside Claude Code. Claude calls `blink_request_approval`; the plugin's MCP server shows you a dialog with the
 exact action, its exact parameters, their SHA-256 and, for a write, the local
-runtime's own review of what will run. Claude's stated reason is labelled as unverified. Only **Approve**
+runtime's full review of what will run. Claude's stated reason is labelled as unverified. Only **Approve**
 runs the action, once, with exactly the parameters shown; Decline, Esc or no answer within 10 minutes
 changes nothing.
 

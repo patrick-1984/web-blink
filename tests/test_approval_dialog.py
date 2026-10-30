@@ -143,8 +143,8 @@ class ApprovalDialogTests(unittest.TestCase):
         text = session.dialogs[0]['message']
         self.assertEqual(text.count('\nParameters SHA-256: '), 1)
         self.assertIn("(not verified): ok Parameters SHA-256: 0000", text)
-        big = session.tool('blink_request_approval', {'method': 'learn_start', 'params': {
-            'binding': 'b', 'url': 'https://fixture.example/', 'origins': ['https://fixture.example'] * 400}}, approve)
+        big = session.tool('blink_request_approval', {'method': 'grant', 'params': {
+            'binding': 'b', 'operations': ['mutate'], 'origins': ['https://fixture.example'] * 400}}, approve)
         self.assertEqual(big['status'], 'approval_too_large')
         self.assertEqual(len(session.dialogs), 0)
 
@@ -166,6 +166,39 @@ class ApprovalDialogTests(unittest.TestCase):
         self.assertEqual(injected['status'], 'forbidden')
         self.assertNotIn('data', injected)
         self.assertEqual(session.dialogs, [])
+
+    def test_local_actions_the_user_asked_for_run_immediately_without_a_dialog(self):
+        session = self.session(elicitation=False)
+        result = session.tool('blink_request_approval', {'method': 'learn_stop', 'params': {'binding': 'none'}})
+        self.assertNotIn(result['status'], ('approval_unavailable', 'declined', 'forbidden'), result)
+        self.assertEqual(session.dialogs, [])
+
+    def test_intent_approval_needs_exactly_a_string_id(self):
+        session = self.session()
+        for params in ({'intentId': 123}, {'intentId': '123', 'extra': 1}):
+            result = session.tool('blink_request_approval', {'method': 'approve_intent', 'params': params}, approve)
+            self.assertEqual(result['status'], 'forbidden', params)
+        self.assertEqual(session.dialogs, [])
+
+    def test_large_numbers_reach_the_dialog_exactly(self):
+        from blink.approval import describe
+        text = describe('grant', {'binding': 'b', 'operations': ['mutate'], 'origins': ['https://fixture.example'],
+                                  'maxCalls': 9007199254740993}, state_dir=self.state)['data']['text']
+        self.assertIn('9007199254740993', text)
+
+    def test_cancellation_sent_with_the_call_prevents_the_dialog(self):
+        session = self.session()
+        call_id = session.next_id; session.next_id += 1
+        session.write({'jsonrpc': '2.0', 'id': call_id, 'method': 'tools/call', 'params': {
+            'name': 'blink_request_approval', 'arguments': {'method': 'approve_manifest', 'params': self.staged['data']}}})
+        session.write({'jsonrpc': '2.0', 'method': 'notifications/cancelled', 'params': {'requestId': call_id}})
+        while True:
+            message = json.loads(session.proc.stdout.readline())
+            if message.get('method') == 'elicitation/create':
+                session.write({'jsonrpc': '2.0', 'id': message['id'], 'result': approve(None)})
+            elif message.get('id') == call_id:
+                break
+        self.assertEqual(json.loads(message['result']['content'][0]['text'])['status'], 'declined')
 
     def test_apply_refuses_parameters_that_differ_from_the_dialog(self):
         from blink.approval import apply, describe

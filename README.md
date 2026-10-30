@@ -13,9 +13,10 @@ From the [patrick-1984 plugin marketplace](https://github.com/patrick-1984/marke
 /plugin install web-blink@patrick-1984
 ```
 
-Approvals happen inside Claude Code: when Claude needs your go-ahead (start recording a site, run a
-prepared write, bind an account, grant operations), it shows an **Approve / Decline** dialog with the exact
-action. Only your click approves it; Claude cannot answer the dialog. Account secrets are never entered
+Ask for what you want and Claude does it: say "learn how example.com works" and it opens the browser tab,
+starts recording right away, tells you, and keeps checking and reacting while you use the site. Actions with
+real effects (run a prepared write, bind an account, grant operations) show one **Approve / Decline** dialog
+with the exact action. Only your click approves it; Claude cannot answer the dialog. Account secrets are never entered
 through Claude.
 
 ## What it is
