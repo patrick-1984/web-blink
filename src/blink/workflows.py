@@ -122,6 +122,17 @@ class WorkflowEngine:
             data['outputs'] = run['steps']
         return {'status': status, 'summary': summary, 'data': data}
 
+    def _pending(self, run, result):
+        """Any stop while a step intent is pending carries its runId and intentId, so the caller can authorize
+        that exact intent and resume workflow_run with the same run."""
+        reply = {**result, 'runId': run['id']}
+        if run.get('intent'):
+            data = dict(reply['data']) if isinstance(reply.get('data'), dict) else {}
+            data.setdefault('runId', run['id'])
+            data['intentId'] = run['intent']
+            reply['data'] = data
+        return reply
+
     def _intent(self, intent):
         with self.store.transaction() as db:
             row = db.execute('SELECT state,result_json FROM intents WHERE id=?', (intent,)).fetchone()
@@ -175,7 +186,7 @@ class WorkflowEngine:
             step = run['workflow']['steps'][index]
             described = self.runtime.dispatch('describe', {'service': run['service'], 'operation': step['operationId']})
             if described.get('status') != 'ok':
-                return {**described, 'runId': run['id']}
+                return self._pending(run, described)
             operation = active['compiled']['operations'][step['operationId']]
             declared = {p['name']: p['in'] for p in operation['parameters']}
             for parameter in step.get('parameters', []):
@@ -202,7 +213,8 @@ class WorkflowEngine:
                     run['state'] = 'awaiting_approval'
                     self.store.put('workflow_runs', run['id'], run)
                     if prepared['status'] == 'prepared':
-                        return self._reply(run, 'prepared', 'Approve this exact step intent, then resume the workflow')
+                        return self._reply(run, 'prepared', 'Exact step plan prepared; authorize intentId, then resume '
+                                                            'workflow_run with this runId')
                 terminal = self._intent(run['intent'])
                 if terminal and terminal['state'] in DONE:
                     if terminal['result_json'] is None and step.get('outputs'):
@@ -228,7 +240,7 @@ class WorkflowEngine:
                 if result.get('status') in UNKNOWN:
                     run['state'] = 'outcome_unknown'
                     self.store.put('workflow_runs', run['id'], run)
-                return {**result, 'runId': run['id']}
+                return self._pending(run, result)
             outputs = {name: pointer(data, expression[len('$response.body#'):])
                        for name, expression in step.get('outputs', {}).items()}
             run['steps'][step['stepId']] = {'outputs': outputs}

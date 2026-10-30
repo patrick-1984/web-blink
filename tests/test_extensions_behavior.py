@@ -136,15 +136,28 @@ class ExtensionBehaviorTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT COUNT(*) FROM intents').fetchone()[0], 1)
             self.assertEqual(db.execute('SELECT state FROM receipts').fetchone()[0], 'consumed')
 
-    def test_financial_first_run_needs_human_and_daily_cap_is_enforced(self):
+    def test_first_bounded_financial_occurrence_runs_without_human_gate_and_daily_cap_is_enforced(self):
+        # Creating the bounded schedule through the authorized control path authorizes its first occurrence too.
         self.human('revoke', {'binding': 'account'}); self.install(financial=True)
         job = self.job(arguments={'body': {'quantity': 1, 'amount': 125, 'currency': 'USD'}}, maxAmount=150, currency='USD')
-        self.assertEqual(self.scheduler.run(job)['reason'], 'first_financial_run_needs_human')
-        self.assertEqual(Fixture.effects, 0)
-        self.assertEqual(self.scheduler.run(job, human=True)['state'], 'done')
+        first = self.scheduler.run(job)
+        self.assertEqual(first['state'], 'done', first); self.assertNotIn('reason', first)
+        self.assertEqual(Fixture.effects, 1)
+        self.assertEqual(self.scheduler.run(job, due=first['due'])['id'], first['id'])  # same occurrence ID, no resend
         self.now += 60
         self.assertEqual(self.scheduler.run(job)['state'], 'skipped')
         self.assertEqual(Fixture.effects, 1)
+
+    def test_first_financial_occurrence_still_requires_its_authorized_amount_limit_digest(self):
+        self.human('revoke', {'binding': 'account'}); self.install(financial=True)
+        job = self.job(arguments={'body': {'quantity': 1, 'amount': 125, 'currency': 'USD'}}, maxAmount=150,
+                       currency='USD', maxRunsPerDay=5)
+        stored = self.runtime.store.get('jobs', job)
+        stored['maxAmount'] = 100  # tampering breaks the authorization digest
+        self.runtime.store.put('jobs', job, stored)
+        with self.assertRaises(ValueError):
+            self.scheduler.run(job)
+        self.assertEqual(Fixture.effects, 0)
 
     def test_financial_arguments_cannot_exceed_cap_at_creation(self):
         self.human('revoke', {'binding': 'account'}); self.install(financial=True)
@@ -260,6 +273,33 @@ class ExtensionBehaviorTests(unittest.TestCase):
         result = self.engine.run(run_id=run_id)
         self.assertEqual(result['status'], 'ok', result)
         self.assertEqual(result['data']['outputs']['change']['outputs']['count'], 1)
+        self.assertEqual(self.engine.run(run_id=run_id)['status'], 'ok'); self.assertEqual(Fixture.effects, 1)
+
+    def test_workflow_with_multiple_writes_completes_through_immediate_authorize_and_resume(self):
+        doc = workflow()
+        doc['workflows'][0]['steps'].append(
+            {'stepId': 'again', 'operationId': 'mutate', 'dependsOn': ['change'],
+             'requestBody': {'contentType': 'application/json', 'payload': {'quantity': '$steps.change.outputs.count'}},
+             'outputs': {'count': '$response.body#/count'}})
+        result = self.engine.run(doc, 'cart', self.service, 'account')
+        authorized = []
+        while result['status'] == 'prepared':
+            # Every pending authorization carries the exact step intent and the resumable run.
+            intent, run_id = result['data']['intentId'], result['data']['runId']
+            self.human('approve_intent', {'intentId': intent}); authorized.append(intent)
+            result = self.engine.run(run_id=run_id)
+        self.assertEqual(result['status'], 'ok', result)
+        self.assertEqual(len(authorized), 2); self.assertEqual(len(set(authorized)), 2)
+        self.assertEqual(Fixture.effects, 2)
+        self.assertEqual(result['data']['outputs']['again']['outputs']['count'], 2)
+
+    def test_workflow_resume_before_authorization_returns_pending_intent_id(self):
+        prepared = self.engine.run(workflow(), 'cart', self.service, 'account')
+        intent, run_id = prepared['data']['intentId'], prepared['data']['runId']
+        pending = self.engine.run(run_id=run_id)
+        self.assertNotEqual(pending['status'], 'ok'); self.assertEqual(Fixture.effects, 0)
+        self.assertEqual(pending['data']['intentId'], intent); self.assertEqual(pending['data']['runId'], run_id)
+        self.human('approve_intent', {'intentId': intent})
         self.assertEqual(self.engine.run(run_id=run_id)['status'], 'ok'); self.assertEqual(Fixture.effects, 1)
 
     def test_workflow_resumes_after_crash_after_execute_without_dispatching_again(self):

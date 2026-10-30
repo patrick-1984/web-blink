@@ -108,10 +108,14 @@ class PublicTransportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_request(b'{"method":"services","method":"grant"}')
 
-    def test_noninteractive_human_cli_requires_explicit_confirmation(self):
-        env = cli_env(ROOT / 'src')
-        proc = subprocess.run([sys.executable, '-m', 'blink', 'approve-intent', 'a'],
-                              input='', text=True, capture_output=True, env=env, timeout=10)
+    def test_dialog_mode_noninteractive_human_cli_requires_explicit_confirmation(self):
+        # Terminal confirmation exists only under the user's explicit approvals=dialog opt-in.
+        with tempfile.TemporaryDirectory() as config:
+            from blink.config import ConfigStore
+            ConfigStore(config).set('approvals', 'dialog')
+            env = dict(cli_env(ROOT / 'src'), BLINK_CONFIG_DIR=config)
+            proc = subprocess.run([sys.executable, '-m', 'blink', 'approve-intent', 'a'],
+                                  input='', text=True, capture_output=True, env=env, timeout=10)
         self.assertNotEqual(proc.returncode, 0)
         self.assertEqual(json.loads(proc.stdout)['status'], 'invalid_request')
 

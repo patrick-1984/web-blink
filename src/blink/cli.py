@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 
 from .doctor import report
-from .config import SECRET_KEY
+from .config import SECRET_KEY, approval_mode
 
 PUBLIC = {'services': 'services', 'search': 'search', 'describe': 'describe', 'read': 'call_read',
           'prepare': 'prepare', 'execute': 'execute', 'status': 'admin'}
@@ -105,7 +105,18 @@ def command_input(args):
     return args._input_params if hasattr(args, '_input_params') else load_input(args.input)
 
 
-def confirm(action, params, yes, *, preview=None):
+def selected_approval_mode(args=None):
+    """The invoking client's approval policy: the store chosen with --config-dir (or the environment), never the
+    daemon's or a command input's. An invalid settings file raises ConfigError, so nothing runs on a broken policy."""
+    mode = getattr(args, '_approval_mode', None)
+    return mode if mode is not None else approval_mode()
+
+
+def confirm(action, params, yes, *, preview=None, mode=None):
+    """Under the default 'none' policy the user's order already authorizes the exact action: return at once.
+    Only the opt-in 'dialog' policy asks for a terminal confirmation or explicit --yes."""
+    if (approval_mode() if mode is None else mode) != 'dialog':
+        return
     digest = hashlib.sha256(json.dumps(params, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     if yes:
         return
@@ -153,7 +164,7 @@ def build_parser():
         p.add_argument('--arguments', help='JSON argument object')
         p.add_argument('--query')
         p.add_argument('--intent-id')
-    p = sub.add_parser('human', help='Host-confirmed local action; never a public MCP method')
+    p = sub.add_parser('human', help='Native local control action; never a public MCP method')
     p.add_argument('method')
     p.add_argument('--input', '--cli-input-json', dest='input', default='-')
     p.add_argument('--yes', action='store_true')
@@ -203,7 +214,7 @@ def build_parser():
             command = commands.add_parser(action)
             command.add_argument('--input', '--cli-input-json', dest='input',
                                  help='JSON parameters, file://path, plain file path, or - for stdin')
-            command.add_argument('--yes', action='store_true', help='Confirm this exact native management action')
+            command.add_argument('--yes', action='store_true', help='Confirm this exact native management action (only used under approvals=dialog)')
     for name in ('forget', 'purge'):
         p = sub.add_parser(name, help='Explicitly remove service or runtime state under its cleanup contract')
         p.add_argument('--input', '--cli-input-json', dest='input',
@@ -249,13 +260,13 @@ def run(args):
         return {'status': 'ok', 'summary': 'Bundled schema contract', 'data': data, 'warnings': []}
     if args.command == 'human':
         if args.method == 'restart_daemon':  # a local process action, not a daemon method
-            confirm('restart_daemon', {}, args.yes)
+            confirm('restart_daemon', {}, args.yes, mode=selected_approval_mode(args))
             from .client import restart_legacy_daemon
             return restart_legacy_daemon(state_dir=args.state_dir, plugin_root=args.plugin_root)
         params = command_input(args)
         # A private secret is confirmed by name; its value is never echoed to the terminal.
         hidden = dict(params, value='[hidden]') if args.method == 'private_secret_set' and 'value' in params else None
-        confirm(args.method, params, args.yes, preview=hidden)
+        confirm(args.method, params, args.yes, preview=hidden, mode=selected_approval_mode(args))
         return native_dispatch(args, args.method, params)
     if args.command == 'approve-manifest':
         params = {'service': args.service, 'digest': args.digest}
@@ -263,17 +274,17 @@ def run(args):
             params['tier'] = args.tier
         if args.confirm_read_operation:
             params['confirmReadOperations'] = args.confirm_read_operation
-        confirm('approve_manifest', params, args.yes)
+        confirm('approve_manifest', params, args.yes, mode=selected_approval_mode(args))
         return native_dispatch(args, 'approve_manifest', params)
     if args.command == 'approve-intent':
         params = {'intentId': args.intent_id}
-        confirm('approve_intent', params, args.yes)
+        confirm('approve_intent', params, args.yes, mode=selected_approval_mode(args))
         return native_dispatch(args, 'approve_intent', params)
     if args.command == 'install':
         document = load_input(args.file)
         params = {'document': document, 'source': args.source, 'integration': args.id}
         confirm('install_manifest', params, args.yes, preview={'source': args.source, 'integration': args.id,
-                'manifestSha256': hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()})
+                'manifestSha256': hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()}, mode=selected_approval_mode(args))
         return native_dispatch(args, 'install_manifest', params)
     if args.command in MANAGEMENT:
         params = command_input(args)
@@ -284,12 +295,12 @@ def run(args):
                            state_dir=args.state_dir, plugin_root=args.plugin_root)
         method = MANAGEMENT[args.command][action]
         if not (args.command == 'tools' and action == 'list'):
-            confirm(method, params, args.yes)
+            confirm(method, params, args.yes, mode=selected_approval_mode(args))
         return native_dispatch(args, method, params)
     if args.command in ('forget', 'purge'):
         params = command_input(args)
         method = 'forget_service' if args.command == 'forget' else 'purge_state'
-        confirm(method, params, args.yes)
+        confirm(method, params, args.yes, mode=selected_approval_mode(args))
         return native_dispatch(args, method, params)
     if args.command == 'sources':
         from .sources import SourceManager
@@ -299,7 +310,7 @@ def run(args):
             return manager.list()
         values = vars(args)
         if action != 'sync':
-            confirm('sources_' + action, {k: v for k, v in values.items() if k not in ('yes', 'state_dir', 'plugin_root')}, args.yes)
+            confirm('sources_' + action, {k: v for k, v in values.items() if k not in ('yes', 'state_dir', 'plugin_root') and not k.startswith('_')}, args.yes, mode=selected_approval_mode(args))
         if action == 'add':
             return manager.add(args.id, args.repository, args.ref, args.catalog, replace=args.replace)
         if action == 'sync':
