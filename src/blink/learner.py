@@ -1,8 +1,11 @@
 """Bounded value-free capture review and explicit human-curated Blink proposals."""
 from __future__ import annotations
 
+import base64
 import copy
 import json
+import os
+import shutil
 import re
 import time
 import uuid
@@ -14,6 +17,29 @@ from .profile import origin as canonical_origin
 MAX_HAR = 32 * 1024 * 1024
 METHODS = {'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'}
 HEADERS = {'accept', 'content-type', 'authorization', 'cookie', 'x-csrf-token', 'x-xsrf-token'}
+RESOURCE_TYPES = {'document', 'xhr', 'fetch', 'websocket', 'eventsource', 'other', 'ping', 'prefetch'}
+STATIC_TYPES = {'image', 'font', 'stylesheet', 'media', 'script', 'manifest', 'texttrack'}
+MAX_SHOTS, MAX_SHOT_BYTES = 200, 2 * 1024 * 1024
+
+
+def screenshot_dir(store, session_id):
+    """Private local session folder of one capture: session.json and its screenshots. Kept until the user
+    explicitly cleans it up (forget_capture or purge); screenshots are not redacted."""
+    if not isinstance(session_id, str) or not re.fullmatch('[a-f0-9]{32}', session_id):
+        raise ValueError('Invalid capture session')
+    return Path(store.path) / 'captures' / session_id
+
+
+def forget_screenshots(store, session_id):
+    """Delete a session folder; raises if it cannot, so callers keep the catalog row for a retry."""
+    try:
+        folder = screenshot_dir(store, session_id)
+    except ValueError:
+        return
+    try:
+        shutil.rmtree(folder)
+    except FileNotFoundError:
+        pass
 
 
 def strict_json(text):
@@ -137,12 +163,13 @@ class Learner:
         self.runtime, self.store, self.browser = runtime, runtime.store, browser
         self.running = {}
 
-    def _save(self, records, source, missing=(), reasons=()):
-        session = {'id': uuid.uuid4().hex, 'createdAt': time.time(), 'source': source,
+    def _save(self, records, source, missing=(), reasons=(), *, session_id=None, extra=None):
+        session = {'id': session_id or uuid.uuid4().hex, 'createdAt': time.time(), 'source': source,
                    'records': records, 'missingOrigins': sorted(set(missing)),
                    'status': 'incomplete' if missing or reasons else 'review',
                    'incompleteReasons': sorted(set(reasons)),
                    'note': 'Values and observed path segments/field names were removed. Human curation is required.'}
+        session.update(extra or {})
         self.store.put('captures', session['id'], session)
         return session
 
@@ -204,9 +231,6 @@ class Learner:
                 source = canonical_origin(item.get('origin'), allow_http=True)
             except Exception:
                 continue
-            if source not in origins:
-                missing.add(source)
-                continue
             path = _template(item.get('path', ''))
             method = item.get('method')
             if path is None or not isinstance(method, str) or method.upper() not in METHODS:
@@ -214,6 +238,9 @@ class Learner:
             names = item.get('headerNames', [])
             query = item.get('queryNames', [])
             records.append({'method': method.upper(), 'origin': source, 'path': path,
+                            # Every host is recorded; inScope marks the origins the capture was started for.
+                            'inScope': source in origins,
+                            'resourceType': item.get('resourceType') if item.get('resourceType') in RESOURCE_TYPES else 'other',
                             'status': _status(item.get('status', 0)),
                             'headerNames': sorted({x.lower() for x in names[:100] if isinstance(x, str) and x.lower() in HEADERS}),
                             'queryCount': min(len(query), 100) if isinstance(query, list) else 0,
@@ -221,7 +248,73 @@ class Learner:
                                 ('application/json', 'application/x-www-form-urlencoded') else None,
                             'requestSchema': sanitized_shape(item.get('requestSchema'))})
         reasons = ['capture_limit_or_incomplete'] if any(data.get(key) for key in ('overflow', 'truncated', 'incomplete')) else []
-        return self._save(records, 'shared-playwright', missing, reasons)
+        session_id = uuid.uuid4().hex
+        extra = {'otherHosts': sorted({r['origin'] for r in records if not r['inScope']}),
+                 'staticAssets': self._assets(data.get('assets')),
+                 'screenshots': self._screenshots(binding, data.get('screenshots'), session_id),
+                 'assetsTruncated': bool(data.get('assetsTruncated'))}
+        if getattr(self, 'unsaved_screenshots', 0):
+            extra['unsavedScreenshots'] = self.unsaved_screenshots
+        session = self._save(records, 'shared-playwright', missing, reasons, session_id=session_id, extra=extra)
+        folder = screenshot_dir(self.store, session_id)
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with os.fdopen(os.open(folder / 'session.json', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as handle:
+            json.dump(session, handle, indent=2)
+        session['folder'] = str(folder)
+        return session
+
+    @staticmethod
+    def _assets(value):
+        assets = []
+        for key, count in list(value.items())[:500] if isinstance(value, dict) else []:
+            source, _, kind = str(key).rpartition(' ')
+            try:
+                source = canonical_origin(source, allow_http=True)
+            except Exception:
+                continue
+            if kind in STATIC_TYPES and isinstance(count, int) and not isinstance(count, bool) and count > 0:
+                assets.append({'origin': source, 'type': kind, 'count': count})
+        return sorted(assets, key=lambda a: (a['origin'], a['type']))
+
+    def _screenshots(self, binding, count, session_id):
+        """Pull the recording's screenshots one by one into private state; failures only lose screenshots."""
+        self.unsaved_screenshots = 0
+        fetch = getattr(self.browser, 'capture_shot', None)
+        if not callable(fetch) or not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+            return []
+        folder, saved, failed = screenshot_dir(self.store, session_id), [], 0
+        for index in range(min(count, MAX_SHOTS)):
+            shot = None
+            for _attempt in range(3):
+                try:
+                    shot = (fetch(binding, index) or {}).get('shot')
+                    break
+                except Exception:
+                    continue
+            try:
+                data = base64.b64decode(shot['data'], validate=True)
+                if not data.startswith(b'\xff\xd8') or len(data) > MAX_SHOT_BYTES:
+                    continue
+                folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+                path = folder / f'{index + 1:03d}.jpg'
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'wb') as handle:
+                    handle.write(data)
+                page = shot.get('page')
+                saved.append({'file': str(path), 'afterRecord': shot['afterRecord'] if isinstance(shot.get('afterRecord'), int) else None,
+                              'time': shot['t'] / 1000 if isinstance(shot.get('t'), (int, float)) else None,
+                              'reason': str(shot.get('reason', ''))[:100],
+                              'page': page if isinstance(page, str) and len(page) <= 500 else None})
+            except Exception:
+                failed += 1
+                continue
+        self.unsaved_screenshots = failed
+        clear = getattr(self.browser, 'capture_shots_clear', None)
+        if callable(clear) and not failed:  # keep the browser copy while any screenshot is unsaved
+            try:
+                clear(binding)
+            except Exception:
+                pass
+        return saved
 
     def review(self, session):
         value = self.store.get('captures', session)
@@ -307,10 +400,4 @@ class Learner:
                                                provenance={'capture': session, 'verified': False})
         return {'proposal': result, 'manifest': document, 'verified': False}
 
-    def sweep(self, now=None):
-        now = time.time() if now is None else now
-        removed = 0
-        for session in self.store.list('captures'):
-            if session.get('createdAt', now) + 30 * 86400 < now:
-                self.store.delete('captures', session['id']); removed += 1
-        return removed
+    # Capture sessions never expire: only forget_capture or a full purge removes them.

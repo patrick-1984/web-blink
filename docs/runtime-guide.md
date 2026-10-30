@@ -25,7 +25,7 @@ hosts; Windows has diagnostics only. Git and OpenSSL are needed only for their r
 and signature features.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.2.4-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.2.5-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -89,9 +89,21 @@ blink status --input capture-review.json
 Navigate the owned work tab in the Shared browser while recording. Tab zero and unrelated tabs are never
 used. To import a HAR instead, call `learn_import_har` with a local `path` and exact `origins`.
 
+Requests to every host are recorded, not only the start origins: login, API, CDN or Google hosts are kept
+with `inScope: false` (`otherHosts` lists them), and static files (images, fonts, styles, scripts, media)
+are counted per host in `staticAssets`. Screenshots of the work tab are taken at the start, before and after
+each form submission and on each page change (at most 200, JPEG), so long add/remove sequences can be told
+apart afterwards.
+
+Each capture session is kept locally by default in a private folder (`blink_admin` `sessions` shows the
+`folder`): `session.json` with the recorded requests and screenshot timeline, plus the screenshots. Nothing is
+deleted automatically; use an old session to find a step a Blink is missing. Only `forget_capture` (offered by
+Claude after a Blink is confirmed, Decline keeps the session) or a purge removes it. Blinks never contain
+session data or screenshots. Screenshots are not redacted: they show the page as you saw it.
+
 Review only persists method/origin/path placeholders, status, known header names and schema shapes.
-Values, dynamic path segments, query values and dynamic body keys are removed. Truncated or out-of-scope
-captures are incomplete. Use `learn_propose` with `session`, `service`, explicitly selected `operations`
+Values, dynamic path segments, query values and dynamic body keys are removed. Truncated captures, popups
+and workers that could not be recorded make a capture incomplete. Use `learn_propose` with `session`, `service`, explicitly selected `operations`
 and an explicit `auth` recipe. An authenticated capture cannot silently become anonymous. Proposals are
 untested and quarantined until reviewed and verified through the normal runtime path.
 

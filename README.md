@@ -14,7 +14,9 @@ From the [patrick-1984 plugin marketplace](https://github.com/patrick-1984/marke
 ```
 
 Ask for what you want and Claude does it: say "learn how example.com works" and it opens the browser tab,
-starts recording right away, tells you, and keeps checking and reacting while you use the site. Actions with
+starts recording right away and hands the tab to you; it asks how to proceed instead of acting for you.
+Every host the site talks to is recorded, screenshots show what you did, and each session is kept locally
+so you can look back at it later. Actions with
 real effects (run a prepared write, bind an account, grant operations) show one **Approve / Decline** dialog
 with the exact action. Only your click approves it; Claude cannot answer the dialog. Account secrets are never entered
 through Claude.

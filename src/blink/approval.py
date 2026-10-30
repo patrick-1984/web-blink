@@ -36,6 +36,7 @@ TITLES = {
     'learn_start': 'Start recording a web service', 'learn_stop': 'Stop recording',
     'learn_propose': 'Stage a learned integration proposal', 'revoke': 'Revoke an account binding',
     'forget_service': 'Forget a service', 'purge_state': 'Purge local Web Blink state',
+    'forget_capture': 'Clean up this capture session locally (Decline keeps it)',
 }
 
 
