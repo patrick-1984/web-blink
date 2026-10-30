@@ -62,6 +62,10 @@ async function doctorWithDaemon(){
  const local=doctor();
  if(!local.data.capabilities.runtime)return local;
  const remote=await backend('doctor',{});
+ if(!['ok','degraded'].includes(remote?.status)){
+  local.status='degraded';local.data.capabilities.runtime=false;local.data.daemonError={status:remote?.status??'unknown',summary:remote?.summary??''};
+  local.warnings.push('The local daemon is not reachable: '+(remote?.summary??'no answer'));return local;
+ }
  local.data.daemon=remote?.data?.daemon??null;
  local.data.client=remote?.data?.client??null;
  local.data.daemonMatchesClient=remote?.data?.daemonMatchesClient===true;

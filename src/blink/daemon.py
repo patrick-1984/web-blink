@@ -217,10 +217,10 @@ def serve(state_dir=None, plugin_root=None):
         if extensions:
             def tick_loop():
                 while not stopping.wait(1):
-                    if retiring.is_set():
-                        continue  # no scheduled work starts once the daemon is retiring
                     try:
                         with shared_lock:
+                            if retiring.is_set():
+                                continue  # checked under the lock: no scheduled work starts once retiring
                             extensions.tick()
                     except Exception:
                         pass  # Extension notifications record their own safe failures.

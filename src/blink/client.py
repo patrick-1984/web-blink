@@ -200,6 +200,8 @@ def restart_legacy_daemon(state_dir=None, plugin_root=None):
     identity = _probe(state)
     if identity is None:
         result = request('doctor', state_dir=state, plugin_root=plugin_root)
+        if result.get('status') not in ('ok', 'degraded'):
+            return result
         return {'status': 'ok', 'summary': 'No daemon was running; the current one was started',
                 'data': result.get('data'), 'warnings': result.get('warnings', [])}
     if not _outdated(identity, own):
@@ -220,6 +222,9 @@ def restart_legacy_daemon(state_dir=None, plugin_root=None):
         if not _wait_lock_free(state):
             return {'status': 'not_restarted', 'summary': 'The old daemon did not stop', 'warnings': []}
     result = request('doctor', state_dir=state, plugin_root=plugin_root)
+    if result.get('status') not in ('ok', 'degraded'):
+        return {'status': 'not_restarted', 'summary': 'The old daemon stopped but the current one did not start: '
+                + str(result.get('summary', '')), 'data': result.get('data'), 'warnings': result.get('warnings', [])}
     return {'status': 'ok', 'summary': 'The daemon was restarted on the current version',
             'data': result.get('data'), 'warnings': result.get('warnings', [])}
 
