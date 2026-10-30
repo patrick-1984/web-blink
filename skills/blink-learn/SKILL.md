@@ -8,6 +8,10 @@ When the user asks to learn a site or service, act at once; do not ask them to c
 1. Open an owned work tab to the right of tab 0 with the shared Playwright MCP at the start URL (never an
    isolated browser, never tab 0 or another session's tabs).
 2. Call `blink_request_approval` with `learn_start` (`binding`, `url`, exact `origins`). It runs immediately.
+   Name the Blink after the site's host as reached after all redirects: lowercase, a leading `www.` dropped,
+   dots replaced by dashes (`https://www.msn.com/...` -> `msn-com`, `login.salesforce.com` ->
+   `login-salesforce-com`). Use the same name for the `binding` and the proposed `service`. Use a different
+   name only when the user asks for one explicitly.
 3. Tell the user that recording has started, which origins are recorded, and what to do (for example log in
    through the Shared browser, then use the features to learn).
 4. Check progress every few steps or minutes (`blink_admin` status/sessions, the tab's page state) and react:
