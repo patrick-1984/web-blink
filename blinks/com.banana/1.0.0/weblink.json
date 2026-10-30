@@ -1,0 +1,16 @@
+{
+  "$schema": "urn:web-blink:schema:weblink:1",
+  "schemaVersion": 1,
+  "id": "com.banana",
+  "version": "1.0.0",
+  "name": "Banana example",
+  "description": "Fictional read-only product listing. No session values, grants or executable scripts.",
+  "artifacts": [
+    {
+      "role": "openapi",
+      "path": "openapi.json",
+      "sha256": "101df797eaa71ec619df3da53e28ccecfc8583e5fa7142f1c2a0abe6b1ae5bd2",
+      "mediaType": "application/json"
+    }
+  ]
+}

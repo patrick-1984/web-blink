@@ -1,0 +1,65 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Banana example read-only Web Link",
+    "version": "1.0.0",
+    "description": "Fictional demonstration only; no real service or credentials."
+  },
+  "servers": [
+    {
+      "url": "https://api.banana.example"
+    }
+  ],
+  "x-blink-service": {
+    "id": "com.banana",
+    "requestedOrigins": [
+      "https://api.banana.example"
+    ],
+    "appOrigin": "https://banana.example",
+    "auth": {
+      "kind": "none"
+    },
+    "exec": {
+      "allowed": [
+        "direct"
+      ],
+      "preferred": "direct"
+    }
+  },
+  "paths": {
+    "/v1/products": {
+      "get": {
+        "operationId": "list_products",
+        "summary": "List example products",
+        "x-blink-effect": "read",
+        "responses": {
+          "200": {
+            "description": "Example product list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

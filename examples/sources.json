@@ -1,0 +1,13 @@
+{
+  "$schema": "urn:web-blink:schema:sources:1",
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "team",
+      "repository": "https://git.example/team/weblinks.git",
+      "ref": "main",
+      "catalogPath": "blink-catalog.json",
+      "enabled": true
+    }
+  ]
+}

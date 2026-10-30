@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:web-blink:schema:sources:1",
+  "title": "Web Blink sources distribution contract v1 (draft)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "sources"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "urn:web-blink:schema:sources:1"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "repository",
+          "ref",
+          "catalogPath",
+          "enabled"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?![\\s\\S])",
+            "not": {
+              "const": "builtin"
+            }
+          },
+          "repository": {
+            "type": "string",
+            "maxLength": 2048,
+            "pattern": "^https://[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::[0-9]{1,5})?/[A-Za-z0-9._~/-]+(?![\\s\\S])"
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*(?![\\s\\S])",
+            "not": {
+              "pattern": "(?:\\.\\.|//|\\.lock(?:/|$)|[./]$|/\\.)"
+            }
+          },
+          "catalogPath": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.json(?![\\s\\S])"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    }
+  }
+}

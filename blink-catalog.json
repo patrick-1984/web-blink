@@ -1,0 +1,13 @@
+{
+  "$schema": "urn:web-blink:schema:catalog:1",
+  "schemaVersion": 1,
+  "name": "Example team Web Links",
+  "weblinks": [
+    {
+      "id": "com.banana",
+      "version": "1.0.0",
+      "descriptor": "blinks/com.banana/1.0.0/weblink.json",
+      "sha256": "ee7db24a9c30b44d42d9304be5fac965a80f5908256f0a0e887a8c15e520d2db"
+    }
+  ]
+}

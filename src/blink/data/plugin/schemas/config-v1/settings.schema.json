@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:web-blink:schema:settings:1",
+  "title": "Web Blink persistent CLI settings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "defaults",
+    "blinks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "output": {
+          "enum": [
+            "json",
+            "table",
+            "tsv",
+            "none"
+          ]
+        },
+        "debug": {
+          "type": "boolean"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "region": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "language": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "binding": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "blinks": {
+      "type": "object",
+      "maxProperties": 1000,
+      "propertyNames": {
+        "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*:[a-z0-9]+(?:[.-][a-z0-9]+)*(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/group"
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "not": {
+        "pattern": "[\\u0000-\\u001f]"
+      }
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,99}(?![\\s\\S])",
+      "allOf": [
+        {
+          "not": {
+            "enum": [
+              "yes",
+              "human",
+              "approve",
+              "approval",
+              "grant",
+              "policy_override",
+              "allow_http",
+              "request_id",
+              "request-id",
+              "requestId"
+            ]
+          }
+        },
+        {
+          "not": {
+            "pattern": "(?:[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Aa][Uu][Tt][Hh]|[Cc][Oo][Oo][Kk][Ii][Ee]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]|[Aa][Pp][Ii].?[Kk][Ee][Yy]|[Cc][Ss][Rr][Ff]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee].?[Kk][Ee][Yy]|[Ss][Ee][Ss][Ss][Ii][Oo][Nn]|[Hh][Ee][Aa][Dd][Ee][Rr][Ss])|^[Kk][Ee][Yy]$"
+          }
+        }
+      ]
+    },
+    "group": {
+      "type": "object",
+      "maxProperties": 100,
+      "propertyNames": {
+        "$ref": "#/$defs/key"
+      },
+      "properties": {
+        "output": {
+          "enum": [
+            "json",
+            "table",
+            "tsv",
+            "none"
+          ]
+        },
+        "debug": {
+          "type": "boolean"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "region": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "language": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "binding": {
+          "$ref": "#/$defs/nonempty"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/value"
+      }
+    },
+    "value": {
+      "oneOf": [
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number"
+          ]
+        },
+        {
+          "type": "string",
+          "maxLength": 4096,
+          "not": {
+            "pattern": "[\\u0000-\\u001f]"
+          }
+        },
+        {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/value"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 100,
+          "propertyNames": {
+            "$ref": "#/$defs/key"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/value"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "web-blink",
+  "displayName": "Web Blink",
+  "version": "0.2.1",
+  "description": "Learn and use reviewed Web Link integrations with local account custody and durable execution policy.",
+  "author": {
+    "name": "Web Blink project"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/patrick-1984/web-blink",
+  "repository": "https://github.com/patrick-1984/web-blink"
+}
