@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import re
 import stat
-import sys
 import tempfile
 
 
@@ -110,11 +109,8 @@ def validate_option(key, value):
 def default_directory():
     if os.environ.get('BLINK_CONFIG_DIR'):
         return Path(os.environ['BLINK_CONFIG_DIR']).expanduser()
-    if sys.platform == 'win32':
-        return Path(os.environ.get('APPDATA', Path.home() / 'AppData/Roaming')) / 'WebBlink'
-    if sys.platform == 'darwin':
-        return Path.home() / 'Library/Application Support/WebBlink/config'
-    return Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'web-blink'
+    from .home import config_dir
+    return config_dir()
 
 
 class ConfigStore:

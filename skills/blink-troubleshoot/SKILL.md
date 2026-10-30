@@ -7,7 +7,8 @@ When Web Blink misbehaves, or the user complains that something does not work, f
 now; do not just apologise or retry blindly.
 
 1. Collect facts:
-   - `blink_doctor`: plugin (`client`) and daemon versions, `daemonMatchesClient`, capabilities, warnings. A
+   - `blink_doctor`: plugin (`client`) and daemon versions, `daemonMatchesClient`, capabilities, `homeDir`
+     (all user data lives in `~/.web-blink`; a warning says when it still waits to move from an old folder), warnings. A
      daemon older than the plugin is restarted by this call unless it is recording.
    - `blink_admin` `status`, and for recordings `sessions` / `review` (`screenshots`, `screenshotErrors`,
      `lastScreenshotError`, `unsavedScreenshots`, `otherHosts`, `status`).

@@ -108,13 +108,9 @@ remain checked at their actual point of use.
 ## Global and per-Blink defaults
 
 Settings persist in a plugin-specific **configuration directory**, separately from caches, runtime state
-and credentials:
-
-| Host | Default file |
-|---|---|
-| Linux | `${XDG_CONFIG_HOME:-~/.config}/web-blink/settings.json` |
-| macOS | `~/Library/Application Support/WebBlink/config/settings.json` |
-| Windows | `%APPDATA%/WebBlink/settings.json` |
+and credentials: `~/.web-blink/config/settings.json` on every host (`$BLINK_HOME/config` when `BLINK_HOME`
+is set). Settings from the older `${XDG_CONFIG_HOME:-~/.config}/web-blink`, `~/Library/Application
+Support/WebBlink/config` or `%APPDATA%/WebBlink` folder move there once on first use.
 
 `BLINK_CONFIG_DIR` or `--config-dir` selects another directory. Files are written atomically under an
 update lock; POSIX directories/files require 0700/0600. Symlinked, plugin-tree and Git-worktree locations

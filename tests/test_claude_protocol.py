@@ -15,6 +15,15 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
+# CLI and daemon subprocesses resolve their defaults here, never in the real ~/.web-blink or the old folders.
+HOME = tempfile.TemporaryDirectory()
+unittest.addModuleCleanup(HOME.cleanup)
+
+
+def cli_env(source):
+    return dict(os.environ, PYTHONPATH=str(source), BLINK_HOME=HOME.name)
+
+
 INIT = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
     'protocolVersion': '2025-11-25', 'capabilities': {}, 'clientInfo': {'name': 'test', 'version': '1'}}}
 
@@ -22,7 +31,7 @@ INIT = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
 def node_messages(messages, env=None, script=None):
     proc = subprocess.run(['node', str(script or ROOT / 'mcp/server.mjs')],
         input=''.join((line if isinstance(line, str) else json.dumps(line)) + '\n' for line in messages),
-        text=True, capture_output=True, timeout=20, env=dict(os.environ, **(env or {})))
+        text=True, capture_output=True, timeout=20, env=dict(os.environ, BLINK_HOME=HOME.name, **(env or {})))
     if proc.returncode:
         raise AssertionError(f'Node server exited {proc.returncode}')
     return [json.loads(line) for line in proc.stdout.splitlines()]
@@ -100,14 +109,14 @@ class PublicTransportTests(unittest.TestCase):
             parse_request(b'{"method":"services","method":"grant"}')
 
     def test_noninteractive_human_cli_requires_explicit_confirmation(self):
-        env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
+        env = cli_env(ROOT / 'src')
         proc = subprocess.run([sys.executable, '-m', 'blink', 'approve-intent', 'a'],
                               input='', text=True, capture_output=True, env=env, timeout=10)
         self.assertNotEqual(proc.returncode, 0)
         self.assertEqual(json.loads(proc.stdout)['status'], 'invalid_request')
 
     def test_unconfirmed_credentials_are_never_echoed(self):
-        env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
+        env = cli_env(ROOT / 'src')
         with tempfile.TemporaryDirectory() as tmp:
             payload = Path(tmp) / 'private-input.json'
             payload.write_text(json.dumps({'binding': 'fixture', 'credentials': {'token': 'SEEDED-DO-NOT-PRINT'}}))
@@ -137,7 +146,7 @@ class PublicTransportTests(unittest.TestCase):
         from blink.client import request
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp) / 'state'
-            env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
+            env = cli_env(ROOT / 'src')
             proc = subprocess.Popen([sys.executable, '-m', 'blink.daemon', '--state-dir', str(state),
                                      '--plugin-root', str(ROOT)], env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -173,7 +182,7 @@ class PublicTransportTests(unittest.TestCase):
             runtime = Runtime(state, ROOT)
             document = json.loads((ROOT / 'blinks/com.banana/1.0.0/openapi.json').read_text())
             staged = runtime.install_manifest(document, 'own', 'com.banana')['data']
-            env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
+            env = cli_env(ROOT / 'src')
             proc = subprocess.Popen([sys.executable, '-m', 'blink.daemon', '--state-dir', str(state),
                 '--plugin-root', str(ROOT)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             try:
@@ -217,7 +226,7 @@ class NativeControlTests(unittest.TestCase):
         self.start_daemon(ROOT)
 
     def start_daemon(self, plugin_root):
-        env = dict(os.environ, PYTHONPATH=str(plugin_root / 'src'))
+        env = cli_env(plugin_root / 'src')
         self.proc = subprocess.Popen([sys.executable, '-m', 'blink.daemon', '--state-dir', str(self.state),
                                      '--plugin-root', str(plugin_root)], env=env,
                                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -316,7 +325,7 @@ class NativeControlTests(unittest.TestCase):
         prepared = request('prepare', {'service': 'own:fixture', 'operation': 'mutate', 'binding': 'account'},
                            state_dir=self.state, autostart=False)
         self.assertEqual(prepared['status'], 'prepared')
-        env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
+        env = cli_env(ROOT / 'src')
         approved = subprocess.run([sys.executable, '-m', 'blink', '--state-dir', str(self.state),
                                    '--plugin-root', str(ROOT), 'approve-intent', prepared['data']['intentId'], '--yes'],
                                   env=env, capture_output=True, text=True, timeout=15)
@@ -368,7 +377,7 @@ class Extensions:
 def configure(runtime): return Extensions(runtime)
 ''')
         self.start_daemon(plugin)
-        env = dict(os.environ, PYTHONPATH=str(plugin / 'src'))
+        env = cli_env(plugin / 'src')
         files = []
         for index, params in enumerate(({'binding': 'capture', 'url': 'https://fixture.example/', 'origins': ['https://fixture.example']},
                                         {'binding': 'capture'})):

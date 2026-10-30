@@ -24,8 +24,12 @@ through Claude.
 ## What it is
 
 Web Blink is a Claude plugin and scriptable CLI for reviewed, declarative integrations with web
-services. Blinks live under `blinks/`; runtime credentials, grants and journals remain in private per-user
-state. Global and per-Blink CLI preferences use a separate persistent configuration directory.
+services. Blinks live under `blinks/`. Everything Web Blink keeps for you lives in one private folder in
+your home, `~/.web-blink` (`BLINK_HOME` selects another): runtime credentials, grants, journals and recordings
+in `state/`, global and per-Blink CLI preferences in `config/`, and your private Blinks in `private/`.
+`blink doctor` shows the folder. Data from older versions (`~/.local/state/web-blink` and
+`~/.config/web-blink`, or `WebBlink` on macOS and Windows) moves there once, by itself, when no daemon is using
+it; the old folder keeps a `MOVED-TO-web-blink.txt` note.
 
 ```sh
 blink --help

@@ -8,9 +8,13 @@ const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 if(process.platform==='win32') {
   process.stdout.write('Web Blink: diagnostics available; current runtime transport requires POSIX.\n');
 } else {
-  const state=process.env.BLINK_STATE_DIR || (process.platform==='darwin'
+  // ~/.web-blink/state; the old platform folder only until the runtime has moved it (see blink/home.py).
+  const home=process.env.BLINK_HOME || path.join(os.homedir(),'.web-blink');
+  const legacy=process.platform==='darwin'
     ? path.join(os.homedir(),'Library/Application Support/WebBlink')
-    : path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(),'.local/state'),'web-blink'));
+    : path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(),'.local/state'),'web-blink');
+  const state=process.env.BLINK_STATE_DIR || (process.env.BLINK_HOME || fs.existsSync(path.join(home,'state','blink.sqlite3'))
+    || !fs.existsSync(path.join(legacy,'blink.sqlite3')) ? path.join(home,'state') : legacy);
   try {
     const absolute=path.resolve(state),db=path.join(absolute,'blink.sqlite3');
     if(!fs.existsSync(db)||fs.realpathSync(absolute)!==absolute||fs.lstatSync(db).isSymbolicLink())process.exit(0);

@@ -48,14 +48,16 @@ function doctor() {
  const probe=spawnSync(launch.command,[...probeArgs,'-c','import sys,json; import jsonschema; import blink.runtime; from blink.doctor import report; assert sys.version_info >= (3,11); print(json.dumps(report()))'],
   {env,cwd:root,encoding:'utf8',maxBuffer:65536,timeout:3500,windowsHide:true});
  let runtimeAvailable=false;
- if(!probe.error&&probe.status===0){try{runtimeAvailable=JSON.parse(probe.stdout).data.capabilities.runtime===true;}catch{}}
+ let homeDir=null,moving=[];
+ if(!probe.error&&probe.status===0){try{const report=JSON.parse(probe.stdout),data=report.data;runtimeAvailable=data.capabilities.runtime===true;homeDir=data.homeDir??null;
+  moving=(report.warnings??[]).filter(w=>typeof w==='string'&&w.startsWith('Web Blink data stays'));}catch{}}
  const unix=process.platform!=='win32';
  return {status:runtimeAvailable && unix?'ok':'degraded',summary:'Host bootstrap capabilities',data:{
   capabilities:{diagnostics:true,runtime:runtimeAvailable&&unix,windowsRuntime:false},
   checks:{node:{available:true,version:process.versions.node},runtimeDependencies:{available:runtimeAvailable},
-   launcher:{kind:launch.kind},unixTransport:{available:unix}},
+   launcher:{kind:launch.kind},unixTransport:{available:unix}},homeDir,
   dependencyPolicy:'Doctor probes cached dependencies offline. Prepare pinned dependencies with the documented native setup command before runtime use; the MCP launcher stays offline.'},
-  warnings:unix?[]:['Windows supports diagnostics; the current local runtime requires POSIX Unix sockets.']};
+  warnings:[...(unix?[]:['Windows supports diagnostics; the current local runtime requires POSIX Unix sockets.']),...moving]};
 }
 async function doctorWithDaemon(){
  // Ask the daemon too: its handshake replaces an outdated one, and a version mismatch is reported here.
