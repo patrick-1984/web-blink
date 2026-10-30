@@ -56,6 +56,17 @@ def complete(method, params, *, state_dir=None, plugin_root=None):
     """Fill in what the plugin can decide itself, identically when showing the dialog and when applying it:
     the POST requests that only read (from the candidate), so the model never has to name them."""
     params = strict_json(encoded(params))
+    grant = params if method == 'grant' else params.get('grant') if method == 'activate_blink' else None
+    if isinstance(grant, dict):
+        # Origins are never guessed: exactly the Blink's own requested origins (from the candidate being switched on,
+        # or the active Blink of the binding); operations default to all of them.
+        review = _review(params.get('manifest'), state_dir, plugin_root) if method == 'activate_blink' else None
+        if review:
+            grant['origins'] = list(review.get('requestedOrigins') or [])
+            grant.setdefault('operations', sorted(op['operation'] for op in review.get('operations', [])))
+        else:
+            grant.pop('origins', None)  # the runtime fills them in from the active Blink
+        grant.pop('service', None)
     target = params if method == 'approve_manifest' else params.get('manifest') if method == 'activate_blink' else None
     if isinstance(target, dict) and 'confirmReadOperations' not in target:
         review = _review(target, state_dir, plugin_root)
