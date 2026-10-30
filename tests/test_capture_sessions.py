@@ -67,10 +67,30 @@ class RecorderJavascriptTests(unittest.TestCase):
           p.emit('framenavigated',frame);await sleep(900);''')
         reasons = [s['reason'] for s in result['kept']]
         self.assertEqual(reasons, ['start', 'before POST https://app.example/{segment1}/{segment2}/{segment3}',
-                                   'after POST https://app.example/{segment1}/{segment2}/{segment3}', 'navigation'])
-        self.assertEqual(result['screenshots'], 4)
+                                   'after POST https://app.example/{segment1}/{segment2}/{segment3}', 'navigation', 'stop'])
+        self.assertEqual(result['screenshots'], 5)
         self.assertNotIn('42', json.dumps(result['kept']))
         self.assertEqual(result['listeners'], 0)
+
+
+    def test_get_requests_trigger_shots_and_stop_keeps_the_in_flight_one_with_its_own_labels(self):
+        result = self.record('''
+          p.screenshot=async()=>{await sleep(300);shots++;return Buffer.from([0xff,0xd8,shots]);};
+          p.emit('response',res(req('https://app.example/search','GET','fetch')));await sleep(750);
+          p.emit('response',res(req('https://app.example/more','GET','fetch')));''')
+        self.assertEqual([s['reason'] for s in result['kept']][:2], ['start', 'after GET https://app.example/{segment1}'])
+        self.assertEqual(result['kept'][1]['afterRecord'], 1)
+        self.assertEqual(result['screenshots'], len(result['kept']))
+        self.assertEqual(result['kept'][-1]['reason'], 'after GET https://app.example/{segment1}')
+
+    def test_unchanged_pages_are_not_stored_twice_and_static_hosts_are_bounded(self):
+        result = self.record('''
+          p.screenshot=async()=>Buffer.from([0xff,0xd8,1]);
+          for(let i=0;i<600;i++)p.emit('response',res(req('https://cdn'+i+'.example/a.png','GET','image')));
+          await sleep(20);''')
+        self.assertEqual(result['screenshots'], 1)
+        self.assertEqual(len(result['assets']), 500)
+        self.assertTrue(result['assetsTruncated'])
 
 
 class LocalSessionTests(unittest.TestCase):
@@ -133,6 +153,51 @@ class LocalSessionTests(unittest.TestCase):
         result = learner.propose(session['id'], 'login-example', [{'index': 1, 'operationId': 'token', 'effect': 'read',
                                                                    'path': '/token'}], auth={'kind': 'none'})
         self.assertEqual(result['proposal']['status'], 'quarantined')
+
+    def test_default_daemon_browser_passes_screenshots_through(self):
+        browser = Extensions(self.runtime).browser
+        self.assertTrue(callable(getattr(browser, 'capture_shot', None)))
+        self.assertTrue(callable(getattr(browser, 'capture_shots_clear', None)))
+
+    def test_sessions_never_expire(self):
+        _, session = self.stop()
+        old = dict(self.runtime.store.get('captures', session['id']), createdAt=0)
+        self.runtime.store.put('captures', session['id'], old)
+        extensions = Extensions(self.runtime); extensions.last_maintenance = 0
+        try:
+            extensions.tick()
+        except Exception:
+            pass
+        self.assertIsNotNone(self.runtime.store.get('captures', session['id']))
+        self.assertFalse(hasattr(Learner, 'sweep'))
+
+    def test_failed_folder_deletion_keeps_the_session_for_a_retry(self):
+        _, session = self.stop()
+        folder = screenshot_dir(self.runtime.store, session['id'])
+        os.chmod(folder, 0o500); self.addCleanup(os.chmod, folder, 0o700)
+        if os.access(folder / '001.jpg', os.W_OK) and os.geteuid() == 0:
+            self.skipTest('root ignores directory permissions')
+        Extensions(self.runtime).dispatch('forget_capture', {'session': session['id']}, human=True)
+        self.assertIsNotNone(self.runtime.store.get('captures', session['id']))
+
+    def test_a_failed_transfer_is_retried_and_never_clears_the_browser_copy(self):
+        class Browser:
+            calls, cleared = {}, False
+            def capture_stop(self, binding):
+                return {'screenshots': 2, 'records': []}
+            def capture_shot(self, binding, index):
+                Browser.calls[index] = Browser.calls.get(index, 0) + 1
+                if index == 0 and Browser.calls[index] < 3:
+                    raise TimeoutError('transient')
+                if index == 1:
+                    raise TimeoutError('down')
+                return {'shot': {'data': base64.b64encode(JPEG).decode(), 'afterRecord': 0, 't': 0, 'reason': 'start'}}
+            def capture_shots_clear(self, binding): Browser.cleared = True
+        learner = Learner(self.runtime, Browser()); learner.running['b'] = ['https://app.example']
+        session = learner.stop('b')
+        self.assertEqual(len(session['screenshots']), 1)
+        self.assertEqual(session['unsavedScreenshots'], 1)
+        self.assertFalse(Browser.cleared)
 
 
 if __name__ == '__main__':

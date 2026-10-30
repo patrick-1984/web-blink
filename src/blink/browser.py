@@ -274,14 +274,22 @@ class BrowserBridge:
           if(p.__blinkCapture)throw Error('capture_already_running');
           const schema=(x,depth=0)=>depth>8?{}:x===null?{type:'null'}:Array.isArray(x)?{type:'array',items:x.length?schema(x[0],depth+1):{}}:
             typeof x==='object'?{type:'object',properties:Object.fromEntries(Object.values(x).slice(0,100).map((val,i)=>['field'+(i+1),schema(val,depth+1)]))}:{type:typeof x==='number'?'number':typeof x};
-          const records=[],missingOrigins=new Set(),assets={},shots=[];let overflow=false,incomplete=false,metadataBytes=0,shooting=false,shotTimer=null;
+          const records=[],missingOrigins=new Set(),assets={},shots=[];let overflow=false,incomplete=false,metadataBytes=0,shooting=null,shotTimer=null,last=null,assetsTruncated=false;
           // Static files from any host (CDN, fonts, analytics) are counted per host; every other request is recorded.
           const STATIC=new Set(['image','font','stylesheet','media','script','manifest','texttrack']);
           const pageOf=url=>{try{const u=new URL(url);return u.origin+'/'+u.pathname.split('/').filter(Boolean).map((_,i)=>'{segment'+(i+1)+'}').join('/');}catch{return null;}};
           // Screenshots of the owned tab, kept in this tab until the recording stops and they are saved privately.
-          const shoot=async reason=>{if(shots.length>=200||shooting)return;shooting=true;try{const b=await p.screenshot({type:'jpeg',quality:50});
-            if(b.length<=2097152)shots.push({index:shots.length,afterRecord:records.length,t:Date.now(),reason,page:pageOf(p.url()),data:b.toString('base64')});}catch{}shooting=false;};
-          const later=reason=>{clearTimeout(shotTimer);shotTimer=setTimeout(()=>{shoot(reason);},700);};
+          // Labels are taken when the shot is requested, so later responses cannot shift it in the timeline.
+          // An unchanged page (same pixels as the last shot) is not stored again.
+          const shoot=reason=>{if(shots.length>=200||shooting)return shooting;
+            const mark={afterRecord:records.length,t:Date.now(),reason,page:pageOf(p.url())};
+            shooting=(async()=>{try{const b=await p.screenshot({type:'jpeg',quality:50});const data=b.toString('base64');
+              if(b.length<=2097152&&data!==last){last=data;shots.push({index:shots.length,...mark,data});}}catch{}shooting=null;})();
+            return shooting;};
+          let pending=null;
+          const later=reason=>{clearTimeout(shotTimer);pending=reason;shotTimer=setTimeout(()=>{pending=null;shoot(reason);},700);};
+          // Typing and local edits send nothing: a periodic shot (skipped when unchanged) records them too.
+          const ticker=setInterval(()=>{shoot('periodic');},10000);
           const navigated=f=>{try{if(f===p.mainFrame())later('navigation');}catch{}};
           // At submit time the page still shows what was typed: shoot before the request too, not only after.
           const submitting=req=>{try{const type=typeof req.resourceType==='function'?req.resourceType():'other';
@@ -295,7 +303,7 @@ class BrowserBridge:
           const listener=async response=>{if(records.length>=1000||metadataBytes>=2097152){overflow=true;return;}try{
             const req=response.request(),u=new URL(req.url());if(!['http:','https:'].includes(u.protocol))return;
             const type=typeof req.resourceType==='function'?req.resourceType():'other';
-            if(STATIC.has(type)){const key=u.origin+' '+type;assets[key]=(assets[key]||0)+1;return;}
+            if(STATIC.has(type)){const key=u.origin+' '+type;if(key in assets||Object.keys(assets).length<500)assets[key]=(assets[key]||0)+1;else assetsTruncated=true;return;}
             const segments=u.pathname.split('/').filter(Boolean);const path='/'+segments.map((_,i)=>'{segment'+(i+1)+'}').join('/');
             let input={};try{const raw=req.postData();if(raw&&raw.length>262144)overflow=true;
               else if(raw)input=schema(req.postDataJSON());}catch{}
@@ -305,10 +313,11 @@ class BrowserBridge:
               resourceType:type,queryNames:[...new Set([...u.searchParams.keys()])].map((_,i)=>'query'+(i+1)),headerNames:Object.keys(req.headers()).filter(k=>['authorization','cookie','content-type','accept','x-csrf-token','x-xsrf-token'].includes(k.toLowerCase())),requestSchema:input};
             metadataBytes+=new TextEncoder().encode(JSON.stringify(record)).length;
             if(metadataBytes>2097152){overflow=true;return;}records.push(record);
-            if(!['GET','HEAD','OPTIONS'].includes(record.method))later('after '+record.method+' '+(pageOf(req.url())||''));
+            later('after '+record.method+' '+(pageOf(req.url())||''));
           }catch{}};
           p.__blinkCapture={records,listener,popup,worker,failed,serviceworker,navigated,submitting,missingOrigins,assets,shots,
-            overflow:()=>overflow,incomplete:()=>incomplete,timer:()=>shotTimer};p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);
+            overflow:()=>overflow,incomplete:()=>incomplete,timer:()=>shotTimer,ticker,pending:()=>pending,inflight:()=>shooting,
+            assetsTruncated:()=>assetsTruncated,shoot};p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);
           await shoot('start');return {recording:true};
         ''')
 
@@ -319,10 +328,14 @@ class BrowserBridge:
         return self._run_owned(owner, r'''
           const capture=p.__blinkCapture;if(!capture)throw Error('capture_not_running');
           p.off('response',capture.listener);p.off('popup',capture.popup);p.off('worker',capture.worker);p.off('requestfailed',capture.failed);
-          p.context().off('serviceworker',capture.serviceworker);p.off('framenavigated',capture.navigated);p.off('request',capture.submitting);clearTimeout(capture.timer());
+          p.context().off('serviceworker',capture.serviceworker);p.off('framenavigated',capture.navigated);p.off('request',capture.submitting);
+          clearTimeout(capture.timer());clearInterval(capture.ticker);
+          // Keep the last interaction: finish an in-flight shot, then take the pending one or a final one.
+          await capture.inflight();await capture.shoot(capture.pending()||'stop');
           delete p.__blinkCapture;p.__blinkShots=capture.shots;
           return {records:capture.records,overflow:capture.overflow(),incomplete:capture.incomplete(),
-            missingOrigins:[...capture.missingOrigins],assets:capture.assets,screenshots:capture.shots.length};
+            missingOrigins:[...capture.missingOrigins],assets:capture.assets,assetsTruncated:capture.assetsTruncated(),
+            screenshots:capture.shots.length};
         ''')
 
     def capture_shot(self, binding, index):
@@ -345,7 +358,7 @@ class BrowserBridge:
             if owner:
                 self._run_owned(owner, '''const c=p.__blinkCapture;if(c){p.off('response',c.listener);
                     p.off('popup',c.popup);p.off('worker',c.worker);p.off('requestfailed',c.failed);p.context().off('serviceworker',c.serviceworker);
-                    p.off('framenavigated',c.navigated);p.off('request',c.submitting);clearTimeout(c.timer());delete p.__blinkCapture;}delete p.__blinkShots;await p.close();return {closed:true};''')
+                    p.off('framenavigated',c.navigated);p.off('request',c.submitting);clearTimeout(c.timer());clearInterval(c.ticker);delete p.__blinkCapture;}delete p.__blinkShots;await p.close();return {closed:true};''')
                 self.owners.pop(binding, None)
 
     def _profile_call(self, name, payload):

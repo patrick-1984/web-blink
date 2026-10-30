@@ -324,7 +324,9 @@ class CleanupManager:
                         if not delete and (selected_service or by_binding) and isinstance(value, dict):
                             self.store.put(kind, key, dict(value, state="revoked"), connection=db)
                     elif kind == "captures":
-                        delete = service is None or key in capture_ids or selected_service or by_binding
+                        # Capture sessions are kept locally until the user cleans them up: forgetting one
+                        # service never deletes a session another Blink may come from; a full purge does.
+                        delete = service is None
                     elif kind == "jobs":
                         delete = key in job_ids
                     elif kind == "occurrences":
@@ -345,12 +347,16 @@ class CleanupManager:
                         delete = service is None or any(key.startswith(binding + ":") for binding in binding_ids)
                     elif kind in GLOBAL_OBJECTS:
                         delete = service is None
+                    if delete and kind == "captures":
+                        from .learner import forget_screenshots
+                        try:
+                            forget_screenshots(self.store, key)  # files first: on failure the row stays
+                        except OSError as exc:
+                            self._failure(failures, "capture_cleanup", key, exc)
+                            delete = False
                     if delete:
                         self.store.delete(kind, key, connection=db)
                         removed[kind] += 1
-                        if kind == "captures":
-                            from .learner import forget_screenshots
-                            forget_screenshots(self.store, key)
                 if service is None:
                     # Orphaned per-intent metadata has no authority, but is still
                     # known plugin data; retain only rows tied to unknown intents.

@@ -39,6 +39,12 @@ class LazyBrowser:
     def capture_stop(self, binding):
         return self.get().capture_stop(binding)
 
+    def capture_shot(self, binding, index):
+        return self.get().capture_shot(binding, index)
+
+    def capture_shots_clear(self, binding):
+        return self.get().capture_shots_clear(binding)
+
     def close_tab(self, binding):
         return self.get().close_tab(binding)
 
@@ -171,8 +177,8 @@ class Extensions:
                 data = {'binding': params['binding'], 'closed': True}
             elif method == 'forget_capture':
                 from .learner import forget_screenshots
+                forget_screenshots(self.store, params['session'])  # files first: on failure the row stays for a retry
                 self.store.delete('captures', params['session'])
-                forget_screenshots(self.store, params['session'])
                 data = {'deleted': True}
             elif method.startswith('custody_'):
                 if method == 'custody_harvest':
@@ -312,7 +318,6 @@ class Extensions:
         if time.time() - self.last_maintenance >= 30:
             self.maintenance()
             self.health()
-            self.learner.sweep()
             if hasattr(self.sources, 'gc_staging'):
                 self.sources.gc_staging(limit=100)
             self.last_maintenance = time.time()

@@ -159,7 +159,7 @@ class CleanupRuntimeTests(unittest.TestCase):
         result = self.runtime.dispatch('call_read', {'service': other_service, 'operation': 'products', 'binding': other_binding})
         self.assertEqual(result['status'], 'ok', result)
 
-    def test_capture_and_known_metadata_cleaned_but_unassigned_capture_retained(self):
+    def test_service_metadata_cleaned_but_capture_sessions_kept_until_explicit_cleanup(self):
         service, _ = self.account(provenance={'capture': 'selected-capture'})
         self.runtime.store.put('captures', 'selected-capture', {'id': 'selected-capture', 'records': []})
         self.runtime.store.put('captures', 'unassigned-capture', {'id': 'unassigned-capture', 'records': []})
@@ -170,10 +170,12 @@ class CleanupRuntimeTests(unittest.TestCase):
         self.runtime.store.put('maintenance_last', 'alice', 123)
         self.runtime.store.put('rate', 'alice:' + self.origin, [123])
         self.manager.forget(service)
-        for kind, key in [('captures', 'selected-capture'), ('jobs', 'job'), ('occurrences', 'unsent'),
+        for kind, key in [('jobs', 'job'), ('occurrences', 'unsent'),
                           ('workflow_runs', 'workflow'), ('canaries', 'canary'), ('maintenance_last', 'alice'),
                           ('rate', 'alice:' + self.origin)]:
             self.assertIsNone(self.runtime.store.get(kind, key), (kind, key))
+        # Capture sessions are local history kept by default; one session may feed several Blinks.
+        self.assertIsNotNone(self.runtime.store.get('captures', 'selected-capture'))
         self.assertIsNotNone(self.runtime.store.get('captures', 'unassigned-capture'))
 
     def test_unknown_occurrence_and_workflow_evidence_remain(self):

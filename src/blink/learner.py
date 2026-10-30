@@ -31,9 +31,14 @@ def screenshot_dir(store, session_id):
 
 
 def forget_screenshots(store, session_id):
+    """Delete a session folder; raises if it cannot, so callers keep the catalog row for a retry."""
     try:
-        shutil.rmtree(screenshot_dir(store, session_id))
-    except (FileNotFoundError, ValueError):
+        folder = screenshot_dir(store, session_id)
+    except ValueError:
+        return
+    try:
+        shutil.rmtree(folder)
+    except FileNotFoundError:
         pass
 
 
@@ -246,7 +251,10 @@ class Learner:
         session_id = uuid.uuid4().hex
         extra = {'otherHosts': sorted({r['origin'] for r in records if not r['inScope']}),
                  'staticAssets': self._assets(data.get('assets')),
-                 'screenshots': self._screenshots(binding, data.get('screenshots'), session_id)}
+                 'screenshots': self._screenshots(binding, data.get('screenshots'), session_id),
+                 'assetsTruncated': bool(data.get('assetsTruncated'))}
+        if getattr(self, 'unsaved_screenshots', 0):
+            extra['unsavedScreenshots'] = self.unsaved_screenshots
         session = self._save(records, 'shared-playwright', missing, reasons, session_id=session_id, extra=extra)
         folder = screenshot_dir(self.store, session_id)
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -270,13 +278,20 @@ class Learner:
 
     def _screenshots(self, binding, count, session_id):
         """Pull the recording's screenshots one by one into private state; failures only lose screenshots."""
+        self.unsaved_screenshots = 0
         fetch = getattr(self.browser, 'capture_shot', None)
         if not callable(fetch) or not isinstance(count, int) or isinstance(count, bool) or count <= 0:
             return []
-        folder, saved = screenshot_dir(self.store, session_id), []
+        folder, saved, failed = screenshot_dir(self.store, session_id), [], 0
         for index in range(min(count, MAX_SHOTS)):
+            shot = None
+            for _attempt in range(3):
+                try:
+                    shot = (fetch(binding, index) or {}).get('shot')
+                    break
+                except Exception:
+                    continue
             try:
-                shot = (fetch(binding, index) or {}).get('shot')
                 data = base64.b64decode(shot['data'], validate=True)
                 if not data.startswith(b'\xff\xd8') or len(data) > MAX_SHOT_BYTES:
                     continue
@@ -290,9 +305,11 @@ class Learner:
                               'reason': str(shot.get('reason', ''))[:100],
                               'page': page if isinstance(page, str) and len(page) <= 500 else None})
             except Exception:
+                failed += 1
                 continue
+        self.unsaved_screenshots = failed
         clear = getattr(self.browser, 'capture_shots_clear', None)
-        if callable(clear):
+        if callable(clear) and not failed:  # keep the browser copy while any screenshot is unsaved
             try:
                 clear(binding)
             except Exception:
@@ -383,10 +400,4 @@ class Learner:
                                                provenance={'capture': session, 'verified': False})
         return {'proposal': result, 'manifest': document, 'verified': False}
 
-    def sweep(self, now=None):
-        now = time.time() if now is None else now
-        removed = 0
-        for session in self.store.list('captures'):
-            if session.get('createdAt', now) + 30 * 86400 < now:
-                self.store.delete('captures', session['id']); removed += 1
-        return removed
+    # Capture sessions never expire: only forget_capture or a full purge removes them.
