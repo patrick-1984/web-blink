@@ -1,0 +1,2301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:web-blink:schema:execution:1",
+  "title": "Web Blink execution profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "openapi",
+    "info",
+    "servers",
+    "x-blink-service",
+    "paths"
+  ],
+  "properties": {
+    "openapi": {
+      "const": "3.1.0"
+    },
+    "info": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "title",
+        "version"
+      ]
+    },
+    "servers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    "x-blink-service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?![\\s\\S])"
+        },
+        "requestedOrigins": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "appOrigin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "none",
+                "api-key",
+                "bearer-storage",
+                "cookie-session",
+                "oauth-refresh"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "header": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "in": {
+              "const": "header"
+            },
+            "cookies": {
+              "type": "array",
+              "maxItems": 30,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "storage": {
+              "type": "array",
+              "maxItems": 30,
+              "items": {
+                "type": "object"
+              }
+            },
+            "csrf": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 150
+                },
+                "to": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 150
+                }
+              },
+              "required": [
+                "from",
+                "to"
+              ]
+            },
+            "probe": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "refresher": {
+              "enum": [
+                "browser",
+                "broker"
+              ]
+            },
+            "rotation": {
+              "enum": [
+                "none",
+                "cookie",
+                "token",
+                "unknown"
+              ]
+            },
+            "bound": {
+              "type": [
+                "boolean",
+                "string"
+              ],
+              "enum": [
+                true,
+                false,
+                "unknown"
+              ]
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "idleS": {
+                  "type": "number",
+                  "minimum": 1
+                },
+                "absoluteS": {
+                  "type": "number",
+                  "minimum": 1
+                }
+              },
+              "required": []
+            },
+            "refresh": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "tokenPath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "refreshTokenPath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "expiresInPath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "authentication": {
+                  "enum": [
+                    "none",
+                    "basic",
+                    "same"
+                  ]
+                },
+                "publicClientId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "clientId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "leadS": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 3600
+                }
+              },
+              "required": [
+                "operation"
+              ]
+            },
+            "keepalive": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "stepUp": {
+              "const": "human_only"
+            },
+            "graceS": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        "exec": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowed": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "direct",
+                  "in_page"
+                ]
+              }
+            },
+            "preferred": {
+              "enum": [
+                "direct",
+                "in_page"
+              ]
+            }
+          },
+          "required": [
+            "allowed",
+            "preferred"
+          ]
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "officialApi": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rate": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "perMin": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 600
+                }
+              },
+              "required": []
+            },
+            "killSwitch": {
+              "type": "boolean"
+            },
+            "tos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "checked": {
+                  "type": "string",
+                  "maxLength": 30
+                },
+                "automation": {
+                  "enum": [
+                    "allowed",
+                    "silent",
+                    "prohibited",
+                    "unknown"
+                  ]
+                }
+              },
+              "required": []
+            }
+          },
+          "required": []
+        },
+        "drift": {
+          "type": "object"
+        },
+        "tier": {
+          "enum": [
+            "own",
+            "trusted",
+            "untrusted"
+          ]
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "properties",
+            "additionalProperties"
+          ],
+          "properties": {
+            "type": {
+              "const": "object"
+            },
+            "additionalProperties": {
+              "const": false
+            },
+            "properties": {
+              "type": "object",
+              "maxProperties": 100,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "type": "object"
+              }
+            },
+            "required": {
+              "type": "array",
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+              }
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          }
+        }
+      },
+      "required": [
+        "id",
+        "requestedOrigins",
+        "auth",
+        "exec"
+      ]
+    },
+    "paths": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 500,
+      "patternProperties": {
+        "^/[^?#%\\\\\\r\\n]*(?![\\s\\S])": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "get": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "x-blink-summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "x-blink-effect": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "destructive",
+                    "financial",
+                    "maintenance"
+                  ]
+                },
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "in": {
+                        "enum": [
+                          "path",
+                          "query",
+                          "header"
+                        ]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "schema": {
+                        "type": [
+                          "object",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "in",
+                      "schema"
+                    ]
+                  }
+                },
+                "requestBody": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "content": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "application/json": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        },
+                        "application/x-www-form-urlencoded": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        }
+                      },
+                      "minProperties": 1,
+                      "maxProperties": 1
+                    }
+                  },
+                  "required": [
+                    "content"
+                  ]
+                },
+                "responses": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 20,
+                  "patternProperties": {
+                    "^(?:[1-5][0-9]{2}|default)(?![\\s\\S])": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "content": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "application/json": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "schema": {
+                                  "type": [
+                                    "object",
+                                    "boolean"
+                                  ]
+                                }
+                              },
+                              "required": []
+                            }
+                          },
+                          "required": [
+                            "application/json"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "description"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "x-blink-idempotency": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "mechanism": {
+                      "type": "string",
+                      "maxLength": 150
+                    },
+                    "statusOp": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mechanism"
+                  ]
+                },
+                "x-blink-money": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "x-blink-params": {
+                  "type": "object",
+                  "maxProperties": 100
+                },
+                "x-blink-verified": {
+                  "type": "array",
+                  "maxItems": 100
+                },
+                "x-blink-auth-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "tokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "refreshTokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "expiresInPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  }
+                },
+                "x-blink-prestate": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "operation",
+                    "arguments",
+                    "amountPath",
+                    "currencyPath",
+                    "statePaths"
+                  ],
+                  "properties": {
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                    },
+                    "arguments": {
+                      "type": "object",
+                      "maxProperties": 100,
+                      "propertyNames": {
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    },
+                    "amountPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "currencyPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "statePaths": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 20,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    }
+                  }
+                },
+                "x-blink-setting-map": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                  }
+                },
+                "servers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "url"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "operationId",
+                "x-blink-effect",
+                "responses"
+              ]
+            },
+            "post": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "x-blink-summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "x-blink-effect": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "destructive",
+                    "financial",
+                    "maintenance"
+                  ]
+                },
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "in": {
+                        "enum": [
+                          "path",
+                          "query",
+                          "header"
+                        ]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "schema": {
+                        "type": [
+                          "object",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "in",
+                      "schema"
+                    ]
+                  }
+                },
+                "requestBody": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "content": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "application/json": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        },
+                        "application/x-www-form-urlencoded": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        }
+                      },
+                      "minProperties": 1,
+                      "maxProperties": 1
+                    }
+                  },
+                  "required": [
+                    "content"
+                  ]
+                },
+                "responses": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 20,
+                  "patternProperties": {
+                    "^(?:[1-5][0-9]{2}|default)(?![\\s\\S])": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "content": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "application/json": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "schema": {
+                                  "type": [
+                                    "object",
+                                    "boolean"
+                                  ]
+                                }
+                              },
+                              "required": []
+                            }
+                          },
+                          "required": [
+                            "application/json"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "description"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "x-blink-idempotency": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "mechanism": {
+                      "type": "string",
+                      "maxLength": 150
+                    },
+                    "statusOp": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mechanism"
+                  ]
+                },
+                "x-blink-money": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "x-blink-params": {
+                  "type": "object",
+                  "maxProperties": 100
+                },
+                "x-blink-verified": {
+                  "type": "array",
+                  "maxItems": 100
+                },
+                "x-blink-auth-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "tokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "refreshTokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "expiresInPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  }
+                },
+                "x-blink-prestate": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "operation",
+                    "arguments",
+                    "amountPath",
+                    "currencyPath",
+                    "statePaths"
+                  ],
+                  "properties": {
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                    },
+                    "arguments": {
+                      "type": "object",
+                      "maxProperties": 100,
+                      "propertyNames": {
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    },
+                    "amountPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "currencyPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "statePaths": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 20,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    }
+                  }
+                },
+                "x-blink-setting-map": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                  }
+                },
+                "servers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "url"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "operationId",
+                "x-blink-effect",
+                "responses"
+              ]
+            },
+            "put": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "x-blink-summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "x-blink-effect": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "destructive",
+                    "financial",
+                    "maintenance"
+                  ]
+                },
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "in": {
+                        "enum": [
+                          "path",
+                          "query",
+                          "header"
+                        ]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "schema": {
+                        "type": [
+                          "object",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "in",
+                      "schema"
+                    ]
+                  }
+                },
+                "requestBody": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "content": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "application/json": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        },
+                        "application/x-www-form-urlencoded": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        }
+                      },
+                      "minProperties": 1,
+                      "maxProperties": 1
+                    }
+                  },
+                  "required": [
+                    "content"
+                  ]
+                },
+                "responses": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 20,
+                  "patternProperties": {
+                    "^(?:[1-5][0-9]{2}|default)(?![\\s\\S])": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "content": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "application/json": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "schema": {
+                                  "type": [
+                                    "object",
+                                    "boolean"
+                                  ]
+                                }
+                              },
+                              "required": []
+                            }
+                          },
+                          "required": [
+                            "application/json"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "description"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "x-blink-idempotency": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "mechanism": {
+                      "type": "string",
+                      "maxLength": 150
+                    },
+                    "statusOp": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mechanism"
+                  ]
+                },
+                "x-blink-money": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "x-blink-params": {
+                  "type": "object",
+                  "maxProperties": 100
+                },
+                "x-blink-verified": {
+                  "type": "array",
+                  "maxItems": 100
+                },
+                "x-blink-auth-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "tokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "refreshTokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "expiresInPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  }
+                },
+                "x-blink-prestate": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "operation",
+                    "arguments",
+                    "amountPath",
+                    "currencyPath",
+                    "statePaths"
+                  ],
+                  "properties": {
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                    },
+                    "arguments": {
+                      "type": "object",
+                      "maxProperties": 100,
+                      "propertyNames": {
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    },
+                    "amountPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "currencyPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "statePaths": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 20,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    }
+                  }
+                },
+                "x-blink-setting-map": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                  }
+                },
+                "servers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "url"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "operationId",
+                "x-blink-effect",
+                "responses"
+              ]
+            },
+            "patch": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "x-blink-summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "x-blink-effect": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "destructive",
+                    "financial",
+                    "maintenance"
+                  ]
+                },
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "in": {
+                        "enum": [
+                          "path",
+                          "query",
+                          "header"
+                        ]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "schema": {
+                        "type": [
+                          "object",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "in",
+                      "schema"
+                    ]
+                  }
+                },
+                "requestBody": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "content": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "application/json": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        },
+                        "application/x-www-form-urlencoded": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        }
+                      },
+                      "minProperties": 1,
+                      "maxProperties": 1
+                    }
+                  },
+                  "required": [
+                    "content"
+                  ]
+                },
+                "responses": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 20,
+                  "patternProperties": {
+                    "^(?:[1-5][0-9]{2}|default)(?![\\s\\S])": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "content": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "application/json": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "schema": {
+                                  "type": [
+                                    "object",
+                                    "boolean"
+                                  ]
+                                }
+                              },
+                              "required": []
+                            }
+                          },
+                          "required": [
+                            "application/json"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "description"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "x-blink-idempotency": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "mechanism": {
+                      "type": "string",
+                      "maxLength": 150
+                    },
+                    "statusOp": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mechanism"
+                  ]
+                },
+                "x-blink-money": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "x-blink-params": {
+                  "type": "object",
+                  "maxProperties": 100
+                },
+                "x-blink-verified": {
+                  "type": "array",
+                  "maxItems": 100
+                },
+                "x-blink-auth-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "tokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "refreshTokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "expiresInPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  }
+                },
+                "x-blink-prestate": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "operation",
+                    "arguments",
+                    "amountPath",
+                    "currencyPath",
+                    "statePaths"
+                  ],
+                  "properties": {
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                    },
+                    "arguments": {
+                      "type": "object",
+                      "maxProperties": 100,
+                      "propertyNames": {
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    },
+                    "amountPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "currencyPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "statePaths": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 20,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    }
+                  }
+                },
+                "x-blink-setting-map": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                  }
+                },
+                "servers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "url"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "operationId",
+                "x-blink-effect",
+                "responses"
+              ]
+            },
+            "delete": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "x-blink-summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "x-blink-effect": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "destructive",
+                    "financial",
+                    "maintenance"
+                  ]
+                },
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "in": {
+                        "enum": [
+                          "path",
+                          "query",
+                          "header"
+                        ]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "schema": {
+                        "type": [
+                          "object",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "in",
+                      "schema"
+                    ]
+                  }
+                },
+                "requestBody": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "content": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "application/json": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        },
+                        "application/x-www-form-urlencoded": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        }
+                      },
+                      "minProperties": 1,
+                      "maxProperties": 1
+                    }
+                  },
+                  "required": [
+                    "content"
+                  ]
+                },
+                "responses": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 20,
+                  "patternProperties": {
+                    "^(?:[1-5][0-9]{2}|default)(?![\\s\\S])": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "content": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "application/json": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "schema": {
+                                  "type": [
+                                    "object",
+                                    "boolean"
+                                  ]
+                                }
+                              },
+                              "required": []
+                            }
+                          },
+                          "required": [
+                            "application/json"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "description"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "x-blink-idempotency": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "mechanism": {
+                      "type": "string",
+                      "maxLength": 150
+                    },
+                    "statusOp": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mechanism"
+                  ]
+                },
+                "x-blink-money": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "x-blink-params": {
+                  "type": "object",
+                  "maxProperties": 100
+                },
+                "x-blink-verified": {
+                  "type": "array",
+                  "maxItems": 100
+                },
+                "x-blink-auth-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "tokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "refreshTokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "expiresInPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  }
+                },
+                "x-blink-prestate": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "operation",
+                    "arguments",
+                    "amountPath",
+                    "currencyPath",
+                    "statePaths"
+                  ],
+                  "properties": {
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                    },
+                    "arguments": {
+                      "type": "object",
+                      "maxProperties": 100,
+                      "propertyNames": {
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    },
+                    "amountPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "currencyPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "statePaths": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 20,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    }
+                  }
+                },
+                "x-blink-setting-map": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                  }
+                },
+                "servers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "url"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "operationId",
+                "x-blink-effect",
+                "responses"
+              ]
+            },
+            "head": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "operationId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "x-blink-summary": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "x-blink-effect": {
+                  "enum": [
+                    "read",
+                    "write",
+                    "destructive",
+                    "financial",
+                    "maintenance"
+                  ]
+                },
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "in": {
+                        "enum": [
+                          "path",
+                          "query",
+                          "header"
+                        ]
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "schema": {
+                        "type": [
+                          "object",
+                          "boolean"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "in",
+                      "schema"
+                    ]
+                  }
+                },
+                "requestBody": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "content": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "application/json": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        },
+                        "application/x-www-form-urlencoded": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "schema": {
+                              "type": [
+                                "object",
+                                "boolean"
+                              ]
+                            }
+                          },
+                          "required": []
+                        }
+                      },
+                      "minProperties": 1,
+                      "maxProperties": 1
+                    }
+                  },
+                  "required": [
+                    "content"
+                  ]
+                },
+                "responses": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 20,
+                  "patternProperties": {
+                    "^(?:[1-5][0-9]{2}|default)(?![\\s\\S])": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "content": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "application/json": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "schema": {
+                                  "type": [
+                                    "object",
+                                    "boolean"
+                                  ]
+                                }
+                              },
+                              "required": []
+                            }
+                          },
+                          "required": [
+                            "application/json"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "description"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "x-blink-idempotency": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "mechanism": {
+                      "type": "string",
+                      "maxLength": 150
+                    },
+                    "statusOp": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "mechanism"
+                  ]
+                },
+                "x-blink-money": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "amount": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "currency": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "amount",
+                    "currency"
+                  ]
+                },
+                "x-blink-params": {
+                  "type": "object",
+                  "maxProperties": 100
+                },
+                "x-blink-verified": {
+                  "type": "array",
+                  "maxItems": 100
+                },
+                "x-blink-auth-update": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "tokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "refreshTokenPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "expiresInPath": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  }
+                },
+                "x-blink-prestate": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "operation",
+                    "arguments",
+                    "amountPath",
+                    "currencyPath",
+                    "statePaths"
+                  ],
+                  "properties": {
+                    "operation": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+                    },
+                    "arguments": {
+                      "type": "object",
+                      "maxProperties": 100,
+                      "propertyNames": {
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                      },
+                      "additionalProperties": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    },
+                    "amountPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "currencyPath": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                    },
+                    "statePaths": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 20,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+                      }
+                    }
+                  }
+                },
+                "x-blink-setting-map": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+                  }
+                },
+                "servers": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "url"
+                    ],
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "operationId",
+                "x-blink-effect",
+                "responses"
+              ]
+            }
+          },
+          "required": []
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

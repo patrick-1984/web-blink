@@ -1,0 +1,372 @@
+{
+  "files": [
+    {
+      "bytes": 391,
+      "path": ".claude-plugin/plugin.json",
+      "sha256": "f5942b4c085f15330c58253c9cd954ad7446320a3ac1bb74c0bd776f64d2116a"
+    },
+    {
+      "bytes": 188,
+      "path": ".mcp.json",
+      "sha256": "c1fefac0b78c73d372cf5320132de5bf84cea4a315249da3e799a1ae3576cfde"
+    },
+    {
+      "bytes": 1069,
+      "path": "LICENSE",
+      "sha256": "b645385b4fd24278a3688f278f3191d943140859723ef4e9a6ec6db9497ec0c5"
+    },
+    {
+      "bytes": 2627,
+      "path": "README.md",
+      "sha256": "fd2794ff5a5e018829502a999580906fe0a8b7cc02f8866bd7e15488be83c7f9"
+    },
+    {
+      "bytes": 336,
+      "path": "blink-catalog.json",
+      "sha256": "35e934963382a0c838423e6c3da7308764d86d850eb15c078d34950998c6460d"
+    },
+    {
+      "bytes": 1779,
+      "path": "blinks/README.md",
+      "sha256": "14ba707e303b63531f2044b927f3a7fbb01cecaae8550e205ddd24ef6403959b"
+    },
+    {
+      "bytes": 1497,
+      "path": "blinks/com.banana/1.0.0/openapi.json",
+      "sha256": "101df797eaa71ec619df3da53e28ccecfc8583e5fa7142f1c2a0abe6b1ae5bd2"
+    },
+    {
+      "bytes": 461,
+      "path": "blinks/com.banana/1.0.0/weblink.json",
+      "sha256": "ee7db24a9c30b44d42d9304be5fac965a80f5908256f0a0e887a8c15e520d2db"
+    },
+    {
+      "bytes": 4648,
+      "path": "docs/claude-compatibility.md",
+      "sha256": "4a903cacda3a18beb15e7c6bc3cb797f93db9c9749fa8fa96e41bf048c08651b"
+    },
+    {
+      "bytes": 13685,
+      "path": "docs/cli-reference.md",
+      "sha256": "a0d6cba632f82e3d8203c64274aa97aef7aa7e89ee2288ef334c5a7725ad894e"
+    },
+    {
+      "bytes": 7123,
+      "path": "docs/custody-provider.md",
+      "sha256": "7955596c6a201bfd83c6ebf0382eee1cabac67c9ddcc8a359024b4f6dc4fd273"
+    },
+    {
+      "bytes": 13694,
+      "path": "docs/execution-profile.md",
+      "sha256": "6cfbf5454a461b8e8608b926a1478623407298e154d89addfa02982a978d0496"
+    },
+    {
+      "bytes": 10076,
+      "path": "docs/runtime-guide.md",
+      "sha256": "df147713cc16cd0f78f4a95d9a06b2f560772afa6210065a378859d7b1b70840"
+    },
+    {
+      "bytes": 7120,
+      "path": "docs/source-commands.md",
+      "sha256": "16cf92346c1746b1603c505fab824ad29fb3ded92215e5db4c22f4214032269d"
+    },
+    {
+      "bytes": 6890,
+      "path": "docs/state-lifecycle.md",
+      "sha256": "4bf551e9c5204ce467aa186651cfad184bbef107f58f2b538d53c77ed37ec242"
+    },
+    {
+      "bytes": 167,
+      "path": "hooks/hooks.json",
+      "sha256": "757e80ccb22573a0f5478c820e6a004ca37edd044aba8c0936909e9f8763abc1"
+    },
+    {
+      "bytes": 10833,
+      "path": "mcp/server.mjs",
+      "sha256": "c7e518b657a49914339f93bdb3e43abbeb4c6a9d727a892c8cb91a87c6bdb3e5"
+    },
+    {
+      "bytes": 1858,
+      "path": "mcp/session-status.mjs",
+      "sha256": "2281b7980a653b9064d940729c1894870eebd64e556d8140c1e2152e72f0ed26"
+    },
+    {
+      "bytes": 607,
+      "path": "pyproject.toml",
+      "sha256": "db694abbcfdf593e925cd76c3d3187e2f3e58bcaf82338a6639ee53e09befe1c"
+    },
+    {
+      "bytes": 12305,
+      "path": "requirements.lock",
+      "sha256": "848b319ed090a0f0feb8cd286289ef0ab781d9eaa5d33ae1ca8a7c06b7cf51a0"
+    },
+    {
+      "bytes": 3285,
+      "path": "schemas/README.md",
+      "sha256": "e967b32562cd7d47471c055f3efe776a3b18c2bf1e7f3921c4f67915d67f99f8"
+    },
+    {
+      "bytes": 3668,
+      "path": "schemas/config-v1/settings.schema.json",
+      "sha256": "8e1d44f1d7602eb9ae11ae180b65ba740d70f5ccb3c8a77b201d9c1344b0aec9"
+    },
+    {
+      "bytes": 4866,
+      "path": "schemas/execution-v1/arazzo.schema.json",
+      "sha256": "284f03efb5a8f2456bc9847a97f5c9a258d8a4556ae36383165030a4189d9524"
+    },
+    {
+      "bytes": 77868,
+      "path": "schemas/execution-v1/openapi.schema.json",
+      "sha256": "01c2015b5aa5657957cf11ad6a51267e34ff81c6bef559cd98f49a87364b3b22"
+    },
+    {
+      "bytes": 1839,
+      "path": "schemas/index.json",
+      "sha256": "824370682c86086ed96a82ffb3e677986022cfa8c9e9b8492f7fc32ae4c04d91"
+    },
+    {
+      "bytes": 1562,
+      "path": "schemas/v1/catalog.schema.json",
+      "sha256": "93954db53d2a09ec3fde1e07a9518ac2856ee474712f04b9568bf255352a5d34"
+    },
+    {
+      "bytes": 4497,
+      "path": "schemas/v1/source-lock.schema.json",
+      "sha256": "f0ff1e5338b15ae93098ba77dc637bef0f7bbb0be248f72333516c2832074a2e"
+    },
+    {
+      "bytes": 1826,
+      "path": "schemas/v1/sources.schema.json",
+      "sha256": "11df35cde3e3f4e34c61054c89915332d1d972370c08de807aac634881c1d581"
+    },
+    {
+      "bytes": 2432,
+      "path": "schemas/v1/weblink.schema.json",
+      "sha256": "05224867bb8e1040e3cb8e4069a3c6b824b16cd89d25fac211182128b36f3ef2"
+    },
+    {
+      "bytes": 242,
+      "path": "scripts/blink.py",
+      "sha256": "6f7dc3c0f269e5e11537e6b3c3c098f15f0ff65d6666f74620b85c5642cea609"
+    },
+    {
+      "bytes": 8812,
+      "path": "scripts/demo.py",
+      "sha256": "0e0f8dacbd8e64e2dcad8bd9a4d810dd2b4d8d806e236bcfea10d988931d9672"
+    },
+    {
+      "bytes": 846,
+      "path": "skills/blink-learn/SKILL.md",
+      "sha256": "4593de589ac728fbc7c69d2bdadc3ced53ca793a22816ec03ff309fd374aa67b"
+    },
+    {
+      "bytes": 797,
+      "path": "skills/blink-review/SKILL.md",
+      "sha256": "ca368acf12f4fa3217b924daced6549bb156600a1b1b331cc4c3f4a4c36801c7"
+    },
+    {
+      "bytes": 966,
+      "path": "skills/blink-use/SKILL.md",
+      "sha256": "9443cd731f31c95ad81a101f361b5de30293df7d91a3f2762bf5af1e304dc419"
+    },
+    {
+      "bytes": 69,
+      "path": "src/blink/__init__.py",
+      "sha256": "3953c265f857ca85eb901283bbab0053bad0047c6f9b0bc44614df7942c35f5c"
+    },
+    {
+      "bytes": 48,
+      "path": "src/blink/__main__.py",
+      "sha256": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d"
+    },
+    {
+      "bytes": 19918,
+      "path": "src/blink/broker.py",
+      "sha256": "971182cba7a5286b7115ef3d11bc5c77d66cf5f6c5df50c7f8c509744ecee839"
+    },
+    {
+      "bytes": 20823,
+      "path": "src/blink/browser.py",
+      "sha256": "46c102ecb97efad24847dfeb3e1e620bed4a4b53e932276d6fd45e53c48d5b93"
+    },
+    {
+      "bytes": 24923,
+      "path": "src/blink/cleanup.py",
+      "sha256": "e21b984e2e638d9eabaa35fc128b885f3fa2f82e1f2fd756e391e48b8a9b8c37"
+    },
+    {
+      "bytes": 15695,
+      "path": "src/blink/cli.py",
+      "sha256": "219d52ac1c681142b3fb963fe2bf957b0aa23b8c160e138227e5fa48eb9f7236"
+    },
+    {
+      "bytes": 7271,
+      "path": "src/blink/client.py",
+      "sha256": "cb5486150b5abf7f96bc7f4a505a3faa0ba0b045053a389303ca3ab6a692f6ef"
+    },
+    {
+      "bytes": 13098,
+      "path": "src/blink/config.py",
+      "sha256": "dcdcfdf45d9239e0bbee8b664760a87c66facf4960ec02430786886712761763"
+    },
+    {
+      "bytes": 31762,
+      "path": "src/blink/custody.py",
+      "sha256": "c87308ce6200f679df3cb54834b237c5456e771a9d6ac934c67aacbdb2a13740"
+    },
+    {
+      "bytes": 9833,
+      "path": "src/blink/daemon.py",
+      "sha256": "3fbbd7d922bc86f13ff655bfcd0d69e3104acd29ba999c9018b4bd0d206bfaee"
+    },
+    {
+      "bytes": 336,
+      "path": "src/blink/data/plugin/blink-catalog.json",
+      "sha256": "35e934963382a0c838423e6c3da7308764d86d850eb15c078d34950998c6460d"
+    },
+    {
+      "bytes": 1497,
+      "path": "src/blink/data/plugin/blinks/com.banana/1.0.0/openapi.json",
+      "sha256": "101df797eaa71ec619df3da53e28ccecfc8583e5fa7142f1c2a0abe6b1ae5bd2"
+    },
+    {
+      "bytes": 461,
+      "path": "src/blink/data/plugin/blinks/com.banana/1.0.0/weblink.json",
+      "sha256": "ee7db24a9c30b44d42d9304be5fac965a80f5908256f0a0e887a8c15e520d2db"
+    },
+    {
+      "bytes": 3668,
+      "path": "src/blink/data/plugin/schemas/config-v1/settings.schema.json",
+      "sha256": "8e1d44f1d7602eb9ae11ae180b65ba740d70f5ccb3c8a77b201d9c1344b0aec9"
+    },
+    {
+      "bytes": 4866,
+      "path": "src/blink/data/plugin/schemas/execution-v1/arazzo.schema.json",
+      "sha256": "284f03efb5a8f2456bc9847a97f5c9a258d8a4556ae36383165030a4189d9524"
+    },
+    {
+      "bytes": 77868,
+      "path": "src/blink/data/plugin/schemas/execution-v1/openapi.schema.json",
+      "sha256": "01c2015b5aa5657957cf11ad6a51267e34ff81c6bef559cd98f49a87364b3b22"
+    },
+    {
+      "bytes": 1839,
+      "path": "src/blink/data/plugin/schemas/index.json",
+      "sha256": "824370682c86086ed96a82ffb3e677986022cfa8c9e9b8492f7fc32ae4c04d91"
+    },
+    {
+      "bytes": 1562,
+      "path": "src/blink/data/plugin/schemas/v1/catalog.schema.json",
+      "sha256": "93954db53d2a09ec3fde1e07a9518ac2856ee474712f04b9568bf255352a5d34"
+    },
+    {
+      "bytes": 4497,
+      "path": "src/blink/data/plugin/schemas/v1/source-lock.schema.json",
+      "sha256": "f0ff1e5338b15ae93098ba77dc637bef0f7bbb0be248f72333516c2832074a2e"
+    },
+    {
+      "bytes": 1826,
+      "path": "src/blink/data/plugin/schemas/v1/sources.schema.json",
+      "sha256": "11df35cde3e3f4e34c61054c89915332d1d972370c08de807aac634881c1d581"
+    },
+    {
+      "bytes": 2432,
+      "path": "src/blink/data/plugin/schemas/v1/weblink.schema.json",
+      "sha256": "05224867bb8e1040e3cb8e4069a3c6b824b16cd89d25fac211182128b36f3ef2"
+    },
+    {
+      "bytes": 10461,
+      "path": "src/blink/distribution.py",
+      "sha256": "b3cc1aed4b6acbd8aa830908835e5cf7648790d6b24c4d030b836471d4639cf1"
+    },
+    {
+      "bytes": 3540,
+      "path": "src/blink/doctor.py",
+      "sha256": "13d29cad7cd85582ac78f478612e7c4499d7803bc4b732cbf809b3402fb423c9"
+    },
+    {
+      "bytes": 33275,
+      "path": "src/blink/dynamic_cli.py",
+      "sha256": "0db7191b8d6a3fc1bdf88f48922fde7df6903d3d23243ff4e6f8e5704c9f9714"
+    },
+    {
+      "bytes": 200,
+      "path": "src/blink/errors.py",
+      "sha256": "a2d1c32dcf23cef5befea70eff1ad2abd354572b55a219971bbb71f8a034832f"
+    },
+    {
+      "bytes": 7436,
+      "path": "src/blink/executor.py",
+      "sha256": "556e9de12f9a1f61043fdd6109abc7ddf63969fd78cd425f781be380a2aa6e95"
+    },
+    {
+      "bytes": 19194,
+      "path": "src/blink/extensions.py",
+      "sha256": "c3c3df04e7be5411ed222732d3b58232c7ef2f347c3fe0da3789f8d7a4438ff3"
+    },
+    {
+      "bytes": 16042,
+      "path": "src/blink/learner.py",
+      "sha256": "49addd7069c2827aa38a79b79d0058de999ba5952f67ea81e8f64b7642fec3b3"
+    },
+    {
+      "bytes": 482,
+      "path": "src/blink/paths.py",
+      "sha256": "46eba97e4ccf518f79584ceee6f711a83241b4477de44e6c96cce106d31719f4"
+    },
+    {
+      "bytes": 7892,
+      "path": "src/blink/preflight.py",
+      "sha256": "bb7ee118e1cc312dc8c3577bdc8e182aa2b363e451360973838955078d9ef9fe"
+    },
+    {
+      "bytes": 24003,
+      "path": "src/blink/profile.py",
+      "sha256": "e3b45c5014cf39dc27a16f98285004d5808803d308b5cab9a0ab684f259c5212"
+    },
+    {
+      "bytes": 66532,
+      "path": "src/blink/runtime.py",
+      "sha256": "682dd6d933fcab0bc5b9f189c4b93547a613d61df8af9a29da7e6e646dd86c78"
+    },
+    {
+      "bytes": 21235,
+      "path": "src/blink/scheduler.py",
+      "sha256": "33a86a6a8a2358f7110586bd014697ec2f5b2aca637058b81b6ecb44bcd02ad5"
+    },
+    {
+      "bytes": 2544,
+      "path": "src/blink/signatures.py",
+      "sha256": "ee8513e529df29c653815120841830371670455344740c27ebaafae9cf5db219"
+    },
+    {
+      "bytes": 30576,
+      "path": "src/blink/sources.py",
+      "sha256": "12761b6afdf3c58b3a45a8f5aca3e11bce009af5e25d1e5326b6212483bf0c9e"
+    },
+    {
+      "bytes": 7436,
+      "path": "src/blink/storage.py",
+      "sha256": "6cd24983c574a76d1b5a571f2769d375bbe110c9caf1ca30eb707ea66d4ba979"
+    },
+    {
+      "bytes": 13279,
+      "path": "src/blink/workflows.py",
+      "sha256": "3176c8922a8ceed598557b17104e801c47048373ee25017951159b23645bc9aa"
+    }
+  ],
+  "formatVersion": 1,
+  "plugin": {
+    "author": {
+      "name": "Web Blink project"
+    },
+    "description": "Learn and use reviewed Web Link integrations with local account custody and durable execution policy.",
+    "displayName": "Web Blink",
+    "homepage": "https://github.com/patrick-1984/web-blink",
+    "license": "MIT",
+    "name": "web-blink",
+    "repository": "https://github.com/patrick-1984/web-blink",
+    "version": "0.2.1"
+  }
+}

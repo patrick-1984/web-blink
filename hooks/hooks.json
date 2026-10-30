@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/session-status.mjs"], "timeout": 5}]}]
+  }
+}

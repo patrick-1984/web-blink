@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:web-blink:schema:arazzo-execution:1",
+  "title": "Web Blink linear Arazzo execution profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "arazzo",
+    "info",
+    "sourceDescriptions",
+    "workflows"
+  ],
+  "properties": {
+    "arazzo": {
+      "const": "1.1.0"
+    },
+    "info": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "version"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "sourceDescriptions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "url",
+          "type"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/id"
+          },
+          "type": {
+            "const": "openapi"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*\\.json(?![\\s\\S])"
+          }
+        }
+      }
+    },
+    "workflows": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workflowId",
+          "steps"
+        ],
+        "properties": {
+          "workflowId": {
+            "$ref": "#/$defs/id"
+          },
+          "inputs": {
+            "type": "object"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "stepId",
+                "operationId"
+              ],
+              "properties": {
+                "stepId": {
+                  "$ref": "#/$defs/id"
+                },
+                "operationId": {
+                  "$ref": "#/$defs/id"
+                },
+                "dependsOn": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  }
+                },
+                "parameters": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "in",
+                      "value"
+                    ],
+                    "properties": {
+                      "name": {
+                        "$ref": "#/$defs/id"
+                      },
+                      "in": {
+                        "enum": [
+                          "path",
+                          "query",
+                          "header"
+                        ]
+                      },
+                      "value": true
+                    }
+                  }
+                },
+                "requestBody": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "contentType",
+                    "payload"
+                  ],
+                  "properties": {
+                    "contentType": {
+                      "const": "application/json"
+                    },
+                    "payload": true
+                  }
+                },
+                "outputs": {
+                  "type": "object",
+                  "maxProperties": 100,
+                  "propertyNames": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "pattern": "^\\$response\\.body#(?:/[^\\r\\n]*)?(?![\\s\\S])"
+                  }
+                },
+                "successCriteria": {
+                  "type": "array",
+                  "maxItems": 0,
+                  "description": "Nonempty HTTP-status success criteria are not supported by execution profile v1; runtime envelopes expose validated response bodies only.",
+                  "items": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(?![\\s\\S])",
+      "maxLength": 100
+    }
+  }
+}

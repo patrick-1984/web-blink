@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "schemas": [
+    {
+      "id": "urn:web-blink:schema:sources:1",
+      "path": "v1/sources.schema.json",
+      "sha256": "11df35cde3e3f4e34c61054c89915332d1d972370c08de807aac634881c1d581"
+    },
+    {
+      "id": "urn:web-blink:schema:catalog:1",
+      "path": "v1/catalog.schema.json",
+      "sha256": "93954db53d2a09ec3fde1e07a9518ac2856ee474712f04b9568bf255352a5d34"
+    },
+    {
+      "id": "urn:web-blink:schema:weblink:1",
+      "path": "v1/weblink.schema.json",
+      "sha256": "05224867bb8e1040e3cb8e4069a3c6b824b16cd89d25fac211182128b36f3ef2"
+    },
+    {
+      "id": "urn:web-blink:schema:source-lock:1",
+      "path": "v1/source-lock.schema.json",
+      "sha256": "f0ff1e5338b15ae93098ba77dc637bef0f7bbb0be248f72333516c2832074a2e"
+    }
+  ],
+  "executionProfile": {
+    "status": "implemented",
+    "version": 1,
+    "support": "supported-subset",
+    "format": "OpenAPI 3.1 plus x-blink-*; restricted Arazzo 1.1",
+    "note": "The bundled compilers implement the explicitly bounded execution-v1 schemas; unsupported constructs fail closed.",
+    "schemas": [
+      {
+        "id": "urn:web-blink:schema:execution:1",
+        "path": "execution-v1/openapi.schema.json",
+        "sha256": "01c2015b5aa5657957cf11ad6a51267e34ff81c6bef559cd98f49a87364b3b22"
+      },
+      {
+        "id": "urn:web-blink:schema:arazzo-execution:1",
+        "path": "execution-v1/arazzo.schema.json",
+        "sha256": "284f03efb5a8f2456bc9847a97f5c9a258d8a4556ae36383165030a4189d9524"
+      }
+    ]
+  },
+  "configProfile": {
+    "status": "implemented",
+    "version": 1,
+    "schemas": [
+      {
+        "id": "urn:web-blink:schema:settings:1",
+        "path": "config-v1/settings.schema.json",
+        "sha256": "8e1d44f1d7602eb9ae11ae180b65ba740d70f5ccb3c8a77b201d9c1344b0aec9"
+      }
+    ]
+  }
+}
