@@ -135,6 +135,7 @@ async function approval(args,callId){
  if(text.length>DIALOG_LIMIT)return {status:'approval_too_large',summary:'This action is too large to review in a dialog; the human must use the CLI command',data:fallback,warnings:[]};
  // One click: Accept approves, Decline or Esc does not. (A decision field inside the form made Accept alone
  // count as a decline.)
+ // One click: Accept approves, Decline or Esc does not (no form fields: a field made Accept count as decline).
  const answer=await elicit(text+'\n\nAccept = approve and run it. Decline = do nothing.',{type:'object',properties:{}},callId);
  if(answer?.action!=='accept')
   return {status:'declined',summary:'The human did not approve this action; nothing was changed',data:{method:args.method},warnings:[]};
@@ -168,7 +169,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.4.0'},instructions:'Act on what the user asks without asking again in chat. Use blink_request_approval for host-confirmed actions: recording and other local steps run at once, actions with real effects get one Approve/Decline dialog for the human. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask, and ask them how to proceed instead of rushing ahead. Never ask the human to type shell commands unless the tool reports approval_unavailable.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.4.1'},instructions:'Act on what the user asks without asking again in chat. Use blink_request_approval for host-confirmed actions: recording and other local steps run at once, actions with real effects get one Approve/Decline dialog for the human. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask, and ask them how to proceed instead of rushing ahead. Never ask the human to type shell commands unless the tool reports approval_unavailable.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');

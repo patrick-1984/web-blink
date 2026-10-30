@@ -56,9 +56,9 @@ IDENTITY_PATH = re.compile(r'/(me|whoami|self|current[-_]?user|user|users/me|pro
 
 
 def _merge_shapes(a, b):
-    if not a:
-        return b or {}
-    if not b or a.get('type') != b.get('type'):
+    if not a or a.get('type') == 'null':
+        return b or a or {}
+    if not b or b.get('type') == 'null' or a.get('type') != b.get('type'):
         return a
     if a.get('type') == 'object':
         props = dict(a.get('properties') or {})
@@ -128,6 +128,24 @@ def suggest_auth(records, groups):
     if probe is not None:
         auth['probe'] = probe['suggestedOperationId']
     return {'auth': auth, 'probe': probe['endpoint'] if probe else None, 'notes': notes}
+
+
+AUTH_KINDS = ('none', 'api-key', 'bearer-storage', 'cookie-session', 'oauth-refresh')
+
+
+def clean_schema(value, depth=0):
+    """Make a schema the execution profile accepts: drop format assertions, and type fields only ever seen
+    empty as strings (an empty value says nothing about the type)."""
+    if depth > 10 or not isinstance(value, dict):
+        return value
+    out = {k: v for k, v in value.items() if k != 'format'}
+    if out.get('type') == 'null':
+        out['type'] = 'string'
+    if isinstance(out.get('properties'), dict):
+        out['properties'] = {k: clean_schema(v, depth + 1) for k, v in out['properties'].items()}
+    if isinstance(out.get('items'), dict):
+        out['items'] = clean_schema(out['items'], depth + 1)
+    return out
 
 
 def named_types(value, depth=0):
@@ -406,10 +424,13 @@ class Learner:
                 'startedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                 'startedBy': {'user': user, 'host': socket.gethostname()}, 'webBlink': __version__,
                 'status': 'recording', 'screenshots': screenshots,
-                'files': {'requests': 'requests.jsonl', 'screenshots': 'screenshots/', 'screenshotIndex': 'screenshots.jsonl',
+                'files': {'requests': 'requests.jsonl', 'secrets': 'secrets.jsonl (login secret values; private)',
+                          'screenshots': 'screenshots/', 'screenshotIndex': 'screenshots.jsonl',
                           'index': 'index.json', 'session': 'session.json (written at stop)'},
-                'note': 'Full local recording: URLs, query values, request and response bodies (256 KB each). Cookie, '
-                        'Authorization-type headers and password/token fields are blanked. Kept until you clean it up.'}
+                'note': 'Full local recording: URLs, query values, all request and response headers (cookies included), '
+                        'request and response bodies (256 KB each). Login secret values (cookie values, Authorization-type '
+                        'headers, password, token, SAML fields) are kept in secrets.jsonl and appear as <secret:N> elsewhere. '
+                        'Kept until you clean it up.'}
         _private_write(folder / 'meta.json', json.dumps(meta, indent=2))
         _private_write(folder / 'requests.jsonl', '')
         _private_write(folder / 'screenshots.jsonl', '')
@@ -513,6 +534,9 @@ class Learner:
                 continue
         if lines:
             _private_write(run['folder'] / 'screenshots.jsonl', ''.join(lines), 'a')
+        secrets = [x for x in (data.get('secrets') or []) if isinstance(x, dict)]
+        if secrets:  # login secret values, kept privately; the readable recording refers to them as <secret:N>
+            _private_write(run['folder'] / 'secrets.jsonl', ''.join(json.dumps(x, ensure_ascii=False) + '\n' for x in secrets), 'a')
         if isinstance(data.get('counters'), dict):
             run['counters'] = data['counters']
         if records or lines:
@@ -787,6 +811,13 @@ class Learner:
         cookie_names = []
         if isinstance(lowered.get('cookie'), str):
             cookie_names = [c.split('=')[0].strip() for c in lowered['cookie'].split(';') if c.split('=')[0].strip()][:50]
+        response_headers = item.get('responseHeaders')
+        set_cookie = {str(k).lower(): v for k, v in response_headers.items()}.get('set-cookie') if isinstance(response_headers, dict) else None
+        if isinstance(set_cookie, str):
+            for line in set_cookie.split('\n'):
+                name = line.split(';')[0].split('=')[0].strip()
+                if name and name not in cookie_names:
+                    cookie_names.append(name)
         return {'seq': item.get('seq'), 'method': method.upper(), 'origin': source, 'path': path, 'cookieNames': cookie_names,
                 'pathTemplate': path_template(path), 'inScope': source in origins,
                 'resourceType': item.get('resourceType') if item.get('resourceType') in RESOURCE_TYPES else 'other',
@@ -901,13 +932,28 @@ class Learner:
         """Selections may name an endpoint from the session's endpoint list; names, effects, path templates,
         schemas and statuses come from the recording, and a missing login recipe from the suggestion (with its
         identity read added). Explicit fields in a selection always win."""
-        if not isinstance(operations, list):
-            return operations, auth
         records = capture.get('records') or []
         groups = {g['endpoint']: g for g in endpoint_groups(records, limit=100000)}
         suggestion = suggest_auth(records, list(groups.values()))
+        if operations in (None, 'all'):
+            # Default: every API endpoint the app used, on its main API host, so the Blink covers the app,
+            # not only today's task.
+            api = [g for g in groups.values() if g['inScope'] and g.get('resourceType') in ('xhr', 'fetch', 'other', 'eventsource')
+                   and any(s < 400 for s in g['statuses'] or [200])]
+            if not api:
+                raise ValueError('No API endpoints were recorded on the site\'s own hosts')
+            counts = {}
+            for g in api:
+                counts[g['origin']] = counts.get(g['origin'], 0) + 1
+            main = max(counts, key=counts.get)
+            operations = [{'endpoint': g['endpoint']} for g in api if g['origin'] == main]
+        if not isinstance(operations, list):
+            return operations, auth
         if auth is None:
             auth = copy.deepcopy(suggestion['auth'])
+        if isinstance(auth, dict) and auth.get('kind') not in AUTH_KINDS:
+            raise ValueError(f"auth.kind must be one of {', '.join(AUTH_KINDS)}; for a site you log into in the browser use "
+                             "{'kind': 'cookie-session', 'cookies': [<cookie names>], 'probe': <operationId of an identity read>}")
         expanded = []
         for selection in operations:
             if isinstance(selection, dict) and 'endpoint' in selection:
@@ -915,10 +961,22 @@ class Learner:
                 if group is None:
                     raise ValueError(f"Unknown endpoint: {selection['endpoint']}")
                 base = {'index': group['index'], 'operationId': group['suggestedOperationId'],
-                        'effect': group['suggestedEffect'], 'path': group['pathTemplate'], 'statuses': group['statuses']}
+                        'effect': group['suggestedEffect'], 'path': group['pathTemplate'], 'statuses': group['statuses'],
+                        'queryNames': group['queryNames']}
                 if group['requestSchema']:
                     base['requestSchema'] = group['requestSchema']
                 selection = {**base, **{k: v for k, v in selection.items() if k != 'endpoint'}}
+            if isinstance(selection, dict) and isinstance(selection.get('requestBody'), dict) and 'requestSchema' not in selection:
+                body = selection.pop('requestBody')  # accept an OpenAPI-style requestBody as well
+                content = body.get('content') if isinstance(body.get('content'), dict) else None
+                if content:
+                    media, entry = next(iter(content.items()))
+                    selection.setdefault('mediaType', media)
+                    selection['requestSchema'] = (entry or {}).get('schema', {})
+                else:
+                    selection['requestSchema'] = body
+            if isinstance(selection, dict) and isinstance(selection.get('requestSchema'), dict):
+                selection['requestSchema'] = clean_schema(selection['requestSchema'])
             expanded.append(selection)
         probe = auth.get('probe') if isinstance(auth, dict) else None
         group = groups.get(suggestion['probe']) if suggestion['probe'] else None
@@ -934,10 +992,10 @@ class Learner:
         capture = self.review(session)
         if capture['status'] == 'incomplete':
             raise ValueError('Resolve incomplete capture scope before proposing an executable Blink')
+        operations, auth = self._expand_selections(capture, operations, auth)
         if (not isinstance(service, str) or not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*', service)
                 or not isinstance(operations, list) or not 1 <= len(operations) <= 1000):
             raise ValueError('Valid service ID and explicitly curated operations are required')
-        operations, auth = self._expand_selections(capture, operations, auth)
         if not isinstance(auth, dict) or not isinstance(auth.get('kind'), str):
             raise ValueError('Explicit authentication recipe required, including kind:none for anonymous services')
         paths, origins, operation_ids, endpoints = {}, set(), set(), set()
@@ -965,6 +1023,13 @@ class Learner:
             operation_ids.add(operation_id); endpoints.add(endpoint)
             parameters = [{'name': key, 'in': 'path', 'required': True, 'schema': {'type': 'string'}}
                           for key in re.findall(r'\{([A-Za-z0-9_]+)\}', path)]
+            path_names = {p['name'] for p in parameters}
+            parameters += [{'name': q, 'in': 'query', 'required': False, 'schema': {'type': 'string'}}
+                           for q in selection.get('queryNames') or [] if isinstance(q, str) and q not in path_names]
+            if isinstance(selection.get('parameters'), list):  # explicit parameters: path placeholders are added if missing
+                given = {(x.get('in'), x.get('name')) for x in selection['parameters'] if isinstance(x, dict)}
+                selection = dict(selection, parameters=[clean_schema(x) for x in selection['parameters']] + [
+                    x for x in parameters if x['in'] == 'path' and ('path', x['name']) not in given])
             op = {'operationId': operation_id, 'x-blink-effect': effect,
                   'summary': selection.get('summary', operation_id),
                   'parameters': copy.deepcopy(selection.get('parameters', parameters)),

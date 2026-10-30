@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.4.0'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.4.1'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -280,25 +280,36 @@ class BrowserBridge:
           let seq=0,shotSeq=0,bufferBytes=0,overflow=false,incomplete=false,failedRequests=0,workers=0,serviceWorker=false;
           let shooting=null,shotTimer=null,last=null,assetsTruncated=false,shotErrors=0,lastShotError=null,shotsDropped=0,queued=0,pending=null;
           const STATIC=new Set(['image','font','stylesheet','media','script','manifest','texttrack']);
-          const SECRET_HEADER=/^(cookie|set-cookie|authorization|proxy-authorization|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-csrftoken)$/i;
-          const SECRET_QUERY=/^(access_token|refresh_token|id_token|token|auth|api_key|apikey|client_secret|password|code_verifier|sig|signature)$/i;
-          const cleanUrl=href=>{try{const u=new URL(href);for(const k of [...u.searchParams.keys()])if(SECRET_QUERY.test(k))u.searchParams.set(k,'<redacted>');return u.href;}catch{return href;}};
-          const SECRET_FIELD=/^(password|passwd|pwd|pass|passcode|client_secret|current_password|new_password|access_token|refresh_token|id_token)$/i;
+          // Login secrets are not dropped: their values go to a private vault (secrets.jsonl in the session folder)
+          // and the readable recording gets <secret:N> in their place.
+          const SECRET_HEADER=/^(authorization|proxy-authorization|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-csrftoken)$/i;
+          const SECRET_QUERY=/^(access_token|refresh_token|id_token|token|auth|api_key|apikey|client_secret|password|code_verifier|sig|signature|samlresponse|samlrequest)$/i;
+          const vault=[];let secretSeq=0;
+          const secret=(value,where)=>{secretSeq++;vault.push({ref:secretSeq,where,value:String(value)});return '<secret:'+secretSeq+'>';};
+          const cleanUrl=(href,where)=>{try{const u=new URL(href);for(const k of [...u.searchParams.keys()])if(SECRET_QUERY.test(k))u.searchParams.set(k,secret(u.searchParams.get(k),where+' query '+k));return u.href;}catch{return href;}};
+          const SECRET_FIELD=/^(password|passwd|pwd|pass|passcode|client_secret|current_password|new_password|samlresponse|samlrequest|wresult|assertion|code_verifier)$|token$/i;
           const LIMIT=262144;
           const pageOf=url=>{try{const u=new URL(url);return u.origin+u.pathname;}catch{return null;}};
-          // Cookie names are kept (they tell how the site logs in); every cookie value is blanked.
-          const cookieNames=v=>String(v).split(/;\s*|\n/).map(x=>x.split('=')[0].trim()).filter(Boolean).slice(0,50).map(n=>n+'=<redacted>').join('; ');
-          const headersOf=h=>Object.fromEntries(Object.entries(h||{}).slice(0,100).map(([k,v])=>[k,
-            /^(cookie|set-cookie)$/i.test(k)?cookieNames(v):SECRET_HEADER.test(k)?'<redacted>':String(v).slice(0,4000)]));
-          const scrub=text=>{if(typeof text!=='string'||!text)return text;
-            try{const walk=x=>Array.isArray(x)?x.map(walk):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,SECRET_FIELD.test(k)?'<redacted>':walk(v)])):x;
+          // Cookies: names and attributes stay readable, each value goes to the vault.
+          const cookieHeader=(v,where)=>String(v).split(/;\s*/).filter(Boolean).slice(0,100).map(pair=>{const i=pair.indexOf('=');
+            return i<0?pair:pair.slice(0,i)+'='+secret(pair.slice(i+1),where+' cookie '+pair.slice(0,i));}).join('; ');
+          const setCookie=(v,where)=>String(v).split('\n').filter(Boolean).slice(0,100).map(line=>{const [first,...attrs]=line.split(';');
+            const i=first.indexOf('=');const name=i<0?first.trim():first.slice(0,i).trim();
+            return [name+'='+secret(i<0?'':first.slice(i+1),where+' set-cookie '+name),...attrs].join(';');}).join('\n');
+          const headersOf=(h,where)=>Object.fromEntries(Object.entries(h||{}).slice(0,100).map(([k,v])=>[k,
+            /^cookie$/i.test(k)?cookieHeader(v,where):/^set-cookie$/i.test(k)?setCookie(v,where):
+            SECRET_HEADER.test(k)?secret(v,where+' header '+k):String(v).slice(0,4000)]));
+          const scrub=(text,where)=>{if(typeof text!=='string'||!text)return text;
+            try{const walk=x=>Array.isArray(x)?x.map(walk):x&&typeof x==='object'?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,
+                SECRET_FIELD.test(k)&&v!==null&&typeof v!=='object'?secret(v,where+' field '+k):walk(v)])):x;
               return JSON.stringify(walk(JSON.parse(text)));}catch{}
             try{if(/^[^\s=&]+=[^\s]*$/.test(text)||/&/.test(text)&&!/\s/.test(text)){const q=new URLSearchParams(text);let hit=false;
-              for(const k of [...q.keys()])if(SECRET_FIELD.test(k)){q.set(k,'<redacted>');hit=true;}if(hit)return q.toString();}}catch{}
+              for(const k of [...q.keys()])if(SECRET_FIELD.test(k)){q.set(k,secret(q.get(k),where+' field '+k));hit=true;}if(hit)return q.toString();}}catch{}
             return text;};
           // Redact the whole body first, then cut it; a body that cannot be redacted reliably is not kept.
-          const keep=t=>{if(typeof t!=='string')return [t,false];const clean=scrub(t);
-            if(clean===t&&t.length>LIMIT&&/pass|secret|token|auth/i.test(t))return ['<omitted: large body with credential-like fields that could not be redacted>',true];
+          const keep=(t,where)=>{if(typeof t!=='string')return [t,false];const clean=scrub(t,where);
+            // A large body that cannot be parsed but may hold credentials is kept whole in the vault.
+            if(clean===t&&t.length>LIMIT&&/pass|secret|token|auth|saml/i.test(t))return [secret(t,where+' body'),true];
             return clean.length>LIMIT?[clean.slice(0,LIMIT),true]:[clean,false];};
           // Screenshots: labels taken when requested; queued (10 waiting), never dropped silently; unchanged pixels skipped.
           const shoot=reason=>{if(shotSeq+queued>=1000||queued>=10){shotsDropped++;return shooting||Promise.resolve();}queued++;
@@ -333,21 +344,24 @@ class BrowserBridge:
             if(STATIC.has(type)){const key=u.origin+' '+type;if(key in assets||Object.keys(assets).length<500)assets[key]=(assets[key]||0)+1;else assetsTruncated=true;return;}
             if(bufferBytes>20971520){overflow=true;return;}  // only if the daemon stopped draining
             const raw=typeof req.postData==='function'?req.postData():null;
-            const responseHeaders=typeof response.headers==='function'?response.headers():{};
-            const at=++seq,when=Date.now();
+            const at=++seq,when=Date.now(),where='request '+at;
+            // allHeaders() includes Cookie and Set-Cookie (headers() leaves them out).
+            const all=async (x)=>{try{if(typeof x.allHeaders==='function')return await x.allHeaders();}catch{}return typeof x.headers==='function'?x.headers():{};};
+            const requestHeaders=await all(req),responseHeaders=await all(response);
             let body=null,bodyCut=false,bodyNote=null;
             if(/json|text|xml|html|javascript|form/.test(responseHeaders['content-type']||'')&&typeof response.text==='function'){
-              try{[body,bodyCut]=keep(await response.text());}catch(e){bodyNote='body unavailable';}}
-            const [requestBody,requestCut]=raw==null?[null,false]:keep(raw);
-            const item={seq:at,t:when,method:req.method(),url:cleanUrl(u.href),origin:u.origin,path:u.pathname,status:response.status(),
-              resourceType:type,requestHeaders:headersOf(req.headers()),requestBody,requestBodyTruncated:requestCut,
-              responseHeaders:headersOf(responseHeaders),responseBody:body,responseBodyTruncated:bodyCut,responseBodyNote:bodyNote};
+              try{[body,bodyCut]=keep(await response.text(),where+' response');}catch(e){bodyNote='body unavailable';}}
+            const [requestBody,requestCut]=raw==null?[null,false]:keep(raw,where);
+            const item={seq:at,t:when,method:req.method(),url:cleanUrl(u.href,where),origin:u.origin,path:u.pathname,status:response.status(),
+              resourceType:type,requestHeaders:headersOf(requestHeaders,where),requestBody,requestBodyTruncated:requestCut,
+              responseHeaders:headersOf(responseHeaders,where+' response'),responseBody:body,responseBodyTruncated:bodyCut,responseBodyNote:bodyNote,
+              redirectedFrom:(()=>{try{const r=req.redirectedFrom();return r?cleanUrl(r.url(),where+' redirect'):null;}catch{return null;}})()};
             bufferBytes+=JSON.stringify(item).length;records.push(item);
             later('after '+item.method+' '+(pageOf(req.url())||''));
           }catch{}};
           const counters=()=>({seq,overflow,incomplete,failedRequests,workers,serviceWorker,assets,assetsTruncated,
             missingOrigins:[...missingOrigins],shotErrors,lastShotError,shotsDropped,shotsAbandoned:queued});
-          p.__blinkCapture={records,shots,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
+          p.__blinkCapture={records,shots,vault,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
             timer:()=>shotTimer,pending:()=>pending,inflight:()=>shooting,drained:n=>{bufferBytes=Math.max(0,bufferBytes-n);}};
           p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
           // Prove screenshots work now, so a failure shows when recording starts, not after a long session.
@@ -374,11 +388,11 @@ class BrowserBridge:
             const size=x=>JSON.stringify(JSON.stringify(x)).length;
             const take=(list,limit)=>{const out=[];let used=0;
               while(list.length){const n=size(list[0]);if(out.length&&used+n>limit)break;out.push(list.shift());used+=n;}return [out,used];};
-            const [records,used]=take(c.records,1600000);c.drained(used);const [shots]=take(c.shots,1600000);
-            c.batch={id:(c.batchSeq=(c.batchSeq||0)+1),records,shots};
+            const [secrets]=take(c.vault,600000);const [records,used]=take(c.records,1300000);c.drained(used);const [shots]=take(c.shots,1300000);
+            c.batch={id:(c.batchSeq=(c.batchSeq||0)+1),records,shots,secrets};
           }
-          return {running:!!p.__blinkCapture,batch:c.batch.id,records:c.batch.records,shots:c.batch.shots,
-            more:c.records.length>0||c.shots.length>0,counters:c.counters()};
+          return {running:!!p.__blinkCapture,batch:c.batch.id,records:c.batch.records,shots:c.batch.shots,secrets:c.batch.secrets,
+            more:c.records.length>0||c.shots.length>0||c.vault.length>0,counters:c.counters()};
         ''', {'ack': ack})
 
     def capture_stop(self, binding):

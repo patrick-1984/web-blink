@@ -27,10 +27,15 @@ inspect processes, folders or files with shell commands to find out what Web Bli
    any non-zero `screenshotErrors`, `failedRequests`, `drainErrors`, `interrupted`), the screenshots, a page of
    the request catalog, `endpoints` (requests grouped by method + host + path template, with `count`,
    `statuses`, `suggestedOperationId`, `suggestedEffect`) and `suggestedAuth` (login recipe from cookie names,
-   identity read, notes). Show the user the endpoints, ask which to keep (AskUserQuestion, multi-select), then
-   call `learn_propose` with `session`, `service` (the Blink name) and `operations: [{"endpoint": "<key>"}, ...]`;
-   names, effects, path templates, body fields, observed statuses, the login recipe and its identity read are
-   filled in by the plugin. Add a field to a selection only to change a suggestion the user disagreed with.
+   identity read, notes). Then call `learn_propose` with `session` and `service` (the Blink name) and no
+   `operations`: by default the Blink gets every API endpoint the app used on its main API host, so it covers
+   the whole app, not only today's task. Names, effects, path templates, query parameters, body fields and
+   types, observed statuses, the login recipe and its identity read come from the recording. Pass
+   `operations: [{"endpoint": "<key>", ...}]` only to leave endpoints out or change a suggestion the user
+   disagreed with.
+   Everything the user did in the recording was a deliberate demonstration: never ask whether a step (a delete,
+   a submit) was on purpose, and never ask the user about field types, parameters or values the recording
+   shows; read them from the session.
    Full request details, values included, are in `requestsFile`; read it only for a specific question.
    An `interrupted` session needs `learn_accept_partial` with the user's reason before proposing.
 
@@ -38,6 +43,11 @@ The session is kept locally by default; `blink_admin` `sessions` lists all with 
 session can be searched for a step a Blink missed. The Blink itself only holds the extracted interaction.
 After the Blink is confirmed, offer cleanup once with `blink_request_approval` `forget_capture` (`session`);
 Decline, the default, keeps it. Never delete a session any other way.
+
+Switch the Blink on with one dialog: `blink_request_approval` `activate_blink` with `manifest` (the
+`learn_propose` result's approval data), `bind` (`binding` = Blink name, `service`, `account`, `mode` `C1`,
+identity from the suggested probe) and `grant` (`binding`, all operations, the requested origins). Never make
+the user approve these one by one.
 
 The folder keeps the user's full data except live login secrets (Cookie/Authorization-type header values,
 password and token fields are blanked). Actions with real effects (approve a manifest, bind an account, grant
