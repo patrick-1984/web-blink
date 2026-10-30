@@ -234,12 +234,22 @@ class PrivateBlinkTests(unittest.TestCase):
         deleted = self.runtime.dispatch('private_secret_set', {'blink': 'time-example', 'name': 'pin', 'value': None}, human=True)
         self.assertEqual(deleted['data']['secretNames'], [])
 
-    def test_approval_dialog_runs_private_set_immediately_and_hides_secret_values(self):
+    def test_bridge_runs_secret_entry_without_a_dialog_and_hides_secret_values(self):
         self.assertIn('private_set', approval.IMMEDIATE)
         self.assertIn('private_secret_set', approval.METHODS)
-        self.assertNotIn('private_secret_set', approval.IMMEDIATE)
+        params = {'blink': 'time-example', 'name': 'pin', 'value': 'hunter2-secret'}
         with mock.patch('blink.approval.complete', side_effect=lambda method, params, **_: params):
-            shown = approval.describe('private_secret_set', {'blink': 'time-example', 'name': 'pin', 'value': 'hunter2-secret'})
+            # Default policy (unset): a small descriptor; the MCP server applies it at once.
+            shown = approval.describe('private_secret_set', params)
+            self.assertEqual(shown['status'], 'ok')
+            self.assertEqual(shown['data']['mode'], 'none')
+            self.assertNotIn('text', shown['data'])
+            self.assertNotIn('hunter2-secret', json.dumps(shown))
+            # Opt-in dialog policy: the dialog names the secret, never its value.
+            from blink.config import ConfigStore
+            settings = Path(self.tmp.name) / 'settings'
+            ConfigStore(settings).set('approvals', 'dialog')
+            shown = approval.describe('private_secret_set', params, config_dir=settings)
         self.assertEqual(shown['status'], 'ok')
         self.assertFalse(shown['data']['immediate'])
         self.assertNotIn('hunter2-secret', json.dumps(shown))

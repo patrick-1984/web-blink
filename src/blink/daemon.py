@@ -57,7 +57,10 @@ def parse_control_request(raw):
 
 
 def consume_permit(runtime, method, params, permit_id):
-    """Consume exact command authority once, durably, before any human dispatch."""
+    """Consume exact command authority once, durably, before any control dispatch.
+
+    The permit (issued by the CLI or the MCP control bridge through client.control_request) is what
+    establishes control authority: exact method and parameter digest, expiry, single use; a replay fails."""
     from .storage import digest
     now = time.time()
     expected = digest(params)
@@ -90,6 +93,8 @@ class Handler(socketserver.StreamRequestHandler):
                 return self.retire(request.get('params'))
         if self.control:
             method, params, permit = parse_control_request(raw)
+            # Control socket only: the permit grants authority; `human=True` below is the internal compatibility
+            # flag for "permit-authorized", never taken from a caller.
             if not consume_permit(self.server.runtime, method, params, permit):
                 return error('authorization_required', 'Native command permit is missing, stale, mismatched or already used')
             if method == 'install_manifest':

@@ -30,6 +30,8 @@ const methods = new Map(definitions.map(d => [d[0], d[4]]));
 let initialized = false, canElicit = false, nextRequest = 0;
 const awaiting = new Map(), dialogs = new Map(), cancelled = new Set(); // dialog id -> resolver; tool call id -> dialog id
 const APPROVAL_WAIT = 600000, DIALOG_LIMIT = 6000;
+// An unanswered dialog counts as declined; BLINK_DIALOG_WAIT_MS can only shorten the wait (tests).
+const DIALOG_WAIT = Math.min(APPROVAL_WAIT, Number(process.env.BLINK_DIALOG_WAIT_MS) > 0 ? Number(process.env.BLINK_DIALOG_WAIT_MS) : APPROVAL_WAIT);
 
 function binaryAvailable(command) {
  const result=spawnSync(command,['--version'],{stdio:'ignore',cwd:root,timeout:2000,windowsHide:true});
@@ -80,6 +82,8 @@ function backend(method,params,module=['blink.client'],timeout=45000) {
   const launch=launcher();
   const args=[...launch.args,'-m',...module,'--plugin-root',root];
   if(process.env.BLINK_STATE_DIR) args.push('--state-dir',process.env.BLINK_STATE_DIR);
+  // The approval policy is read where config.py reads it: BLINK_CONFIG_DIR, else the Web Blink home.
+  if(module[0]==='blink.approval'&&process.env.BLINK_CONFIG_DIR) args.push('--config-dir',process.env.BLINK_CONFIG_DIR);
   const env={...process.env,PYTHONPATH:path.join(root,'src')};
   let child;
   const failed=()=>resolve({status:'env_unavailable',summary:'Runtime is unavailable; run blink_doctor and the human setup command.',warnings:[]});
@@ -108,7 +112,7 @@ function backend(method,params,module=['blink.client'],timeout=45000) {
 function elicit(message,requestedSchema,callId){
  return new Promise(resolve=>{
   const id=`blink-approval-${++nextRequest}`;
-  const timer=setTimeout(()=>{awaiting.delete(id);dialogs.delete(callId);resolve({action:'cancel'});},APPROVAL_WAIT);
+  const timer=setTimeout(()=>{awaiting.delete(id);dialogs.delete(callId);resolve({action:'cancel'});},DIALOG_WAIT);
   dialogs.set(callId,id);
   awaiting.set(id,reply=>{clearTimeout(timer);dialogs.delete(callId);resolve(reply);});
   send({jsonrpc:'2.0',id,method:'elicitation/create',params:{message,requestedSchema}});
@@ -122,21 +126,25 @@ function approvalText(d,reason){
  return lines.join('\n');
 }
 async function approval(args,callId){
- if(!/^[a-z][a-z0-9_]{0,99}$/.test(args.method))return {status:'forbidden',summary:'This action cannot be approved in the dialog',warnings:[]};
+ if(!/^[a-z][a-z0-9_]{0,99}$/.test(args.method))return {status:'forbidden',summary:'This action is not supported by the Web Blink control bridge',warnings:[]};
  const request={method:args.method,params:args.params};
- const fallback={method:args.method,command:`blink human ${args.method} --input <file with the parameters JSON>`};
+ // Validation, the exact-parameter digest and the user's approval policy come from the local runtime and its
+ // trusted settings file; never from tool arguments.
  const described=await backend('describe',request,['blink.approval','describe']);
  if(described.status!=='ok')return described;
- const apply=()=>cancelled.has(callId)?{status:'declined',summary:'The request was cancelled; nothing was changed',warnings:[]}
+ const declined={status:'declined',summary:'The request was cancelled; nothing was changed',warnings:[]};
+ const apply=()=>cancelled.has(callId)?declined
   :backend('apply',{...request,digest:described.data.exactParametersSha256},['blink.approval','apply'],APPROVAL_WAIT);
- // Local, reversible actions the user asked for run at once; only actions with real effects get a dialog.
+ if(cancelled.has(callId))return declined;
+ // Default policy: the user's order authorizes the exact described action; no dialog, whatever the client supports.
+ if(described.data.mode==='none')return apply();
+ if(described.data.mode!=='dialog')return {status:'configuration_error',summary:'Unknown approval policy; nothing was changed',warnings:[]};
+ // Opt-in dialog policy (the user set approvals to dialog). Local, reversible actions still run at once.
+ const fallback={method:args.method,command:`blink human ${args.method} --input <file with the parameters JSON>`};
  if(described.data.immediate===true)return apply();
- if(!canElicit)return {status:'approval_unavailable',summary:'This client cannot show an approval dialog; the human must run the CLI command',data:fallback,warnings:[]};
- if(cancelled.has(callId))return {status:'declined',summary:'The request was cancelled; nothing was changed',warnings:[]};
+ if(!canElicit)return {status:'approval_unavailable',summary:'Approval dialogs are switched on, but this client cannot show one; the human must run the CLI command',data:fallback,warnings:[]};
  const text=approvalText(described.data,args.reason);
  if(text.length>DIALOG_LIMIT)return {status:'approval_too_large',summary:'This action is too large to review in a dialog; the human must use the CLI command',data:fallback,warnings:[]};
- // One click: Accept approves, Decline or Esc does not. (A decision field inside the form made Accept alone
- // count as a decline.)
  // One click: Accept approves, Decline or Esc does not (no form fields: a field made Accept count as decline).
  const answer=await elicit(text+'\n\nAccept = approve and run it. Decline = do nothing.',{type:'object',properties:{}},callId);
  if(answer?.action!=='accept')
