@@ -1,7 +1,7 @@
 {
   "name": "web-blink",
   "displayName": "Web Blink",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Learn and use reviewed Web Link integrations with local account custody and durable execution policy.",
   "author": {
     "name": "Web Blink project"

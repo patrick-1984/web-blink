@@ -19,7 +19,7 @@ const definitions = [
  ['blink_execute','Execute one already-approved intent. This tool cannot issue approval.',{intentId:textSchema},['intentId'],'execute',false],
  ['blink_admin','Read runtime status or a redacted review; cannot authorize or configure account access.',{action:{type:'string',enum:['status','review','capabilities','sessions','jobs','job','binding','intent','workflow','canary']},id:textSchema,session:textSchema,job:textSchema,binding:textSchema,intentId:textSchema,runId:textSchema,candidate:textSchema},['action'],'admin',true],
  ['blink_doctor','Report host capabilities without needing Python, a daemon or browser.',{},[],'doctor',true],
- ['blink_request_approval','Ask the human to approve one host-confirmed action (start or stop a capture, approve a write intent or an integration, bind or grant an account, schedule jobs, revoke). Claude Code shows the human an Approve/Decline dialog with the exact parameters; the action runs only if the human approves it. This tool cannot approve anything by itself.',{method:{type:'string',minLength:1,maxLength:100},params:{type:'object'},reason:{type:'string',maxLength:500}},['method','params'],'approval',false],
+ ['blink_request_approval','Carry out a host-confirmed action the user asked for. Local, reversible actions (learn_start/learn_stop recording, learn_propose, browser_open/browser_close, workflow_validate) run immediately. Actions with real effects (approve_intent for a prepared write, approve_manifest, bind, grant, jobs, revoke, forget, purge) show the human one Approve/Decline dialog with the exact parameters and run only if approved. Call it directly; do not ask for confirmation in chat first.',{method:{type:'string',minLength:1,maxLength:100},params:{type:'object'},reason:{type:'string',maxLength:500}},['method','params'],'approval',false],
 ];
 const tools = definitions.map(([name,description,properties,required,method,readOnly]) => ({
  name,description,inputSchema:{type:'object',properties,required,additionalProperties:false},
@@ -28,7 +28,7 @@ const tools = definitions.map(([name,description,properties,required,method,read
 }));
 const methods = new Map(definitions.map(d => [d[0], d[4]]));
 let initialized = false, canElicit = false, nextRequest = 0;
-const awaiting = new Map(), dialogs = new Map(); // dialog id -> resolver; tool call id -> dialog id
+const awaiting = new Map(), dialogs = new Map(), cancelled = new Set(); // dialog id -> resolver; tool call id -> dialog id
 const APPROVAL_WAIT = 600000, DIALOG_LIMIT = 6000;
 
 function binaryAvailable(command) {
@@ -97,9 +97,7 @@ function elicit(message,requestedSchema,callId){
  });
 }
 function approvalText(d,reason){
- const lines=[`Web Blink asks for your approval: ${d.title}`,'',`Action: ${d.method}`,'Exact parameters:',JSON.stringify(d.parameters,null,2)];
- if(d.context!==undefined)lines.push('','What it will do (from the local runtime):',JSON.stringify(d.context,null,2));
- lines.push('',`Parameters SHA-256: ${d.exactParametersSha256}`);
+ const lines=[d.text];
  // One line, bounded: a model-written reason must not imitate the dialog's own lines.
  if(reason)lines.push('',`Claude's stated reason (not verified): ${reason.replace(/\s+/g,' ').slice(0,300)}`);
  lines.push('','Only approve if this is what you want. Claude cannot approve this for you.');
@@ -109,15 +107,20 @@ async function approval(args,callId){
  if(!/^[a-z][a-z0-9_]{0,99}$/.test(args.method))return {status:'forbidden',summary:'This action cannot be approved in the dialog',warnings:[]};
  const request={method:args.method,params:args.params};
  const fallback={method:args.method,command:`blink human ${args.method} --input <file with the parameters JSON>`};
- if(!canElicit)return {status:'approval_unavailable',summary:'This client cannot show an approval dialog; the human must run the CLI command',data:fallback,warnings:[]};
  const described=await backend('describe',request,['blink.approval','describe']);
  if(described.status!=='ok')return described;
+ const apply=()=>cancelled.has(callId)?{status:'declined',summary:'The request was cancelled; nothing was changed',warnings:[]}
+  :backend('apply',{...request,digest:described.data.exactParametersSha256},['blink.approval','apply'],APPROVAL_WAIT);
+ // Local, reversible actions the user asked for run at once; only actions with real effects get a dialog.
+ if(described.data.immediate===true)return apply();
+ if(!canElicit)return {status:'approval_unavailable',summary:'This client cannot show an approval dialog; the human must run the CLI command',data:fallback,warnings:[]};
+ if(cancelled.has(callId))return {status:'declined',summary:'The request was cancelled; nothing was changed',warnings:[]};
  const text=approvalText(described.data,args.reason);
  if(text.length>DIALOG_LIMIT)return {status:'approval_too_large',summary:'This action is too large to review in a dialog; the human must use the CLI command',data:fallback,warnings:[]};
  const answer=await elicit(text,{type:'object',properties:{decision:{type:'string',title:'Decision',enum:['approve','decline'],enumNames:['Approve','Decline']}},required:['decision']},callId);
  if(answer?.action!=='accept'||answer?.content?.decision!=='approve')
   return {status:'declined',summary:'The human did not approve this action; nothing was changed',data:{method:args.method},warnings:[]};
- return backend('apply',{...request,digest:described.data.exactParametersSha256},['blink.approval','apply'],APPROVAL_WAIT);
+ return apply();
 }
 function rpcError(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
 function validArguments(tool,args){
@@ -147,7 +150,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.2.2'},instructions:'Human grants, custody and intent approvals are never issued by the model. To get one, call blink_request_approval: the human approves or declines it in a Claude Code dialog. Do not ask the human to type shell commands unless that tool reports approval_unavailable.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.2.3'},instructions:'Act on what the user asks without asking again in chat. Use blink_request_approval for host-confirmed actions: recording and other local steps run at once, actions with real effects get one Approve/Decline dialog for the human. Tell the user what you started, check progress from time to time and react. Never ask the human to type shell commands unless the tool reports approval_unavailable.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');
@@ -185,9 +188,12 @@ process.stdin.on('data',chunk=>{
    // A client answer to our own approval dialog: never queued behind the tool call that waits for it.
    const done=awaiting.get(message.id);awaiting.delete(message.id);done(message.error?{action:'cancel'}:message.result);continue;
   }
-  if(message?.method==='notifications/cancelled'&&dialogs.has(message.params?.requestId)){
-   // A cancelled tool call must not stay approvable through its still-open dialog.
-   const dialog=dialogs.get(message.params.requestId);const done=awaiting.get(dialog);awaiting.delete(dialog);done?.({action:'cancel'});continue;
+  if(message?.method==='notifications/cancelled'&&['string','number'].includes(typeof message.params?.requestId)){
+   // A cancelled tool call must not stay approvable, whether its dialog is open, pending or not yet shown.
+   const call=message.params.requestId;
+   if(cancelled.size>=1000)cancelled.clear();
+   cancelled.add(call);
+   const dialog=dialogs.get(call);const done=awaiting.get(dialog);awaiting.delete(dialog);done?.({action:'cancel'});continue;
   }
   queue=queue.then(async()=>{
    try{send(await handle(message));}catch{send(rpcError(message?.id??null,-32603,'Internal error'));}

@@ -9,7 +9,6 @@ import argparse
 import json
 import sys
 
-from .cli import safe_preview
 from .storage import digest, encoded, strict_json
 
 # Host-confirmed actions a human may approve in the dialog: the runtime's human methods and
@@ -27,6 +26,10 @@ METHODS = frozenset({
     'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover', 'custody_forget',
     'forget_service', 'purge_state',
 })
+# Local, reversible actions with no effect on any web service: they run as soon as the user asks for
+# them (no dialog). Recording stays limited to the exact origins given; proposals stay quarantined.
+IMMEDIATE = frozenset({'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
+                       'browser_open', 'browser_close', 'workflow_validate'})
 TITLES = {
     'approve_intent': 'Run a prepared write', 'approve_manifest': 'Approve a reviewed integration',
     'set_trust': 'Set integration trust', 'bind': 'Bind an account', 'grant': 'Grant operations to an account',
@@ -41,19 +44,31 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
         return {'status': 'forbidden', 'summary': 'This action cannot be approved in the dialog', 'warnings': []}
     params = strict_json(encoded(params))
     context = None
-    if method == 'approve_intent' and isinstance(params.get('intentId'), str):
+    if method == 'approve_intent':
+        if set(params) != {'intentId'} or not isinstance(params['intentId'], str):
+            return {'status': 'forbidden', 'summary': 'approve_intent takes exactly a string intentId', 'warnings': []}
         from .client import request
         review = request('admin', {'action': 'intent', 'intentId': params['intentId']},
                          state_dir=state_dir, plugin_root=plugin_root)
         if review.get('status') != 'ok':
             return {'status': 'approval_unavailable', 'summary': 'The write cannot be shown for review; nothing was approved', 'warnings': []}
-        context = safe_preview(review.get('data'))
+        # Verbatim: write arguments never hold credentials (the broker adds them at execution), and
+        # redaction would hide the real target of the write.
+        context = review.get('data')
     # Parameters are shown exactly as given: the dialog never carries credentials (custody_authorize is
     # CLI-only), and redacting would let a model hide an action's real target under a secret-like key.
     data = {'method': method, 'title': TITLES.get(method, method.replace('_', ' ').capitalize()),
             'parameters': params, 'exactParametersSha256': digest(params)}
     if context is not None:
         data['context'] = context
+    data['immediate'] = method in IMMEDIATE
+    # The dialog text is built here from the exact JSON, so no number is rounded on the way to the human.
+    lines = [f"Web Blink asks for your approval: {data['title']}", '', f'Action: {method}', 'Exact parameters:',
+             json.dumps(params, indent=2, ensure_ascii=False)]
+    if context is not None:
+        lines += ['', 'What it will do (from the local runtime):', json.dumps(context, indent=2, ensure_ascii=False)]
+    lines += ['', f"Parameters SHA-256: {data['exactParametersSha256']}"]
+    data['text'] = '\n'.join(lines)
     return {'status': 'ok', 'summary': 'Approval dialog content', 'data': data, 'warnings': []}
 
 
