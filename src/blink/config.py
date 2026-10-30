@@ -113,6 +113,15 @@ def default_directory():
     return config_dir()
 
 
+APPROVAL_MODES = ('none', 'dialog')
+
+
+def approval_mode(directory=None):
+    """The configured approval policy ('none' unless the user opted into 'dialog'). An invalid settings file
+    raises ConfigError, so no action runs on a broken policy."""
+    return ConfigStore(directory).approval_mode()
+
+
 class ConfigStore:
     def __init__(self, directory=None, *, plugin_root=None):
         self.directory = Path(directory).expanduser().absolute() if directory is not None else default_directory().absolute()
@@ -136,9 +145,12 @@ class ConfigStore:
 
     @staticmethod
     def validate(document):
-        if (not isinstance(document, dict) or set(document) != {'schemaVersion', 'defaults', 'blinks'}
+        if (not isinstance(document, dict) or not {'schemaVersion', 'defaults', 'blinks'} <= set(document)
+                or set(document) - {'schemaVersion', 'defaults', 'blinks', 'approvals'}
                 or type(document['schemaVersion']) is not int or document['schemaVersion'] != 1):
             raise ConfigError('Unsupported settings document')
+        if 'approvals' in document and document['approvals'] not in APPROVAL_MODES:
+            raise ConfigError('approvals must be "none" or "dialog"')
         if not isinstance(document['defaults'], dict) or not isinstance(document['blinks'], dict):
             raise ConfigError('Settings groups must be objects')
         for key, value in document['defaults'].items():
@@ -231,8 +243,22 @@ class ConfigStore:
         with self._update():
             return self._set(key, value, service)
 
+    def approval_mode(self):
+        """The user's approval policy: 'none' (default, also when unset) runs every ordered action at once;
+        'dialog' asks in a dialog. Only the user changes it (CLI); no MCP method or tool argument does."""
+        return self.load().get('approvals', 'none')
+
     def _set(self, key, value, service=None):
         key = normalize_key(key)
+        if key == 'approvals':
+            if service:
+                raise ConfigError('approvals is a global setting; it cannot be set per Blink')
+            if value not in APPROVAL_MODES:
+                raise ConfigError('approvals must be "none" or "dialog"')
+            document = self.load()
+            document['approvals'] = value
+            self.save(document)
+            return {'key': key, 'scope': 'global', 'value': value}
         if key in ('debug', 'dry_run') and isinstance(value, str):
             value = boolean(value)
         validate_option(key, value)
@@ -253,7 +279,15 @@ class ConfigStore:
             return self._unset(key, service)
 
     def _unset(self, key, service=None):
-        key = normalize_key(key); validate_key(key)
+        key = normalize_key(key)
+        if key == 'approvals':
+            if service:
+                raise ConfigError('approvals is a global setting; it cannot be set per Blink')
+            document = self.load()
+            removed = document.pop('approvals', None) is not None
+            self.save(document)
+            return {'key': key, 'scope': 'global', 'removed': removed}
+        validate_key(key)
         document = self.load()
         group = document['blinks'].get(service, {}) if service else document['defaults']
         removed = key in group

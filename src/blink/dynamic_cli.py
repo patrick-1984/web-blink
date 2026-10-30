@@ -227,6 +227,8 @@ def _config_command(tokens, store, flags):
             sources = {}
         if args.action == 'get':
             key = normalize_key(args.key)
+            if key == 'approvals':  # global policy, 'none' when unset
+                return _envelope(store.approval_mode(), 'Approval policy', 'ok')
             if key not in settings:
                 return _envelope({}, 'Setting is not configured', 'setting_not_found')
             data = settings[key]
