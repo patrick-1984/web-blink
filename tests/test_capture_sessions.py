@@ -126,7 +126,7 @@ class RecorderJavascriptTests(unittest.TestCase):
         self.assertIn('banana banana apple', record['requestBody'])
         self.assertIn('banana banana apple', record['responseBody'])
         self.assertNotIn('SECRET', json.dumps(record)); self.assertNotIn('hunter2', json.dumps(record))
-        self.assertEqual(record['requestHeaders']['cookie'], '<redacted>')
+        self.assertEqual(record['requestHeaders']['cookie'], 'sid=<redacted>')  # names kept, values blanked
 
 
     def test_stop_waits_for_loading_bodies_and_secrets_are_blanked_before_cutting(self):
@@ -451,6 +451,70 @@ class ResilienceTests(unittest.TestCase):
         view = Learner.summary(session)
         self.assertEqual((view['requests'], view['recordsShown']), (5000, 50))
         self.assertIn('more', view)
+
+
+class FromRecordingToProposalTests(unittest.TestCase):
+    """The code, not the model, names the Blink, groups endpoints and suggests the login recipe."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.runtime = Runtime(self.tmp.name)
+
+    def record(self, seq, method, path, status, body=None):
+        headers = {'cookie': 'sid=<redacted>; csrftoken=<redacted>'}
+        if body is not None:
+            headers['content-type'] = 'application/json'
+        return {'seq': seq, 'method': method, 'url': 'https://www.ruddr.io' + path, 'origin': 'https://www.ruddr.io',
+                'path': path, 'status': status, 'resourceType': 'fetch', 'requestHeaders': headers,
+                'requestBody': json.dumps(body) if body is not None else None}
+
+    def test_url_only_start_names_by_redirect_and_endpoints_become_a_proposal(self):
+        outer = self
+        class Browser:
+            owners = {}
+            def open(self, binding, url): Browser.owners[binding] = 'tab'
+            def rename_owner(self, old, new): Browser.owners[new] = Browser.owners.pop(old)
+            def capture_start(self, binding):
+                return {'recording': True, 'screenshots': 'enabled', 'url': 'https://www.ruddr.io/app/time'}
+            def capture_drain(self, binding, ack=None):
+                if ack == 1:
+                    return {'batch': 1, 'records': [], 'shots': [], 'more': False}
+                return {'batch': 1, 'more': False, 'shots': [], 'records': [
+                    outer.record(1, 'GET', '/api/me', 200),
+                    outer.record(2, 'POST', '/api/time-entries', 201, {'note': 'banana', 'hours': 1}),
+                    outer.record(3, 'POST', '/api/time-entries', 201, {'note': 'apple', 'hours': 2, 'project': 5}),
+                    outer.record(4, 'DELETE', '/api/time-entries/123', 204)]}
+            def capture_stop(self, binding): return {'stopped': True}
+            def capture_shots_clear(self, binding): pass
+        learner = Learner(self.runtime, Browser())
+        started = learner.start(None, 'https://ruddr.com/', None)
+        self.assertEqual(started['blink'], 'ruddr-io')
+        self.assertIn('https://www.ruddr.io', started['origins'])
+        self.assertTrue(started['session'].startswith('ruddr-io-'))
+        learner.tick(now=10 ** 10)
+        summary = learner.stop('ruddr-io')
+        endpoints = {e['endpoint']: e for e in summary['endpoints']}
+        create = endpoints['POST https://www.ruddr.io/api/time-entries']
+        self.assertEqual((create['count'], create['statuses'], create['suggestedEffect']), (2, [201], 'write'))
+        self.assertEqual(create['suggestedOperationId'], 'createApiTimeEntries')
+        delete = endpoints['DELETE https://www.ruddr.io/api/time-entries/{id}']
+        self.assertEqual(delete['suggestedEffect'], 'destructive')
+        auth = summary['suggestedAuth']
+        self.assertEqual(auth['auth']['kind'], 'cookie-session')
+        self.assertEqual(auth['auth']['cookies'], ['sid', 'csrftoken'])
+        self.assertEqual(auth['probe'], 'GET https://www.ruddr.io/api/me')
+        result = learner.propose(summary['id'], 'ruddr-io', [{'endpoint': 'POST https://www.ruddr.io/api/time-entries'},
+                                                             {'endpoint': 'DELETE https://www.ruddr.io/api/time-entries/{id}'}],
+                                 auth=None)
+        manifest = result['manifest']
+        self.assertEqual(manifest['x-blink-service']['auth']['kind'], 'cookie-session')
+        paths = manifest['paths']
+        self.assertIn('/api/me', paths)  # the identity read was added for the login recipe
+        self.assertEqual(list(paths['/api/time-entries']['post']['responses']), ['201'])
+        self.assertEqual(set(paths['/api/time-entries']['post']['requestBody']['content']['application/json']['schema']['properties']),
+                         {'note', 'hours', 'project'})
+        self.assertEqual(list(paths['/api/time-entries/{id}']['delete']['responses']), ['204'])
+        self.assertNotIn('banana', json.dumps(manifest))
+        self.assertEqual(result['proposal']['status'], 'quarantined', result['proposal'])
 
 
 if __name__ == '__main__':

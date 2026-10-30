@@ -338,7 +338,8 @@ class ExtensionBehaviorTests(unittest.TestCase):
         entry = {'request': {'url': self.origin + '/products', 'method': 'GET'}, 'response': {'status': 200}}
         learner = Learner(self.runtime); session = learner.import_har(self.har([entry]), [self.origin])
         operations = [{'index': 0, 'effect': 'read', 'operationId': 'products', 'path': '/products'}]
-        with self.assertRaises(ValueError): learner.propose(session['id'], 'learned', operations)
+        suggested = learner.propose(session['id'], 'suggested', operations)  # no login seen: the recipe defaults to none
+        self.assertEqual(suggested['manifest']['x-blink-service']['auth'], {'kind': 'none'})
         result = learner.propose(session['id'], 'learned', operations, auth={'kind': 'none'})
         self.assertFalse(result['verified']); self.assertEqual(result['proposal']['status'], 'quarantined')
         self.assertEqual(result['manifest']['paths']['/products']['get']['x-blink-verified'], [])
