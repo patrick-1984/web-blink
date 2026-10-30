@@ -103,10 +103,9 @@ class CaptureCoverageJavascriptTests(unittest.TestCase):
         run = subprocess.run(['node', '-e', script, json.dumps(client.code)], capture_output=True, text=True, timeout=10, check=True)
         return json.loads(run.stdout)
 
-    def test_popup_is_incomplete_and_records_origin_only(self):
-        result = self.capture("p.emit('popup',{url:()=> 'https://login.example/secret-path?token=synthetic-private'});")
-        self.assertTrue(result['incomplete'])
-        self.assertEqual(result['missingOrigins'], ['https://login.example'])
+    def test_popups_are_recorded_not_marked_missing(self):
+        result = self.capture("p.emit('popup',{url:()=> 'https://login.example/secret-path?token=synthetic-private',on(){},off(){}});")
+        self.assertFalse(result['incomplete'])
         self.assertNotIn('synthetic-private', json.dumps(result)); self.assertEqual(result['listeners'], 0)
 
     def test_workers_are_noted_but_do_not_make_the_capture_incomplete(self):

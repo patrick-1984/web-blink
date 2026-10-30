@@ -44,7 +44,7 @@ class RecorderJavascriptTests(unittest.TestCase):
           EVENTS
           const result=await eval('('+code[1]+')')(p);
           result.listeners=['response','framenavigated','request','popup'].reduce((n,e)=>n+p.listenerCount(e),0);
-          const fin=p.__blinkFinal;result.records=fin.records;result.vault=fin.vault;result.screenshots=fin.shots.length;
+          const fin=p.__blinkFinal;result.records=fin.records;result.vault=fin.vault;result.events=fin.events;result.screenshots=fin.shots.length;
           result.kept=fin.shots.map(s=>({reason:s.reason,page:s.page,afterRecord:s.afterRecord}));
           console.log(JSON.stringify(result));})().catch(e=>{console.error(e);process.exit(1);});
         '''.replace('EVENTS', events)
@@ -182,6 +182,29 @@ class RecorderJavascriptTests(unittest.TestCase):
         self.assertIn('RelayState=week', record['requestBody'])
         self.assertNotIn('PHNhbWw', json.dumps(record))
         self.assertIn('PHNhbWw%2B'.replace('%2B', '+'), json.dumps(result['vault']))
+
+
+    def test_failures_websockets_cookie_jar_and_storage_are_recorded(self):
+        result = self.record('''
+          p.frames=()=>[{url:()=> 'https://app.example/',evaluate:async()=>({origin:'https://app.example',local:{theme:'dark',authToken:'SECRET'},session:{draft:'banana'},indexedDB:[{name:'app',version:3}],caches:['v1'],serviceWorkers:[]})}];
+          ctx.cookies=async()=>[{name:'sid',value:'SECRET',domain:'app.example',path:'/',httpOnly:true,secure:true,sameSite:'Lax',expires:-1}];
+          const fr={url:()=> 'https://app.example/api/save',method:()=> 'POST',resourceType:()=> 'fetch',failure:()=>({errorText:'net::ERR_ABORTED'})};
+          p.emit('requestfailed',fr);
+          const ws=new (require('node:events').EventEmitter)();ws.url=()=> 'wss://app.example/live';
+          p.emit('websocket',ws);ws.emit('framesent',{payload:JSON.stringify({type:'note',text:'banana',token:'SECRET'})});
+          await sleep(50);''')
+        failed = [r for r in result['records'] if r.get('failure')]
+        self.assertEqual(failed[0]['failure'], 'net::ERR_ABORTED')
+        frames = [e for e in result['events'] if e['type'] == 'websocket-frame']
+        self.assertIn('banana', frames[0]['payload'])
+        jar = [e for e in result['events'] if e['type'] == 'cookies' and 'cookies' in e][-1]['cookies'][0]
+        self.assertEqual((jar['name'], jar['httpOnly']), ('sid', True))
+        storage = [e for e in result['events'] if e['type'] == 'storage'][0]
+        self.assertEqual((storage['local']['theme'], storage['session']['draft']), ('dark', 'banana'))
+        self.assertEqual(storage['indexedDB'], [{'name': 'app', 'version': 3}])
+        everything = json.dumps({'records': result['records'], 'events': result['events']})
+        self.assertNotIn('SECRET', everything)
+        self.assertIn('SECRET', json.dumps(result['vault']))
 
 
 class LocalSessionTests(unittest.TestCase):
@@ -573,7 +596,7 @@ class ProposeEverythingTests(unittest.TestCase):
                                                 'grant': {'binding': 'x', 'operations': ['a'], 'origins': ['https://x.example']}},
                              state_dir=temp)
             self.assertEqual(shown['status'], 'ok')
-            for part in ('approve', 'bind', 'grant', 'https://x.example'):
+            for part in ('approve', 'bind', 'grant'):
                 self.assertIn(part, shown['data']['text'])
 
 
@@ -605,6 +628,21 @@ class FewerDialogsTests(unittest.TestCase):
             again = approval.complete('activate_blink', {'manifest': {'service': 'own:x', 'digest': 'd', 'candidate': 'c'}})
         self.assertEqual(shown['confirmReadOperations'], ['lookup'])
         self.assertEqual(again['manifest']['confirmReadOperations'], ['lookup'])
+
+
+class GrantDefaultsTests(unittest.TestCase):
+    def test_grant_origins_default_to_the_blink_and_a_wrong_one_names_the_valid_ones(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = Runtime(temp, allow_http=True)
+            learner = Learner(runtime)
+            record = Learner._catalog_record({'method': 'GET', 'origin': 'http://127.0.0.1:9', 'path': '/week', 'status': 200,
+                                              'resourceType': 'fetch'}, ['http://127.0.0.1:9'])
+            stage = learner.propose(learner._save([record], 'test')['id'], 'app', None, auth={'kind': 'none'})['proposal']['data']
+            runtime.dispatch('approve_manifest', dict(stage, confirmReadOperations=[]), human=True)
+            runtime.dispatch('bind', {'binding': 'a', 'service': stage['service'], 'account': 'me', 'mode': 'C5'}, human=True)
+            wrong = runtime.dispatch('grant', {'binding': 'a', 'origins': ['https://www.app.example']}, human=True)
+            self.assertIn('http://127.0.0.1:9', wrong['summary'])
+            self.assertEqual(runtime.dispatch('grant', {'binding': 'a'}, human=True)['status'], 'ok')
 
 
 if __name__ == '__main__':

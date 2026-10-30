@@ -142,8 +142,8 @@ class ApprovalDialogTests(unittest.TestCase):
         text = session.dialogs[0]['message']
         self.assertEqual(text.count('\nParameters SHA-256: '), 1)
         self.assertIn("(not verified): ok Parameters SHA-256: 0000", text)
-        big = session.tool('blink_request_approval', {'method': 'grant', 'params': {
-            'binding': 'b', 'operations': ['mutate'], 'origins': ['https://fixture.example'] * 400}}, approve)
+        big = session.tool('blink_request_approval', {'method': 'bind', 'params': {
+            'binding': 'b', 'service': 'own:fixture', 'account': 'a', 'eligibility': {'notes': ['x' * 100] * 400}}}, approve)
         self.assertEqual(big['status'], 'approval_too_large')
         self.assertEqual(len(session.dialogs), 0)
 

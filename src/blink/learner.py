@@ -43,6 +43,25 @@ def path_template(path):
     return '/'.join(out) or '/'
 
 
+COVERAGE_GAPS = ['WebAuthn/passkeys and FedCM ceremonies (only their network requests)', 'client certificates',
+                 'HTTP authentication challenges (recorded as 401 responses only)', 'WebTransport and WebRTC data channels',
+                 'IndexedDB and Cache Storage contents (names only)', 'requests made inside service or shared workers',
+                 'file contents of uploads larger than 256 KB']
+SECRET_QUERY = re.compile(r'^(access_token|refresh_token|id_token|token|auth|api_key|apikey|client_secret|password|code|'
+                          r'code_verifier|sig|signature|samlresponse|samlrequest)$', re.I)
+
+
+def safe_url(url):
+    """A URL for metadata and tool output: credential query values and the fragment are removed."""
+    from urllib.parse import parse_qsl, urlencode, urlunsplit
+    try:
+        parts = urlsplit(url)
+        query = urlencode([(k, '<redacted>' if SECRET_QUERY.match(k) else v) for k, v in parse_qsl(parts.query, keep_blank_values=True)])
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ''))
+    except ValueError:
+        return None
+
+
 def blink_name(url):
     """The default Blink name: the host as reached, lowercase, a leading www. dropped, dots as dashes."""
     host = (urlsplit(url).hostname or '').lower()
@@ -370,8 +389,12 @@ class Learner:
         # The session folder comes first; if the browser part fails, the folder is marked failed and nothing runs.
         run = self._open_session(binding, url, origins, 'starting')
         try:
-            self.browser.open(binding, url)
-            started = self.browser.capture_start(binding)
+            try:  # record from the very first request: blank tab, recorder, then navigation
+                self.browser.open(binding, url, navigate=False)
+                started = self.browser.capture_start(binding, url)
+            except TypeError:  # browsers without that support
+                self.browser.open(binding, url)
+                started = self.browser.capture_start(binding)
         except Exception:
             self._abandon(run, 'start_failed')
             raise
@@ -379,6 +402,9 @@ class Learner:
         state = started.get('screenshots') if isinstance(started, dict) else None
         state = state if state in ('enabled', 'failed') else 'unsupported'
         run['screenshots'] = run['meta']['screenshots'] = state
+        if isinstance(started, dict) and isinstance(started.get('capabilities'), dict):
+            run['meta']['capabilities'] = started['capabilities']
+        run['meta']['coverageGaps'] = COVERAGE_GAPS
         final = started.get('url') if isinstance(started, dict) else None
         if isinstance(final, str) and final.startswith(('http://', 'https://')):
             try:
@@ -388,15 +414,17 @@ class Learner:
             if reached and reached not in run['origins']:  # the site redirected: record its real origin too
                 run['origins'].append(reached)
                 run['meta']['origins'] = run['origins']
-            run['meta']['reachedUrl'] = final
+            run['meta']['reachedUrl'] = safe_url(final)
             if auto_name and blink_name(final) != binding and blink_name(final) not in self.running:
                 binding, run = self._rename(run, binding, blink_name(final))
         _private_write(run['folder'] / 'meta.json', json.dumps(run['meta'], indent=2))
         with self.lock:
             self.running[binding] = run
         self._ensure_collector()
+        _private_write(run['folder'] / 'meta.json', json.dumps(run['meta'], indent=2))
         result = {'binding': binding, 'blink': binding, 'recording': True, 'screenshots': state, 'session': run['session'],
-                  'folder': str(run['folder']), 'origins': run['origins'], 'reachedUrl': run['meta'].get('reachedUrl')}
+                  'folder': str(run['folder']), 'origins': run['origins'], 'reachedUrl': run['meta'].get('reachedUrl'),
+                  'capabilities': run['meta'].get('capabilities'), 'coverageGaps': COVERAGE_GAPS}
         if state != 'enabled':
             error = started.get('screenshotError') if isinstance(started, dict) else None
             result['screenshotError'] = str(error)[:200] if error else 'The browser did not return a screenshot'
@@ -451,7 +479,8 @@ class Learner:
         folder = screenshot_dir(self.store, session)
         if folder.exists():
             return old, run
-        rename(old, new)
+        if rename(old, new) is False:  # the destination name already owns a tab: keep the original name
+            return old, run
         os.rename(run['folder'], folder)
         self.store.delete('captures', run['session'])
         run.update(session=session, folder=folder)
@@ -510,18 +539,31 @@ class Learner:
 
     def _persist(self, run, data):
         """Append one drained batch to the session folder."""
-        records = [r for r in (data.get('records') or []) if isinstance(r, dict)]
+        events = [e for e in (data.get('events') or []) if isinstance(e, dict)]
+        if events and data.get('batch') != run.get('eventsBatch'):
+            _private_write(run['folder'] / 'events.jsonl', ''.join(json.dumps(e, ensure_ascii=False) + '\n' for e in events), 'a')
+            run['eventsBatch'] = data.get('batch')
+            run['events'] = run.get('events', 0) + len(events)
+        # A batch sent again after a partial write: requests and screenshots already written are skipped.
+        done = run.get('maxSeq', 0)
+        records = [r for r in (data.get('records') or []) if isinstance(r, dict)
+                   and not (isinstance(r.get('seq'), int) and r['seq'] <= done)]
         if records:
             _private_write(run['folder'] / 'requests.jsonl',
                            ''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in records), 'a')
             run['requests'] += len(records)
+            run['maxSeq'] = max([done] + [r['seq'] for r in records if isinstance(r.get('seq'), int)])
         lines = []
         for shot in data.get('shots') or []:
+            if isinstance(shot, dict) and isinstance(shot.get('index'), int) and shot['index'] <= run.get('maxShot', 0):
+                continue
             try:
                 image = base64.b64decode(shot['data'], validate=True)
                 if not image.startswith(b'\xff\xd8') or len(image) > MAX_SHOT_BYTES or run['shots'] >= MAX_SHOTS:
                     continue
                 run['shots'] += 1
+                if isinstance(shot.get('index'), int):
+                    run['maxShot'] = shot['index']
                 name = f'screenshots/{run["shots"]:04d}.jpg'
                 with os.fdopen(os.open(run['folder'] / name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'wb') as handle:
                     handle.write(image)
@@ -678,9 +720,12 @@ class Learner:
         deadline = time.monotonic() + 60
         try:
             while callable(getattr(self.browser, 'capture_drain', None)) and time.monotonic() < deadline:
-                if not self.drain(binding, rounds=1) and not data.get('bodiesStillLoading'):
+                more = self.drain(binding, rounds=1)
+                loading = (run.get('counters') or {}).get('bodiesLoading', 0)
+                if not more and not loading:
                     break
-                data['bodiesStillLoading'] = 0
+                if not more:
+                    time.sleep(0.5)  # responses still loading in the tab: wait for them (60 s at most)
         except Exception as exc:
             run['drainErrors'] += 1
             run['lastDrainError'] = str(exc)[:200]
@@ -732,7 +777,9 @@ class Learner:
                  'assetsTruncated': bool(counters.get('assetsTruncated')), 'folder': str(run['folder']),
                  'screenshotErrors': sum(counters[k] for k in ('shotErrors', 'shotsDropped', 'shotsAbandoned')
                                          if isinstance(counters.get(k), int) and not isinstance(counters.get(k), bool)),
-                 'failedRequests': counters.get('failedRequests', 0), 'requestsFile': str(run['folder'] / 'requests.jsonl')}
+                 'failedRequests': counters.get('failedRequests', 0), 'requestsFile': str(run['folder'] / 'requests.jsonl'),
+                 'eventsFile': str(run['folder'] / 'events.jsonl'), 'events': run.get('events', 0),
+                 'capabilities': run['meta'].get('capabilities'), 'coverageGaps': run['meta'].get('coverageGaps', COVERAGE_GAPS)}
         if counters.get('lastShotError'):
             extra['lastScreenshotError'] = str(counters['lastShotError'])[:200]
         if getattr(self, 'unsaved_screenshots', 0):

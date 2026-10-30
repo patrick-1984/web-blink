@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.4.2'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.5.0'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -133,8 +133,9 @@ class BrowserBridge:
                 'if (!p) throw new Error("Blink owned tab unavailable"); ' + body + ' }')
         return self.client.run(code)
 
-    def open(self, binding, url):
-        """Open a work tab via browser_tabs; tab zero and existing tabs are never selected."""
+    def open(self, binding, url, navigate=True):
+        """Open a work tab via browser_tabs; tab zero and existing tabs are never selected. With navigate=False the
+        tab stays blank, so a recorder can be installed before the first request."""
         parsed = urlsplit(url)
         if parsed.scheme not in ('http', 'https') or parsed.username or parsed.password:
             raise ValueError('Invalid browser application URL')
@@ -146,12 +147,12 @@ class BrowserBridge:
             response = self.client.tool(self.client.tabs_tool, {'action': 'new', 'url': sentinel})
             if response.get('isError'):
                 raise BrowserUnavailable('Shared browser refused opening a work tab')
-            data = json.dumps({'owner': owner, 'sentinel': sentinel, 'url': url})
+            data = json.dumps({'owner': owner, 'sentinel': sentinel, 'url': url, 'navigate': navigate})
             try:
                 self.client.run('async (page) => { const v = ' + data + '; '
                                 'const p = page.context().pages().find(x => x.url() === v.sentinel); '
                                 'if (!p) throw new Error("New Blink tab unavailable"); '
-                                'p.__blinkOwner = v.owner; await p.goto(v.url); return {opened:true}; }')
+                                'p.__blinkOwner = v.owner; if (v.navigate) await p.goto(v.url); return {opened:true}; }')
             except Exception:
                 # Preserve ownership for cleanup; never guess at a tab index after a race.
                 self.owners[binding] = owner
@@ -266,7 +267,8 @@ class BrowserBridge:
           return {cookies:selected,storage};
         ''', {'cookies': list(cookie_names), 'storage': list(storage_keys)})
 
-    def capture_start(self, binding):
+    def capture_start(self, binding, url=None):
+        """Install the recorder, then navigate to url (so startup and SSO redirects are recorded too)."""
         owner = self.owners.get(binding)
         if not owner:
             raise BrowserUnavailable('Owned capture tab unavailable')
@@ -278,6 +280,8 @@ class BrowserBridge:
           // values and password/token fields. The daemon drains this buffer to disk every few seconds.
           const records=[],shots=[],missingOrigins=new Set(),assets={};
           let seq=0,shotSeq=0,bufferBytes=0,overflow=false,incomplete=false,failedRequests=0,workers=0,serviceWorker=false;
+          const events=[],owned=new Set([p]),capabilities={cdp:false,browser:null};let wsSeq=0,cdp=null;
+          try{capabilities.browser=p.context().browser()?.version()||null;}catch{}
           let shooting=null,shotTimer=null,last=null,assetsTruncated=false,shotErrors=0,lastShotError=null,shotsDropped=0,queued=0,pending=null;
           const STATIC=new Set(['image','font','stylesheet','media','script','manifest','texttrack']);
           // Login secrets are not dropped: their values go to a private vault (secrets.jsonl in the session folder)
@@ -327,15 +331,47 @@ class BrowserBridge:
             addEventListener('mousemove',()=>{clearTimeout(h);h=setTimeout(()=>say('hover'),1000);},true);};
           try{if(typeof p.addInitScript==='function'){await p.addInitScript(hook);await p.evaluate(hook);}}catch{}
           const ticker=setInterval(()=>{shoot('periodic');},10000);
-          const navigated=f=>{try{if(f===p.mainFrame())later('navigation');}catch{}};
+          let snapTimer=null;
+          const isMain=f=>{try{if(f===p.mainFrame())return true;}catch{}try{return typeof f.page==='function'&&f===f.page().mainFrame();}catch{return false;}};
+          const navigated=f=>{try{if(isMain(f)){later('navigation');clearTimeout(snapTimer);snapTimer=setTimeout(()=>{snapshot('navigation');},1500);}}catch{}};
           const submitting=req=>{try{const type=typeof req.resourceType==='function'?req.resourceType():'other';
             if(!STATIC.has(type)&&!['GET','HEAD','OPTIONS'].includes(req.method()))shoot('before '+req.method()+' '+(pageOf(req.url())||''));}catch{}};
-          // Only a popup window (not recorded) makes a capture incomplete; failed requests and workers are noted.
-          const popup=child=>{incomplete=true;try{const u=new URL(child.url());if(['http:','https:'].includes(u.protocol))missingOrigins.add(u.origin);}catch{}};
-          const worker=()=>{workers++;};
-          const failed=()=>{failedRequests++;};
-          const serviceworker=w=>{try{if(new URL(w.url()).origin===new URL(p.url()).origin)serviceWorker=true;}catch{}};
-          p.on('popup',popup);p.on('worker',worker);p.on('requestfailed',failed);p.context().on('serviceworker',serviceworker);
+          // Popups the work tab opens (SSO windows) are recorded like the tab itself.
+          const event=x=>{const e={t:Date.now(),...x};bufferBytes+=JSON.stringify(e).length;events.push(e);};
+          const worker=w=>{workers++;try{event({type:'worker',url:cleanUrl(w.url(),'worker')});}catch{}};
+          const failed=req=>{failedRequests++;try{const u=new URL(req.url());const at=++seq;
+            records.push({seq:at,t:Date.now(),method:req.method(),url:cleanUrl(u.href,'request '+at),origin:u.origin,path:u.pathname,status:0,
+              resourceType:typeof req.resourceType==='function'?req.resourceType():'other',failure:(req.failure()||{}).errorText||'failed'});}catch{}};
+          const serviceworker=w=>{try{if(new URL(w.url()).origin===new URL(p.url()).origin)serviceWorker=true;event({type:'serviceworker',url:cleanUrl(w.url(),'sw')});}catch{}};
+          const websocket=ws=>{const id=++wsSeq;event({type:'websocket',id,url:cleanUrl(ws.url(),'websocket '+id)});
+            const frame=dir=>f=>{try{const d=typeof f.payload==='string'?f.payload:'<binary '+(f.payload?.length||0)+' bytes>';
+              const [body,cut]=keep(d.length>16384?d.slice(0,16384):d,'websocket '+id);event({type:'websocket-frame',id,dir,payload:body,truncated:cut||d.length>16384});}catch{}};
+            ws.on('framesent',frame('sent'));ws.on('framereceived',frame('received'));ws.on('close',()=>event({type:'websocket-close',id}));};
+          const download=d=>{try{event({type:'download',url:cleanUrl(d.url(),'download'),file:d.suggestedFilename()});}catch{}};
+          const attach=pg=>{owned.add(pg);pg.on('response',listener);pg.on('requestfailed',failed);pg.on('websocket',websocket);
+            pg.on('download',download);pg.on('popup',popup);pg.on('worker',worker);pg.on('framenavigated',navigated);pg.on('request',submitting);};
+          const detach=pg=>{pg.off('response',listener);pg.off('requestfailed',failed);pg.off('websocket',websocket);
+            pg.off('download',download);pg.off('popup',popup);pg.off('worker',worker);pg.off('framenavigated',navigated);pg.off('request',submitting);};
+          const popup=child=>{try{event({type:'popup',url:cleanUrl(child.url(),'popup')});}catch{}try{attach(child);}catch{incomplete=true;}};
+          // Session state: the cookie jar (HttpOnly included), web storage per frame, IndexedDB and Cache Storage
+          // names, service worker registrations. Values that look like credentials go to the vault.
+          const CRED=/token|auth|sess|jwt|secret|key|cred|sid|csrf|xsrf|saml|password/i;
+          const keepValue=(k,v,where)=>{const t=String(v);return CRED.test(k)||/^eyJ[\w-]+\.[\w-]+/.test(t)?secret(t,where+' '+k):t.length>4000?t.slice(0,4000):t;};
+          const snapshot=async reason=>{
+            try{const list=await p.context().cookies();event({type:'cookies',reason,cookies:list.slice(0,500).map(c=>({name:c.name,domain:c.domain,path:c.path,
+              expires:c.expires,httpOnly:c.httpOnly,secure:c.secure,sameSite:c.sameSite,partitionKey:c.partitionKey,value:secret(c.value,'cookie jar '+c.name)}))});}catch(e){event({type:'cookies',reason,error:String(e).slice(0,200)});}
+            const frames=[];for(const pg of owned){try{frames.push(...pg.frames().slice(0,20));}catch{}}
+            for(const f of frames){try{const st=await f.evaluate(async()=>{const out={origin:location.origin,local:{},session:{}};
+                try{for(let i=0;i<Math.min(localStorage.length,500);i++){const k=localStorage.key(i);out.local[k]=localStorage.getItem(k);}}catch{}
+                try{for(let i=0;i<Math.min(sessionStorage.length,500);i++){const k=sessionStorage.key(i);out.session[k]=sessionStorage.getItem(k);}}catch{}
+                try{out.indexedDB=(await indexedDB.databases()).map(d=>({name:d.name,version:d.version}));}catch{}
+                try{out.caches=await caches.keys();}catch{}
+                try{out.serviceWorkers=(await navigator.serviceWorker.getRegistrations()).map(r=>r.scope);}catch{}
+                try{out.csrfMeta=[...document.querySelectorAll('meta[name*=csrf i],meta[name*=xsrf i]')].map(m=>m.getAttribute('name'));}catch{}
+                return out;});
+              const vaulted=o=>Object.fromEntries(Object.entries(o||{}).map(([k,v])=>[k,keepValue(k,v,'storage '+st.origin)]));
+              event({type:'storage',reason,frame:cleanUrl(f.url(),'frame'),origin:st.origin,local:vaulted(st.local),session:vaulted(st.session),
+                indexedDB:st.indexedDB,caches:st.caches,serviceWorkers:st.serviceWorkers,csrfMeta:st.csrfMeta});}catch{}}};
           const pendingBodies=new Set();
           const listener=response=>{const job=record(response);pendingBodies.add(job);job.finally(()=>pendingBodies.delete(job));};
           const record=async response=>{try{
@@ -352,27 +388,46 @@ class BrowserBridge:
             if(/json|text|xml|html|javascript|form/.test(responseHeaders['content-type']||'')&&typeof response.text==='function'){
               try{[body,bodyCut]=keep(await response.text(),where+' response');}catch(e){bodyNote='body unavailable';}}
             const [requestBody,requestCut]=raw==null?[null,false]:keep(raw,where);
-            const item={seq:at,t:when,method:req.method(),url:cleanUrl(u.href,where),origin:u.origin,path:u.pathname,status:response.status(),
+            let bodyBase64=null;
+            if(raw==null&&typeof req.postDataBuffer==='function'){try{const b=req.postDataBuffer();if(b&&b.length)bodyBase64=b.length>LIMIT?null:b.toString('base64');}catch{}}
+            const item={seq:at,t:when,method:req.method(),url:cleanUrl(u.href,where),requestBodyBase64:bodyBase64,
+              fromServiceWorker:(()=>{try{return typeof response.fromServiceWorker==='function'&&response.fromServiceWorker();}catch{return false;}})(),origin:u.origin,path:u.pathname,status:response.status(),
               resourceType:type,requestHeaders:headersOf(requestHeaders,where),requestBody,requestBodyTruncated:requestCut,
               responseHeaders:headersOf(responseHeaders,where+' response'),responseBody:body,responseBodyTruncated:bodyCut,responseBodyNote:bodyNote,
               redirectedFrom:(()=>{try{const r=req.redirectedFrom();return r?cleanUrl(r.url(),where+' redirect'):null;}catch{return null;}})()};
             bufferBytes+=JSON.stringify(item).length;records.push(item);
             later('after '+item.method+' '+(pageOf(req.url())||''));
           }catch{}};
-          const counters=()=>({seq,overflow,incomplete,failedRequests,workers,serviceWorker,assets,assetsTruncated,
+          const counters=()=>({seq,overflow,incomplete,failedRequests,workers,serviceWorker,assets,assetsTruncated,bodiesLoading:pendingBodies.size,
+            capabilities,events:events.length,
             missingOrigins:[...missingOrigins],shotErrors,lastShotError,shotsDropped,shotsAbandoned:queued});
-          p.__blinkCapture={records,shots,vault,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
+          p.__blinkCapture={records,shots,vault,events,owned,detach,snapshot,cdpRef:()=>cdp,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
             timer:()=>shotTimer,pending:()=>pending,inflight:()=>shooting,drained:n=>{bufferBytes=Math.max(0,bufferBytes-n);}};
-          p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
+          attach(p);p.on('console',ui);p.context().on('serviceworker',serviceworker);
+          // Low-level network events (cookie headers as sent, blocked cookies, raw Set-Cookie) where CDP is available.
+          try{cdp=await p.context().newCDPSession(p);await cdp.send('Network.enable');capabilities.cdp=true;
+            cdp.on('Network.requestWillBeSentExtraInfo',e=>event({type:'cdp-request-extra',requestId:e.requestId,headers:headersOf(e.headers,'cdp'),
+              cookies:(e.associatedCookies||[]).slice(0,100).map(c=>({name:c.cookie?.name,domain:c.cookie?.domain,path:c.cookie?.path,blocked:(c.blockedReasons||[])}))}));
+            cdp.on('Network.responseReceivedExtraInfo',e=>event({type:'cdp-response-extra',requestId:e.requestId,status:e.statusCode,headers:headersOf(e.headers,'cdp'),
+              blockedCookies:(e.blockedCookies||[]).slice(0,100).map(c=>({name:c.cookie?.name,reasons:c.blockedReasons}))}));
+            cdp.on('Network.requestWillBeSent',e=>event({type:'cdp-request',requestId:e.requestId,url:cleanUrl(e.request?.url||'','cdp'),method:e.request?.method,
+              redirectFrom:e.redirectResponse?{status:e.redirectResponse.status,url:cleanUrl(e.redirectResponse.url||'','cdp')}:null,initiator:e.initiator?.type}));
+            cdp.on('Network.loadingFailed',e=>event({type:'cdp-failed',requestId:e.requestId,error:e.errorText,blocked:e.blockedReason||null,cors:e.corsErrorStatus?.corsError||null}));
+            cdp.on('Network.eventSourceMessageReceived',e=>{const [d]=keep(String(e.data||'').slice(0,16384),'eventsource');event({type:'eventsource',requestId:e.requestId,event:e.eventName,data:d});});
+          }catch(e){capabilities.cdp=false;capabilities.cdpError=String(e).slice(0,200);}
+          await snapshot('start');
+          if(v.payload&&v.payload.url){try{await p.goto(v.payload.url);}catch(e){event({type:'navigation-error',error:String(e).slice(0,200)});}}
           // Prove screenshots work now, so a failure shows when recording starts, not after a long session.
-          await shoot('start');
-          return {recording:true,screenshots:shots.length?'enabled':'failed',screenshotError:lastShotError,url:p.url()};
-        ''')
+          await shoot('start');await snapshot('loaded');
+          return {recording:true,screenshots:shots.length?'enabled':'failed',screenshotError:lastShotError,url:p.url(),capabilities};
+        ''', {'url': url})
 
     def rename_owner(self, old, new):
         with self.lock:
             if old in self.owners and new not in self.owners:
                 self.owners[new] = self.owners.pop(old)
+                return True
+            return False
 
     def capture_drain(self, binding, ack=None):
         """Hand over the next batch (encoded size about 3 MB). A batch stays in the tab until the caller
@@ -388,11 +443,12 @@ class BrowserBridge:
             const size=x=>JSON.stringify(JSON.stringify(x)).length;
             const take=(list,limit)=>{const out=[];let used=0;
               while(list.length){const n=size(list[0]);if(out.length&&used+n>limit)break;out.push(list.shift());used+=n;}return [out,used];};
-            const [secrets]=take(c.vault,600000);const [records,used]=take(c.records,1300000);c.drained(used);const [shots]=take(c.shots,1300000);
-            c.batch={id:(c.batchSeq=(c.batchSeq||0)+1),records,shots,secrets};
+            const [secrets]=take(c.vault,500000);const [records,used]=take(c.records,1100000);const [events,usedEvents]=take(c.events,600000);
+            c.drained(used+usedEvents);const [shots]=take(c.shots,1100000);
+            c.batch={id:(c.batchSeq=(c.batchSeq||0)+1),records,shots,secrets,events};
           }
-          return {running:!!p.__blinkCapture,batch:c.batch.id,records:c.batch.records,shots:c.batch.shots,secrets:c.batch.secrets,
-            more:c.records.length>0||c.shots.length>0||c.vault.length>0,counters:c.counters()};
+          return {running:!!p.__blinkCapture,batch:c.batch.id,records:c.batch.records,shots:c.batch.shots,secrets:c.batch.secrets,events:c.batch.events,
+            more:c.records.length>0||c.shots.length>0||c.vault.length>0||c.events.length>0,counters:c.counters()};
         ''', {'ack': ack})
 
     def capture_stop(self, binding):
@@ -401,8 +457,10 @@ class BrowserBridge:
             raise BrowserUnavailable('Owned capture tab unavailable')
         return self._run_owned(owner, r'''
           const capture=p.__blinkCapture;if(!capture)throw Error('capture_not_running');
-          p.off('response',capture.listener);p.off('popup',capture.popup);p.off('worker',capture.worker);p.off('requestfailed',capture.failed);
-          p.context().off('serviceworker',capture.serviceworker);p.off('framenavigated',capture.navigated);p.off('request',capture.submitting);p.off('console',capture.ui);
+          await capture.snapshot('stop');
+          for(const pg of capture.owned)capture.detach(pg);
+          p.context().off('serviceworker',capture.serviceworker);p.off('console',capture.ui);
+          try{const c=capture.cdpRef();if(c)await c.detach();}catch{}
           clearTimeout(capture.timer());clearInterval(capture.ticker);
           // Keep the last interaction: wait (bounded) for queued shots, then a final one. The rest is drained.
           const wait=ms=>new Promise(r=>setTimeout(r,ms));
@@ -422,7 +480,7 @@ class BrowserBridge:
         with self.lock:
             owner = self.owners.get(binding)
             if owner:
-                self._run_owned(owner, '''const c=p.__blinkCapture;if(c){p.off('response',c.listener);
+                self._run_owned(owner, '''const c=p.__blinkCapture;if(c&&c.owned){for(const pg of c.owned)c.detach(pg);}if(c){p.off('response',c.listener);
                     p.off('popup',c.popup);p.off('worker',c.worker);p.off('requestfailed',c.failed);p.context().off('serviceworker',c.serviceworker);
                     p.off('framenavigated',c.navigated);p.off('request',c.submitting);p.off('console',c.ui);clearTimeout(c.timer());clearInterval(c.ticker);delete p.__blinkCapture;}delete p.__blinkFinal;delete p.__blinkShots;await p.close();return {closed:true};''')
                 self.owners.pop(binding, None)

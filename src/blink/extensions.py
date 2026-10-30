@@ -30,11 +30,11 @@ class LazyBrowser:
     def fetch(self, request, binding):
         return self.get().fetch(request, binding)
 
-    def open(self, binding, url):
-        return self.get().open(binding, url)
+    def open(self, binding, url, navigate=True):
+        return self.get().open(binding, url, navigate)
 
-    def capture_start(self, binding):
-        return self.get().capture_start(binding)
+    def capture_start(self, binding, url=None):
+        return self.get().capture_start(binding, url)
 
     def capture_stop(self, binding):
         return self.get().capture_stop(binding)

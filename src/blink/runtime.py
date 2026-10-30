@@ -282,11 +282,15 @@ class Runtime:
     def _grant(self,p):
         binding=self.store.get('binding',p.get('binding'))
         if not binding:raise BlinkError('unknown_binding','Binding not found')
-        record=self.active_manifest(binding['service']);ops=p.get('operations');origins=p.get('origins')
+        record=self.active_manifest(binding['service'])
+        # Defaults from the Blink itself: all its operations and exactly its requested origins.
+        ops=p.get('operations') or sorted(record['compiled']['operations'])
+        origins=p.get('origins') or list(record['compiled']['requestedOrigins'])
         if not isinstance(ops,list) or not ops or any(v not in record['compiled']['operations'] for v in ops):
             raise BlinkError('invalid_grant','Grant must name installed operations')
         if not isinstance(origins,list) or not origins or any(v not in record['compiled']['requestedOrigins'] for v in origins):
-            raise BlinkError('invalid_grant','Grant must use exact requested origins')
+            raise BlinkError('invalid_grant','Grant origins must be among the Blink\'s requested origins: '
+                             +', '.join(record['compiled']['requestedOrigins'])+' (or leave origins out)')
         for value in origins:
             if origin(value,allow_http=self.allow_http)!=value:raise BlinkError('invalid_grant','Grant origin is not canonical')
         maximum=p.get('maxAmount',0);calls=p.get('maxCalls',1000);currency=p.get('currency')
