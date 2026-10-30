@@ -200,6 +200,71 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(self.runtime.dispatch('approve_manifest',second,human=True)['status'],'approval_stale')
         self.assertEqual(self.runtime.store.get('grant','alice')['state'],'invalidated')
 
+    def binding_params(self,**changes):
+        return {'binding':'alice','service':self.service,'account':'alice','tenant':'team-a','mode':'C5',
+                'identity':{'accountPath':'id','tenantPath':'tenant'},
+                'eligibility':{'operations':list(self.runtime.active_manifest(self.service)['compiled']['operations'])},**changes}
+
+    def test_new_version_activation_reuses_binding_renews_grant_and_keeps_old_receipts_invalid(self):
+        self.install();self.account()
+        old=self.prepared();self.human('approve_intent',{'intentId':old})
+        changed=copy.deepcopy(self.doc);changed['paths']['/products']['get']['summary']='New version semantics'
+        stage=self.runtime.install_manifest(changed,'test','fixture')['data']
+        # Activation of the new version: manifest -> reused binding -> renewed grant, with no click and no revoke.
+        self.human('approve_manifest',stage)
+        self.assertEqual(self.runtime.store.get('grant','alice')['state'],'invalidated')
+        before=self.runtime.store.get('binding','alice')
+        bound=self.human('bind',self.binding_params())
+        self.assertTrue(bound['data']['reused'])
+        self.assertEqual(self.runtime.store.get('binding','alice'),before)  # not rewritten: custody and epoch kept
+        grant=self.human('grant',{'binding':'alice'})['data']
+        self.assertEqual((grant['state'],grant['digest']),('active',stage['digest']))
+        # Old intent and receipt stay invalidated; nothing replays them.
+        self.assertIn(self.runtime.dispatch('execute',{'intentId':old})['status'],('approval_required','approval_stale'))
+        self.assertEqual(self.runtime.dispatch('approve_intent',{'intentId':old},human=True)['status'],'approval_stale')
+        with self.runtime.store.transaction() as db:
+            self.assertEqual(db.execute('SELECT state FROM receipts WHERE intent_id=?',(old,)).fetchone()[0],'revoked')
+        self.assertEqual(Service.effects,0)
+        fresh=self.prepared()
+        prepared=self.runtime.dispatch('prepare',self.params('mutate',arguments={'body':{'quantity':3}}))
+        self.assertEqual(prepared['summary'],'Exact plan prepared; authorize this intent, then execute.')
+        self.human('approve_intent',{'intentId':fresh})
+        self.assertEqual(self.runtime.dispatch('execute',{'intentId':fresh})['status'],'ok')
+        self.assertEqual(Service.effects,1)
+
+    def test_repeated_exact_activation_is_idempotent_and_changes_conflict(self):
+        stage=self.install();self.account()
+        again=self.human('approve_manifest',stage)
+        self.assertTrue(again['data']['alreadyActive'])
+        self.assertTrue(self.human('approve_manifest',{k:v for k,v in stage.items() if k!='candidate'})['data']['alreadyActive'])
+        self.assertTrue(self.human('bind',self.binding_params())['data']['reused'])
+        self.assertEqual(self.runtime.store.get('binding','alice')['state'],'active')
+        # A different trust tier, read verification or candidate is not the same activation.
+        self.assertEqual(self.runtime.dispatch('approve_manifest',{**stage,'tier':'untrusted'},human=True)['status'],'approval_stale')
+        self.assertEqual(self.runtime.dispatch('approve_manifest',{**stage,'confirmReadOperations':['products']},human=True)['status'],'approval_stale')
+        self.assertEqual(self.runtime.dispatch('approve_manifest',{**stage,'candidate':'0'*64},human=True)['status'],'approval_stale')
+        # A different identity or configuration keeps the conflict and needs revoke -> bind.
+        for changes in ({'account':'mallory'},{'tenant':'team-b'},{'mode':'C3'},{'identity':{'accountPath':'other'}},
+                        {'eligibility':{}},{'browser':{'profile':'x'}}):
+            self.assertEqual(self.runtime.dispatch('bind',self.binding_params(**changes),human=True)['status'],'binding_exists',changes)
+        self.assertEqual(self.runtime.store.get('binding','alice')['account'],'alice')
+        self.human('revoke',{'binding':'alice'})
+        self.assertEqual(self.human('bind',self.binding_params(account='mallory'))['data']['state'],'awaiting_custody')
+
+    def test_budgets_and_quotes_still_bind_immediate_financial_authorization(self):
+        self.install(manifest(self.origin,financial=True));self.account(maxAmount=100,currency='USD')
+        over=self.runtime.dispatch('prepare',self.params('mutate',arguments={'body':{'quantity':2,'amount':175,'currency':'USD'}}))
+        self.assertEqual(over['status'],'quote_mismatch')
+        Service.quote_amount=175
+        self.assertEqual(self.runtime.dispatch('prepare',self.params('mutate',arguments={'body':{'quantity':2,'amount':175,'currency':'USD'}}))['status'],'budget_exceeded')
+        Service.quote_amount=75
+        prepared=self.runtime.dispatch('prepare',self.params('mutate',arguments={'body':{'quantity':2,'amount':75,'currency':'USD'}}))
+        self.assertEqual(prepared['status'],'prepared',prepared)
+        self.human('approve_intent',{'intentId':prepared['data']['intentId']})
+        Service.quote_amount=80
+        self.assertEqual(self.runtime.dispatch('execute',{'intentId':prepared['data']['intentId']})['status'],'approval_stale')
+        self.assertEqual(Service.effects,0)
+
     def test_budget_reserves_pending_intents(self):
         self.install(manifest(self.origin,financial=True));self.account(maxAmount=100,currency='USD')
         p=self.params('mutate',arguments={'body':{'quantity':1,'amount':75,'currency':'USD'}})

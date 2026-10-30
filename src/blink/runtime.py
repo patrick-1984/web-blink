@@ -195,6 +195,24 @@ class Runtime:
         return envelope('ok','Private secret stored separately; its value is never shown',
                         set_secret(blink_name(p.get('blink',p.get('service'))),p.get('name'),p.get('value')))
 
+    def _already_active(self,p,db):
+        """The exact requested candidate is already the active one with the same digest, read verification and trust:
+        a repeated activation is an idempotent success. Anything else falls through to the stale checks."""
+        service=p.get('service');wanted=p.get('digest');candidate_id=p.get('candidate')
+        if not isinstance(service,str) or not isinstance(wanted,str):return None
+        if self.store.get('cleanup_fence',service,connection=db):return None
+        current=self.store.get('active_manifest',service,connection=db)
+        if not current or current.get('state')!='approved' or current.get('digest')!=wanted:return None
+        if candidate_id is not None and candidate_id!=current.get('candidate'):return None
+        confirmations=p.get('confirmReadOperations',[])
+        if (not isinstance(confirmations,list) or any(not isinstance(value,str) for value in confirmations)
+                or len(set(confirmations))!=len(confirmations)
+                or sorted(confirmations)!=sorted(current.get('verifiedReadOperations') or [])):
+            return None
+        tier=p.get('tier','untrusted' if current['provenance'].get('sourceCandidate') else 'own')
+        if tier!=current.get('tier'):return None
+        return current
+
     def _approve_manifest(self,p):
         service=p.get('service');wanted=p.get('digest');candidate_id=p.get('candidate')
         with self.store.transaction() as db:
@@ -203,8 +221,14 @@ class Runtime:
             else:
                 options=[v for v in self.store.list('manifest_candidate',connection=db)
                          if v['service']==service and v['digest']==wanted and v.get('state')=='quarantined']
+                if not options and self._already_active(p,db):
+                    return envelope('ok','Exact manifest candidate is already active; nothing changed',
+                                    {'service':service,'digest':wanted,'alreadyActive':True})
                 if len(options)!=1:raise BlinkError('candidate_required','Select the exact candidate ID to approve')
                 candidate=options[0]
+            if candidate and candidate.get('state')=='approved' and self._already_active(p,db):
+                return envelope('ok','Exact manifest candidate is already active; nothing changed',
+                                {'service':service,'digest':wanted,'alreadyActive':True})
             if not candidate or candidate['service']!=service or candidate['digest']!=wanted or candidate['state']!='quarantined':
                 raise BlinkError('approval_stale','Manifest approval does not match a quarantined candidate')
             read_posts=sorted(op['operationId'] for op in candidate['compiled']['operations'].values()
@@ -212,7 +236,7 @@ class Runtime:
             confirmations=p.get('confirmReadOperations',[])
             if (not isinstance(confirmations,list) or any(not isinstance(value,str) for value in confirmations)
                     or len(set(confirmations))!=len(confirmations) or sorted(confirmations)!=read_posts):
-                raise BlinkError('read_verification_required','Human confirmation must name exactly the POST read operations in this candidate')
+                raise BlinkError('read_verification_required','The authorization must name exactly the POST read operations in this candidate')
             fence = self.store.get('cleanup_fence', service, connection=db)
             if fence:
                 if fence.get('state') != 'retired' or candidate['createdAt'] <= fence['at']:
@@ -301,6 +325,13 @@ class Runtime:
             identity={**identity,'operation':probe}
         old=self.store.get('binding',key)
         if old and old.get('state') not in ('revoked','parked'):
+            requested={'service':service,'account':account,'tenant':p.get('tenant'),'identity':identity,'mode':mode,
+                       'authKind':auth['kind'],'eligibility':p.get('eligibility',{}),'browser':p.get('browser',{})}
+            existing={name:old.get(name,{} if name in ('identity','eligibility','browser') else None) for name in requested}
+            if old.get('state') in ('active','awaiting_custody') and digest(existing)==digest(requested):
+                # Same account, identity and configuration: reuse it unchanged (custody and owner epoch stay).
+                return envelope('ok','Matching account binding already exists; reused unchanged',
+                                {'binding':key,'mode':old['mode'],'state':old['state'],'reused':True})
             raise BlinkError('binding_exists','Revoke the existing binding before changing its identity')
         binding={'id':key,'service':service,'account':account,'tenant':p.get('tenant'),'identity':identity,'mode':mode,
                  'state':'active' if mode in ('C1','C2') or auth['kind']=='none' else 'awaiting_custody',
@@ -334,8 +365,8 @@ class Runtime:
         grant={'binding':binding['id'],'service':binding['service'],'digest':record['digest'],'operations':list(dict.fromkeys(ops)),
                'origins':list(dict.fromkeys(origins)),'expiresAt':expires,'maxAmount':maximum,'currency':currency,
                'maxCalls':calls,'state':'active','policyOverride':p.get('policyOverride') is True,
-               # Standing approval, granted by the human in the activation dialog: prepared writes of this binding
-               # are approved without a dialog each time. Financial operations always need their own approval.
+               # Optional optimisation: prepared writes of this binding are authorized at prepare time. Without it,
+               # prepare -> approve_intent -> execute runs immediately anyway; financial operations take that path.
                'autoApprove':p.get('autoApprove') if p.get('autoApprove') in ('writes','writes-and-deletes') else 'none'}
         with self.store.transaction() as db:
             previous = self.store.get('grant', binding['id'], connection=db)
@@ -502,7 +533,7 @@ class Runtime:
 
     def _assert_read_verified(self,record,operation):
         if operation['method']=='POST' and operation['effect']=='read' and operation['operationId'] not in record.get('verifiedReadOperations',[]):
-            raise BlinkError('read_verification_required','This POST read operation lacks exact human verification')
+            raise BlinkError('read_verification_required','This POST read operation lacks exact read verification in its manifest authorization')
 
     def _send(self,record,operation,arguments,binding,*,idempotency_key=None,on_dispatch=None,private=False):
         with self.broker.secret_scope():
@@ -726,9 +757,9 @@ class Runtime:
         standing=(grant.get('autoApprove') or 'none') if isinstance(grant,dict) else 'none'
         if (op['effect']=='write' and standing in ('writes','writes-and-deletes')) or (op['effect']=='destructive' and standing=='writes-and-deletes'):
             approved=self._approve_intent({'intentId':row['id']})
-            approved['summary']='Approved by your standing approval for this Blink; execute it now'
+            approved['summary']='Exact plan authorized by this grant\'s autoApprove setting; execute it now'
             return approved
-        return envelope('prepared','Human approval required for this exact plan',self._intent_view(row))
+        return envelope('prepared','Exact plan prepared; authorize this intent, then execute.',self._intent_view(row))
 
     def _intent_identity(self,row,binding,*,connection=None):
         expected=self.store.get('intent_binding',row['id'],connection=connection)
@@ -754,7 +785,7 @@ class Runtime:
             receipt=uuid.uuid4().hex
             db.execute('INSERT INTO receipts VALUES(?,?,?,?,?)',(receipt,row['id'],row['arguments_hash'],row['expires'],'issued'))
             db.execute("UPDATE intents SET state='approved',approval_id=? WHERE id=?",(receipt,row['id']))
-        return envelope('approved','Human approval recorded for the exact intent',{'intentId':row['id'],'planDigest':row['arguments_hash']})
+        return envelope('approved','Exact-plan authorization recorded; execute this intent now',{'intentId':row['id'],'planDigest':row['arguments_hash']})
 
     def _execution_budget(self, binding, operation, *, currency=None):
         grant = self._current_grant(binding, operation)
@@ -776,7 +807,7 @@ class Runtime:
                 row=db.execute('SELECT * FROM intents WHERE id=?',(intent,)).fetchone()
                 if row['state'] in ('succeeded','resolved_done','failed_clean','resolved_not_done','outcome_unknown','dispatching'):
                     return envelope(row['state'],'Intent result retained; no new dispatch',self._intent_view(row))
-                if row['state']!='approved' or row['expires']<=time.time():raise BlinkError('approval_required','A current human receipt is required')
+                if row['state']!='approved' or row['expires']<=time.time():raise BlinkError('approval_required','A current exact-plan authorization receipt is required; authorize this intent, then execute')
                 record,op=self._operation({'service':row['service'],'operation':row['operation']})
                 if record['digest']!=row['digest']:raise BlinkError('approval_stale','Manifest changed after approval')
                 binding=self._binding({'binding':row['binding']},record,op,write=True)
@@ -881,7 +912,7 @@ class Runtime:
             state='resolved_done' if outcome=='done' else 'resolved_not_done'
             db.execute('UPDATE intents SET state=? WHERE id=?',(state,row['id']))
             db.execute('UPDATE reservations SET state=? WHERE intent_id=? AND state=?',('consumed' if outcome=='done' else 'released',row['id'],'pending_unknown'))
-        return envelope('ok','Human reconciliation recorded',{'intentId':row['id'],'state':state})
+        return envelope('ok','Reconciliation recorded',{'intentId':row['id'],'state':state})
 
     def _revoke(self,p):
         binding=self.store.get('binding',p.get('binding'))

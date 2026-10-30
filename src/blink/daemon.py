@@ -97,6 +97,8 @@ class Handler(socketserver.StreamRequestHandler):
             # flag for "permit-authorized", never taken from a caller.
             if not consume_permit(self.server.runtime, method, params, permit):
                 return error('authorization_required', 'Native command permit is missing, stale, mismatched or already used')
+            if method == 'shutdown_daemon':
+                return self.shutdown(params)
             if method == 'install_manifest':
                 if set(params) != {'document', 'source', 'integration'}:
                     return error('invalid_request', 'Manifest staging parameters are invalid')
@@ -128,6 +130,18 @@ class Handler(socketserver.StreamRequestHandler):
         threading.Thread(target=self.server.stop_all, daemon=True).start()
         return {'status': 'ok', 'summary': 'Daemon retiring', 'warnings': []}
 
+    def shutdown(self, params):
+        """Explicit restart, first half: stop this daemon on an exact-command permit. Called under the call lock, so
+        no request or scheduled job is in flight. From here on every request is refused; the process exits after the
+        reply, and the existing cleanup closes the extensions (a recording is finalized as interrupted by the next
+        daemon). Dispatching intents are never resubmitted: startup recovery marks them outcome_unknown."""
+        if params != {}:
+            return error('invalid_request', 'shutdown_daemon takes no parameters')
+        self.server.retiring.set()
+        self.after_reply = lambda: threading.Thread(target=self.server.stop_all, daemon=True).start()
+        return {'status': 'ok', 'summary': 'Daemon shutting down for an explicit restart',
+                'data': {'pid': self.server.identity.get('pid')}, 'warnings': []}
+
     def handle(self):
         self.request.settimeout(35)
         try:
@@ -148,7 +162,11 @@ class Handler(socketserver.StreamRequestHandler):
                 wire = json.dumps(error('response_too_large', 'Runtime response exceeds the transport limit')).encode() + b'\n'
             self.wfile.write(wire)
         except (OSError, ValueError):
-            return
+            pass
+        finally:
+            after = getattr(self, 'after_reply', None)
+            if after:
+                after()  # e.g. shutdown: only after the reply was written (or could not be)
 
 
 class ControlHandler(Handler):
