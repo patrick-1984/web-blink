@@ -204,6 +204,16 @@ class CLITests(unittest.TestCase):
         self.controls.append((method, copy.deepcopy(params)))
         return self.runtime.dispatch(method, params, human=True)
 
+    def dialog_mode(self):
+        """Explicit opt-in fixture: terminal confirmation and --yes exist only under approvals=dialog."""
+        code, out, _ = self.invoke(['configure', 'set', 'approvals', 'dialog'])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.config.approval_mode(), 'dialog')
+
+    def counts(self):
+        with self.runtime.store.transaction() as db:
+            return {table: db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] for table in ('intents', 'receipts')}
+
     def invoke(self, tokens):
         stdout, stderr = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
@@ -246,7 +256,8 @@ class CLITests(unittest.TestCase):
         code, out, _ = self.invoke(['hours', 'list-items', '--no-dry-run'])
         self.assertEqual(code, 0, out); self.assertEqual(Service.reads, 1)
 
-    def test_noninteractive_mutation_preserves_unsent_intent_without_approval(self):
+    def test_dialog_mode_noninteractive_mutation_preserves_unsent_intent_without_approval(self):
+        self.dialog_mode()
         code, out, _ = self.invoke(['hours', 'create-item', '--body', '{"quantity":2}'])
         self.assertEqual(code, 1, out); self.assertEqual(json.loads(out)['status'], 'approval_required')
         self.assertEqual(Service.writes, 0); self.assertEqual(self.controls, [])
@@ -379,7 +390,8 @@ class CLITests(unittest.TestCase):
         with self.runtime.store.transaction() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM intents').fetchone()[0], 0)
 
-    def test_previously_approved_request_id_consumes_existing_receipt(self):
+    def test_dialog_mode_previously_approved_request_id_consumes_existing_receipt(self):
+        self.dialog_mode()
         args = ['hours', 'create-item', '--body', '{"quantity":2}', '--request-id', 'resume-approved']
         first = self.invoke(args)
         self.assertEqual(first[0], 1)
@@ -429,7 +441,13 @@ class CLITests(unittest.TestCase):
                 self.assertEqual(code, 0, out)
                 self.assertEqual(dispatch.call_args.args[1], method)
 
-    def test_management_mutations_need_confirmation_and_honor_dry_run(self):
+    def test_management_mutations_honor_dry_run_and_need_confirmation_only_in_dialog_mode(self):
+        with patch('blink.cli.native_dispatch', return_value={'status': 'ok'}) as dispatch, \
+                patch('sys.stdin.isatty', return_value=False), patch('builtins.input', side_effect=AssertionError):
+            code, out, _ = self.invoke(['account', 'revoke', '--input', '{"binding":"account"}'])
+            self.assertEqual(code, 0, out)
+            self.assertEqual(dispatch.call_args.args[1:], ('revoke', {'binding': 'account'}))
+        self.dialog_mode()
         with patch('blink.cli.native_dispatch') as dispatch:
             code, out, _ = self.invoke(['account', 'revoke', '--input', '{"binding":"account"}'])
             self.assertEqual(code, 1, out); dispatch.assert_not_called()
@@ -578,7 +596,8 @@ class CLITests(unittest.TestCase):
                   'SECRET-KEY-MARKER': 'other-value'}
         stderr = io.StringIO()
         with patch('sys.stdin.isatty', return_value=True), patch('builtins.input', return_value='yes'), contextlib.redirect_stderr(stderr):
-            cli.confirm('example', params, False)
+            cli.confirm('example', params, False, mode='dialog')
+        self.assertIn('exactParametersSha256', stderr.getvalue())
         for marker in ('API-PRIVATE-MARKER', 'CSRF-PRIVATE-MARKER', 'KEY-PRIVATE-MARKER', 'SECRET-KEY-MARKER', 'other-value'):
             self.assertNotIn(marker, stderr.getvalue())
 
@@ -702,6 +721,157 @@ class CLITests(unittest.TestCase):
             self.assertEqual(code, 0, out)
         self.assertIsNone(self.runtime.store.get('canaries', canary))
         self.assertEqual(self.controls, [('health_disable', {'id': canary})])
+
+
+    # --- approvals=none (default): the user's order authorizes the exact action -------------------------
+
+    def assert_one_authorized_write(self, out):
+        self.assertEqual(json.loads(out)['status'], 'ok', out)
+        self.assertEqual(Service.writes, 1)
+        self.assertEqual([m for m, _ in self.controls], ['approve_intent'])
+        execute = [p for m, p in self.calls if m == 'execute']
+        self.assertEqual(execute, [self.controls[0][1]])
+        self.assertEqual(self.counts(), {'intents': 1, 'receipts': 1})
+
+    def test_none_mode_non_tty_mutation_runs_without_yes(self):
+        self.assertEqual(self.config.approval_mode(), 'none')
+        with patch('sys.stdin.isatty', return_value=False), patch('builtins.input', side_effect=AssertionError):
+            code, out, err = self.invoke(['hours', 'create-item', '--body', '{"quantity":2}'])
+        self.assertEqual(code, 0, out); self.assert_one_authorized_write(out)
+        self.assertNotIn('Apply this exact action', err)
+
+    def test_none_mode_tty_mutation_runs_without_terminal_input(self):
+        with patch('sys.stdin.isatty', return_value=True), patch('builtins.input', side_effect=AssertionError) as typed:
+            code, out, err = self.invoke(['hours', 'create-item', '--body', '{"quantity":2}'])
+        self.assertEqual(code, 0, out); self.assert_one_authorized_write(out)
+        typed.assert_not_called(); self.assertEqual(err, '')
+
+    def test_none_mode_dry_run_creates_no_intent_permit_receipt_or_effect(self):
+        for tokens in (['hours', 'create-item', '--body', '{"quantity":2}', '--dry-run'],
+                       ['hours', 'create-item', '--body', '{"quantity":2}', '--request-id', 'dry', '--dry-run'],
+                       ['approve-intent', 'missing', '--dry-run'],
+                       ['account', 'revoke', '--input', '{"binding":"account"}', '--dry-run']):
+            with self.subTest(tokens=tokens), patch('blink.cli.native_dispatch', side_effect=AssertionError):
+                code, out, _ = self.invoke(tokens)
+                self.assertEqual(code, 0, out); self.assertTrue(json.loads(out)['data']['dryRun'])
+        self.assertEqual(Service.writes, 0); self.assertEqual(self.controls, [])
+        self.assertFalse(any(m in ('prepare', 'execute') for m, _ in self.calls))
+        self.assertEqual(self.counts(), {'intents': 0, 'receipts': 0})
+
+    def test_none_mode_stable_request_id_recovers_prepared_intent_without_duplicate(self):
+        params = {'service': 'test:hours', 'operation': 'create_item', 'binding': 'account', 'intentId': 'stable-run',
+                  'arguments': {'region': 'schema-eu', 'locale': 'en', 'body': {'quantity': 2}}}
+        self.assertEqual(self.runtime.dispatch('prepare', params)['status'], 'prepared')
+        args = ['hours', 'create-item', '--body', '{"quantity":2}', '--request-id', 'stable-run']
+        code, out, _ = self.invoke(args)
+        self.assertEqual(code, 0, out); self.assertEqual(json.loads(out)['data']['intentId'], 'stable-run')
+        self.assertEqual(self.controls, [('approve_intent', {'intentId': 'stable-run'})])
+        code, out, _ = self.invoke(args)
+        self.assertEqual(code, 0, out); self.assertEqual(Service.writes, 1)
+        self.assertEqual(len(self.controls), 1)
+        self.assertEqual(self.counts()['intents'], 1)
+
+    def test_none_mode_legacy_management_runs_noninteractively_without_yes(self):
+        self.runtime.dispatch('prepare', {'service': 'test:hours', 'operation': 'create_item', 'binding': 'account',
+            'intentId': 'exact', 'arguments': {'region': 'schema-eu', 'locale': 'en', 'body': {'quantity': 2}}})
+        with patch('blink.cli.native_dispatch', return_value={'status': 'ok'}) as dispatch, \
+                patch('sys.stdin.isatty', return_value=False), patch('builtins.input', side_effect=AssertionError):
+            for tokens, method in ((['approve-intent', 'exact'], 'approve_intent'),
+                                   (['human', 'revoke', '--input', '{"binding":"account"}'], 'revoke'),
+                                   (['approve-manifest', 'test:hours', 'exact-digest'], 'approve_manifest')):
+                with self.subTest(tokens=tokens):
+                    code, out, _ = self.invoke(tokens)
+                    self.assertEqual(code, 0, out); self.assertEqual(dispatch.call_args.args[1], method)
+
+    def test_cli_policy_opt_in_persists_and_takes_effect_on_next_call(self):
+        mutate = ['hours', 'create-item', '--body', '{"quantity":2}']
+        code, out, _ = self.invoke(['configure', 'get', 'approvals'])
+        self.assertEqual((code, json.loads(out)['data']), (0, 'none'))
+        self.assertEqual(self.invoke(['configure', 'set', 'approvals', 'dialog'])[0], 0)
+        self.assertEqual(ConfigStore(self.config.directory).load()['approvals'], 'dialog')
+        code, out, _ = self.invoke(['configure', 'get', 'approvals'])
+        self.assertEqual(json.loads(out)['data'], 'dialog')
+        with patch('sys.stdin.isatty', return_value=False):
+            code, out, _ = self.invoke(mutate)
+        self.assertEqual((code, json.loads(out)['status']), (1, 'approval_required'))
+        self.assertEqual(Service.writes, 0); self.assertEqual(self.controls, [])
+        self.assertEqual(self.invoke(['configure', 'set', 'approvals', 'none'])[0], 0)
+        with patch('sys.stdin.isatty', return_value=False):
+            code, out, _ = self.invoke(mutate)
+        self.assertEqual(code, 0, out); self.assertEqual(Service.writes, 1)
+        self.assertEqual(self.invoke(['configure', 'set', 'approvals', 'dialog'])[0], 0)
+        self.assertEqual(self.invoke(['configure', 'unset', 'approvals'])[0], 0)
+        self.assertNotIn('approvals', self.config.load()); self.assertEqual(self.config.approval_mode(), 'none')
+
+    def test_policy_comes_from_the_invoking_clients_selected_config_dir(self):
+        daemon_default = ConfigStore(os.environ['BLINK_CONFIG_DIR'])
+        daemon_default.set('approvals', 'dialog')  # not the store selected with --config-dir
+        with patch('sys.stdin.isatty', return_value=False):
+            code, out, _ = self.invoke(['hours', 'create-item', '--body', '{"quantity":2}'])
+        self.assertEqual(code, 0, out); self.assertEqual(Service.writes, 1)
+        daemon_default.unset('approvals'); self.config.set('approvals', 'dialog')
+        with patch('sys.stdin.isatty', return_value=False):
+            code, out, _ = self.invoke(['hours', 'create-item', '--body', '{"quantity":3}'])
+            self.assertEqual(json.loads(out)['status'], 'approval_required')
+            code, out, _ = self.invoke(['approve-intent', 'x'])
+            self.assertEqual(code, 1, out)
+        self.assertEqual(Service.writes, 1)
+
+    def test_policy_cannot_be_changed_by_blink_settings_preferences_manifests_or_tool_parameters(self):
+        mutate = ['hours', 'create-item', '--body', '{"quantity":2}']
+        # Per-Blink settings: the CLI refuses a scoped policy, and a scoped key never reaches the global policy.
+        code, out, _ = self.invoke(['configure', 'set', 'approvals', 'dialog', '--blink', 'test:hours'])
+        self.assertEqual(code, 2, out)
+        with self.assertRaises(ConfigError):
+            self.config.set('approvals', 'dialog', 'test:hours')
+        self.assertEqual(self.config.approval_mode(), 'none')
+        # Tool parameters and per-call settings do not select the policy.
+        with patch('sys.stdin.isatty', return_value=False):
+            self.invoke([*mutate, '--setting', 'approvals=dialog'])
+            self.invoke([*mutate, '--set', 'approvals=dialog'])
+            self.invoke([*mutate, '--arguments', '{"approvals":"dialog"}'])
+        self.assertEqual(self.config.approval_mode(), 'none')
+        self.assertNotIn('approvals', self.config.load()['defaults'])
+        self.assertEqual(self.config.load()['blinks'].get('test:hours', {}).get('approvals'), None)
+        # Manifest/publisher setting schemas only feed effective() argument merging, never the policy.
+        settings, _ = self.config.effective('test:hours', schema={'type': 'object', 'properties': {
+            'approvals': {'type': 'string', 'default': 'dialog'}}})
+        self.assertEqual(self.config.approval_mode(), 'none')
+        self.assertNotIn('approvals', self.config.load())
+        # Private preferences live in runtime state, not in the user's settings document.
+        self.runtime.dispatch('private_set', {'service': 'test:hours', 'patch': {'preferences': {'approvals': 'dialog'}}}, human=True)
+        self.assertEqual(self.config.approval_mode(), 'none')
+        # No runtime (MCP-reachable) method changes the policy.
+        for method in ('configure', 'config_set', 'set_approvals', 'approvals', 'settings_set'):
+            with self.subTest(method=method):
+                self.assertNotEqual(self.runtime.dispatch(method, {'key': 'approvals', 'value': 'dialog'})['status'], 'ok')
+                self.assertNotEqual(self.runtime.dispatch(method, {'key': 'approvals', 'value': 'dialog'}, human=True)['status'], 'ok')
+        self.assertEqual(self.config.approval_mode(), 'none')
+        with patch('sys.stdin.isatty', return_value=False):
+            code, out, _ = self.invoke(mutate)
+        self.assertEqual(code, 0, out)
+
+    def test_invalid_policy_file_is_a_configuration_error_and_runs_nothing(self):
+        self.config.path.write_text(json.dumps({'schemaVersion': 1, 'defaults': {}, 'blinks': {}, 'approvals': 'ask'}))
+        os.chmod(self.config.path, 0o600)
+        with patch('blink.cli.native_dispatch', side_effect=AssertionError):
+            for tokens in (['hours', 'create-item', '--body', '{"quantity":2}'], ['approve-intent', 'x']):
+                with self.subTest(tokens=tokens):
+                    code, out, _ = self.invoke(tokens)
+                    self.assertEqual(code, 2, out); self.assertEqual(json.loads(out)['status'], 'invalid_config')
+        self.assertEqual(Service.writes, 0); self.assertEqual(self.controls, [])
+        self.assertFalse(any(m in ('prepare', 'execute') for m, _ in self.calls))
+
+    def test_settings_purge_preserves_top_level_policy(self):
+        self.config.set('approvals', 'dialog'); self.config.set('region', 'eu')
+        _, dispatch = self.native_extension()
+        with patch('blink.cli.native_dispatch', dispatch):
+            code, out, _ = self.invoke(['purge', '--input', '{"includeSettings":true}', '--yes'])
+        self.assertEqual(code, 0, out)
+        document = self.config.load()
+        self.assertEqual((document['defaults'], document['blinks']), ({}, {}))
+        self.assertEqual(document['approvals'], 'dialog')
+        self.assertEqual(self.config.approval_mode(), 'dialog')
 
 
 class ManagementInputTests(unittest.TestCase):
