@@ -19,11 +19,11 @@ from blink.runtime import Runtime  # noqa: E402
 class HandshakeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
-        self.state = Path(self.tmp.name) / 'state'
+        self.state = Path(self.tmp.name) / 'state with spaces'
         self.addCleanup(self.stop_all)
 
     def stop_all(self):
-        for pid in client._daemon_pids(self.state, None):
+        for pid in client._legacy_daemon_pids(self.state):
             try: os.kill(pid, 15)
             except ProcessLookupError: pass
 
@@ -37,7 +37,7 @@ class HandshakeTests(unittest.TestCase):
         self.assertEqual(data['daemon']['pluginRoot'], str(ROOT))
         self.assertFalse(data['daemon']['recording'])
 
-    def test_an_older_daemon_is_replaced(self):
+    def test_an_older_daemon_retires_itself_and_the_current_one_starts(self):
         first = self.daemon_pid()
         with mock.patch.object(client, '_own_identity', return_value={'version': '99.0.0', 'pluginRoot': str(ROOT)}):
             data = client.request('doctor', state_dir=self.state, plugin_root=ROOT)['data']
@@ -50,23 +50,44 @@ class HandshakeTests(unittest.TestCase):
             data = client.request('doctor', state_dir=self.state, plugin_root=ROOT)['data']
         self.assertEqual(data['daemon']['pid'], first)
 
-    def test_a_recording_daemon_is_never_restarted(self):
+    def test_a_pre_handshake_daemon_is_never_killed_automatically(self):
         first = self.daemon_pid()
-        real = client._exchange
-        def recording(sock, method, params):
-            result = real(sock, method, params)
-            if method == 'doctor':
-                result['data']['daemon']['recording'] = True
-            return result
-        with mock.patch.object(client, '_own_identity', return_value={'version': '99.0.0', 'pluginRoot': str(ROOT)}), \
-                mock.patch.object(client, '_exchange', side_effect=recording):
+        with mock.patch.object(client, '_probe', return_value='legacy'):
             result = client.request('doctor', state_dir=self.state, plugin_root=ROOT)
-        self.assertEqual(result['data']['daemon']['pid'], first)
-        self.assertTrue(any('recording' in w for w in result['warnings']))
+        self.assertIn(client.LEGACY_NOTICE, result['warnings'])
+        self.assertTrue(result['data']['daemonOutdated'])
+        self.assertEqual(self.daemon_pid(), first)
 
-    def test_a_pre_handshake_daemon_is_found_by_its_command_line(self):
+    def test_the_daemon_process_is_matched_exactly_even_with_spaces_in_the_path(self):
         pid = self.daemon_pid()
-        self.assertIn(pid, client._daemon_pids(self.state, {'version': '0.2.1'}))
+        self.assertEqual(client._legacy_daemon_pids(self.state), [pid])
+        self.assertEqual(client._legacy_daemon_pids(Path(str(self.state) + '-other')), [])
+
+
+class RetireTests(unittest.TestCase):
+    """The daemon decides under its own call lock; a recording or a newer daemon never steps down."""
+    def handler(self, version='0.1.0', running=None):
+        import threading
+        from blink.daemon import Handler
+        stopped = []
+        learner = type('L', (), {'running': running or {}})()
+        server = type('S', (), {'identity': {'version': version}, 'extensions': type('E', (), {'learner': learner})(),
+                                'retiring': threading.Event(), 'stop_all': lambda self=None: stopped.append(1)})()
+        handler = Handler.__new__(Handler); handler.server = server
+        return handler, server
+
+    def test_idle_older_daemon_retires_and_then_refuses_work(self):
+        handler, server = self.handler()
+        self.assertEqual(handler.retire({'ifOlderThan': '0.2.0'})['status'], 'ok')
+        self.assertTrue(server.retiring.is_set())
+        self.assertEqual(handler.dispatch(b'{"method":"doctor","params":{}}\n')['status'], 'daemon_retiring')
+
+    def test_recording_or_newer_daemons_keep_running(self):
+        handler, server = self.handler(running={'b': ['https://app.example']})
+        self.assertEqual(handler.retire({'ifOlderThan': '0.2.0'})['status'], 'recording')
+        handler, server = self.handler(version='1.0.0')
+        self.assertEqual(handler.retire({'ifOlderThan': '0.2.0'})['status'], 'not_older')
+        self.assertFalse(server.retiring.is_set())
 
 
 class ScreenshotStatusAtStartTests(unittest.TestCase):

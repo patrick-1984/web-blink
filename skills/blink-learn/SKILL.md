@@ -14,10 +14,12 @@ user and follow their lead. Never rush ahead of them.
    dots replaced by dashes (`https://www.msn.com/...` -> `msn-com`, `login.salesforce.com` ->
    `login-salesforce-com`). Use the same name for the `binding` and the proposed `service`. Use a different
    name only when the user asks for one explicitly.
-2. Check the `learn_start` result. `screenshots: enabled` means a test screenshot was just taken. If it says
-   `failed` or `unsupported`, tell the user at once (with `screenshotError`), and offer to stop, run
-   `blink_doctor` (it shows the daemon version and restarts an outdated one) and start again; requests are
-   still recorded meanwhile. Then tell the user the recording is on and the tab is theirs: they log in and do
+2. Check the `learn_start` result. Only `screenshots: enabled` means a test screenshot was just taken.
+   Anything else (`failed`, `unsupported`, the field missing, or a `daemonOutdated` warning) means this
+   recording will have no or incomplete screenshots: tell the user at once (with `screenshotError` and the
+   warning) and offer to stop and start again. For an outdated daemon, run `blink_doctor`; if it still reports
+   a pre-0.2.8 daemon, request `restart_daemon` through `blink_request_approval` (the user approves it in a
+   dialog, a running recording would be lost). Requests are still recorded meanwhile. Then tell the user the recording is on and the tab is theirs: they log in and do
    the steps to learn.
 3. Do not act in the browser yourself: no clicks, typing, entries, navigation or closing tabs, unless the user
    picks "you drive" below and tells you what to do. Never enter data for the user.
@@ -25,7 +27,8 @@ user and follow their lead. Never rush ahead of them.
    "Look at what I did so far" / "You drive: <what>" / "Stop recording". Wait for the answer. When the user
    says they did something, check the tab's page state and summarise what you saw, then ask again.
 5. Stop (`learn_stop`) only when the user chooses to. If the result has no screenshots, or
-   `screenshotErrors`/`unsavedScreenshots` above 0, say so plainly with `lastScreenshotError`. Review the capture with the user: the recorded requests
+   `screenshotErrors`/`unsavedScreenshots` above 0 (errors, oversized, dropped or abandoned shots), say so
+   plainly with `lastScreenshotError`. Review the capture with the user: the recorded requests
    (`blink_admin` review), other hosts, static assets per host, and the screenshots (open the `file` of each
    entry in `screenshots`; `afterRecord` places it in the request timeline). Screenshots are taken at the start,
    when a form is submitted (before and after), on each click and field change, after typing or resting the mouse (hover boxes), and on each page change, so what the user typed and clicked

@@ -260,7 +260,8 @@ class Learner:
                  'staticAssets': self._assets(data.get('assets')),
                  'screenshots': self._screenshots(binding, data.get('screenshots'), session_id),
                  'assetsTruncated': bool(data.get('assetsTruncated')),
-                 'screenshotErrors': data['shotErrors'] if isinstance(data.get('shotErrors'), int) else 0}
+                 'screenshotErrors': sum(data[k] for k in ('shotErrors', 'shotsDropped', 'shotsAbandoned')
+                                         if isinstance(data.get(k), int) and not isinstance(data.get(k), bool))}
         if data.get('lastShotError'):
             extra['lastScreenshotError'] = str(data['lastShotError'])[:200]
         if getattr(self, 'unsaved_screenshots', 0):

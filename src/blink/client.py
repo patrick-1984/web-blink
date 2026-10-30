@@ -82,22 +82,33 @@ def _exchange(sock, method, params):
     return result
 
 
-def _daemon_pids(state, identity):
-    """The running daemon's PID: from its handshake, else (older daemons) from this user's process list."""
-    if isinstance(identity, dict) and isinstance(identity.get('pid'), int):
-        return [identity['pid']]
+def _legacy_daemon_pids(state):
+    """PIDs of this user's `blink.daemon --state-dir <state>` processes, matched exactly (paths may contain spaces)."""
+    target, pids = str(state), []
+    proc = Path('/proc')
+    if proc.is_dir():
+        for entry in proc.iterdir():
+            if not entry.name.isdigit() or int(entry.name) == os.getpid():
+                continue
+            try:
+                if entry.stat().st_uid != os.getuid():
+                    continue
+                argv = (entry / 'cmdline').read_bytes().decode('utf-8', 'replace').split('\0')
+            except OSError:
+                continue
+            if 'blink.daemon' in argv and '--state-dir' in argv and argv[argv.index('--state-dir') + 1:][:1] == [target]:
+                pids.append(int(entry.name))
+        return pids
     try:
-        listing = subprocess.run(['ps', '-U', str(os.getuid()), '-o', 'pid=,command='], capture_output=True,
+        listing = subprocess.run(['ps', '-U', str(os.getuid()), '-o', 'pid=,args='], capture_output=True,
                                  text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return []
-    pids = []
     for line in listing.splitlines():
-        pid, _, command = line.strip().partition(' ')
-        words = command.split()
-        if 'blink.daemon' in words and '--state-dir' in words and words[words.index('--state-dir') + 1:][:1] == [str(state)]:
-            if pid.isdigit() and int(pid) != os.getpid():
-                pids.append(int(pid))
+        pid, _, args = line.strip().partition(' ')
+        if pid.isdigit() and int(pid) != os.getpid() and ' -m blink.daemon ' in f' {args} ' and (
+                args.endswith(f'--state-dir {target}') or f'--state-dir {target} --' in args):
+            pids.append(int(pid))
     return pids
 
 
@@ -117,40 +128,100 @@ def _lock_free(state):
         os.close(fd)
 
 
-def _replace_if_outdated(state, plugin_root):
-    """Handshake: a daemon older than this client (or from before the handshake) is stopped so the current
-    one starts, unless it is recording. A newer daemon is kept, so two installed versions never fight."""
-    own = _own_identity(plugin_root)
+def _wait_lock_free(state, seconds=8):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if _lock_free(state):
+            return True
+        time.sleep(0.1)
+    return _lock_free(state)
+
+
+def _probe(state):
+    """The running daemon's handshake identity: a dict, 'legacy' (a pre-0.2.8 daemon without one) or None."""
     try:
-        probe = connect(state / 'runtime.sock')
+        sock = connect(state / 'runtime.sock')
         try:
-            doctor = _exchange(probe, 'doctor', {})
+            doctor = _exchange(sock, 'doctor', {})
         finally:
-            probe.close()
+            sock.close()
     except Exception:
         return None
-    identity = (doctor.get('data') or {}).get('daemon') if isinstance(doctor.get('data'), dict) else None
-    daemon_version = _version(identity.get('version')) if isinstance(identity, dict) else None
-    own_version = _version(own['version'])
-    if daemon_version is not None and own_version is not None and daemon_version >= own_version:
+    identity = doctor.get('data', {}).get('daemon') if isinstance(doctor.get('data'), dict) else None
+    return identity if isinstance(identity, dict) else 'legacy'
+
+
+def _outdated(identity, own):
+    if identity == 'legacy':
+        return True
+    if not isinstance(identity, dict):
+        return False
+    daemon, mine = _version(identity.get('version')), _version(own['version'])
+    return daemon is None or (mine is not None and daemon < mine)
+
+
+LEGACY_NOTICE = ('The running Web Blink daemon is from before version 0.2.8 (no screenshots, no version check). It '
+                 'is not restarted automatically because it may be recording. Approve "restart_daemon" through '
+                 'blink_request_approval (a recording in progress would be lost), then record again.')
+
+
+def _replace_if_outdated(state, plugin_root):
+    """Handshake. An older current-style daemon is asked to retire: it checks under its own call lock that it is
+    idle and not recording, then refuses all new work and exits. A pre-0.2.8 daemon is never killed automatically.
+    A newer daemon is kept, so two installed versions never take turns restarting each other."""
+    own = _own_identity(plugin_root)
+    identity = _probe(state)
+    if not _outdated(identity, own):
         return None
-    running = identity.get('version') if isinstance(identity, dict) else 'pre-0.2.8'
-    if isinstance(identity, dict) and identity.get('recording') is True:
-        return (f'The local daemon runs Web Blink {running} while this plugin is {own["version"]}; it is recording, '
-                'so it was not restarted. Stop the recording, then the next call restarts it.')
-    import signal
-    for pid in _daemon_pids(state, identity):
+    if identity == 'legacy':
+        return LEGACY_NOTICE
+    try:
+        sock = connect(state / 'runtime.sock')
         try:
-            os.kill(pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass
-    deadline = time.monotonic() + 8
-    while time.monotonic() < deadline and not _lock_free(state):
-        time.sleep(0.1)
-    if not _lock_free(state):
-        return (f'The local daemon runs Web Blink {running} while this plugin is {own["version"]} and could not '
-                'be stopped; restart it to get the current features.')
-    return 'restarted'
+            answer = _exchange(sock, 'retire', {'ifOlderThan': own['version']})
+        finally:
+            sock.close()
+    except Exception:
+        answer = {'status': 'error'}
+    if answer.get('status') == 'ok' and _wait_lock_free(state):
+        return 'restarted'
+    if answer.get('status') == 'recording':
+        return (f'The local daemon runs Web Blink {identity.get("version")} while this plugin is {own["version"]}; it is '
+                'recording, so it keeps running. Stop the recording; the next call starts the current daemon.')
+    return (f'The local daemon runs Web Blink {identity.get("version")} while this plugin is {own["version"]} and did '
+            'not step down; call blink_doctor again shortly.')
+
+
+def restart_legacy_daemon(state_dir=None, plugin_root=None):
+    """Human-approved only (restart_daemon dialog): stop a pre-0.2.8 or older daemon and start the current one."""
+    import signal
+    state = secure_state_directory(state_dir)
+    own = _own_identity(plugin_root)
+    identity = _probe(state)
+    if identity is None:
+        result = request('doctor', state_dir=state, plugin_root=plugin_root)
+        return {'status': 'ok', 'summary': 'No daemon was running; the current one was started',
+                'data': result.get('data'), 'warnings': result.get('warnings', [])}
+    if not _outdated(identity, own):
+        return {'status': 'ok', 'summary': 'The running daemon is already current', 'data': {'daemon': identity}, 'warnings': []}
+    if isinstance(identity, dict):
+        notice = _replace_if_outdated(state, plugin_root)
+        if notice != 'restarted':
+            return {'status': 'not_restarted', 'summary': notice, 'warnings': []}
+    else:
+        pids = _legacy_daemon_pids(state)
+        if _probe(state) != 'legacy' or not pids:  # re-check right before stopping, so a replacement is never hit
+            return {'status': 'not_restarted', 'summary': 'The old daemon could not be identified safely', 'warnings': []}
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+        if not _wait_lock_free(state):
+            return {'status': 'not_restarted', 'summary': 'The old daemon did not stop', 'warnings': []}
+    result = request('doctor', state_dir=state, plugin_root=plugin_root)
+    return {'status': 'ok', 'summary': 'The daemon was restarted on the current version',
+            'data': result.get('data'), 'warnings': result.get('warnings', [])}
 
 
 def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=True):
@@ -162,7 +233,7 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
         return {'status': 'unsupported', 'summary': 'Windows daemon transport is not supported; use diagnostics', 'warnings': []}
     state = secure_state_directory(state_dir)
     path = state / 'runtime.sock'
-    sock, notice = None, None
+    sock, notice, restarted = None, None, False
     try:
         sock = connect(path)
     except (FileNotFoundError, ConnectionRefusedError):
@@ -172,23 +243,29 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
         notice = _replace_if_outdated(state, plugin_root)
         if notice == 'restarted':
             sock.close()
-            sock = None
+            sock, notice, restarted = None, None, True
     if sock is None:
         sock = _start_daemon(state, plugin_root)
         if sock is None:
             return {'status': 'env_unavailable', 'summary': 'Local daemon did not become available', 'warnings': []}
+        # Another, older installation may have won the start race: check what actually answers.
+        if _outdated(_probe(state), _own_identity(plugin_root)):
+            notice = LEGACY_NOTICE if _probe(state) == 'legacy' else (
+                'An older Web Blink daemon answered after start; call blink_doctor again to replace it.')
     try:
         result = _exchange(sock, method, params)
     finally:
         sock.close()
-    if notice and notice != 'restarted':
+    if notice:
         result.setdefault('warnings', []).append(notice)
+        if isinstance(result.get('data'), dict):
+            result['data']['daemonOutdated'] = True
     if method == 'doctor' and isinstance(result.get('data'), dict):
         own = _own_identity(plugin_root)
         daemon = result['data'].get('daemon')
         result['data']['client'] = own
         result['data']['daemonMatchesClient'] = isinstance(daemon, dict) and daemon.get('version') == own['version']
-        if notice == 'restarted':
+        if restarted:
             result['data']['daemonRestarted'] = True
     return result
 
@@ -240,6 +317,10 @@ def control_request(method, params=None, *, state_dir=None, plugin_root=None, au
         result = strict_json(response)
         if not isinstance(result, dict) or not isinstance(result.get('status'), str):
             raise ValueError('invalid native response')
+        for warning in ready.get('warnings', []):  # e.g. an outdated daemon: never dropped on approved actions
+            result.setdefault('warnings', []).append(warning)
+        if (ready.get('data') or {}).get('daemonOutdated') and isinstance(result.get('data'), dict):
+            result['data']['daemonOutdated'] = True
         return result
     except Exception:
         return {'status': 'control_outcome_unknown',
