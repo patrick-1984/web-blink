@@ -348,6 +348,9 @@ class CleanupManager:
                     if delete:
                         self.store.delete(kind, key, connection=db)
                         removed[kind] += 1
+                        if kind == "captures":
+                            from .learner import forget_screenshots
+                            forget_screenshots(self.store, key)
                 if service is None:
                     # Orphaned per-intent metadata has no authority, but is still
                     # known plugin data; retain only rows tied to unknown intents.

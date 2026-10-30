@@ -274,7 +274,18 @@ class BrowserBridge:
           if(p.__blinkCapture)throw Error('capture_already_running');
           const schema=(x,depth=0)=>depth>8?{}:x===null?{type:'null'}:Array.isArray(x)?{type:'array',items:x.length?schema(x[0],depth+1):{}}:
             typeof x==='object'?{type:'object',properties:Object.fromEntries(Object.values(x).slice(0,100).map((val,i)=>['field'+(i+1),schema(val,depth+1)]))}:{type:typeof x==='number'?'number':typeof x};
-          const records=[],missingOrigins=new Set();let overflow=false,incomplete=false,metadataBytes=0;
+          const records=[],missingOrigins=new Set(),assets={},shots=[];let overflow=false,incomplete=false,metadataBytes=0,shooting=false,shotTimer=null;
+          // Static files from any host (CDN, fonts, analytics) are counted per host; every other request is recorded.
+          const STATIC=new Set(['image','font','stylesheet','media','script','manifest','texttrack']);
+          const pageOf=url=>{try{const u=new URL(url);return u.origin+'/'+u.pathname.split('/').filter(Boolean).map((_,i)=>'{segment'+(i+1)+'}').join('/');}catch{return null;}};
+          // Screenshots of the owned tab, kept in this tab until the recording stops and they are saved privately.
+          const shoot=async reason=>{if(shots.length>=200||shooting)return;shooting=true;try{const b=await p.screenshot({type:'jpeg',quality:50});
+            if(b.length<=2097152)shots.push({index:shots.length,afterRecord:records.length,t:Date.now(),reason,page:pageOf(p.url()),data:b.toString('base64')});}catch{}shooting=false;};
+          const later=reason=>{clearTimeout(shotTimer);shotTimer=setTimeout(()=>{shoot(reason);},700);};
+          const navigated=f=>{try{if(f===p.mainFrame())later('navigation');}catch{}};
+          // At submit time the page still shows what was typed: shoot before the request too, not only after.
+          const submitting=req=>{try{const type=typeof req.resourceType==='function'?req.resourceType():'other';
+            if(!STATIC.has(type)&&!['GET','HEAD','OPTIONS'].includes(req.method()))shoot('before '+req.method()+' '+(pageOf(req.url())||''));}catch{}};
           const popup=child=>{incomplete=true;try{const u=new URL(child.url());if(['http:','https:'].includes(u.protocol))missingOrigins.add(u.origin);}catch{}};
           const worker=()=>{incomplete=true;};
           const failed=()=>{incomplete=true;};
@@ -283,18 +294,22 @@ class BrowserBridge:
           try{if(await p.evaluate(()=>!!navigator.serviceWorker?.controller))incomplete=true;}catch{incomplete=true;}
           const listener=async response=>{if(records.length>=1000||metadataBytes>=2097152){overflow=true;return;}try{
             const req=response.request(),u=new URL(req.url());if(!['http:','https:'].includes(u.protocol))return;
+            const type=typeof req.resourceType==='function'?req.resourceType():'other';
+            if(STATIC.has(type)){const key=u.origin+' '+type;assets[key]=(assets[key]||0)+1;return;}
             const segments=u.pathname.split('/').filter(Boolean);const path='/'+segments.map((_,i)=>'{segment'+(i+1)+'}').join('/');
             let input={};try{const raw=req.postData();if(raw&&raw.length>262144)overflow=true;
               else if(raw)input=schema(req.postDataJSON());}catch{}
             const contentType=(req.headers()['content-type']||'').split(';')[0];
             const record={method:req.method(),origin:u.origin,path,status:response.status(),
               requestMediaType:['application/json','application/x-www-form-urlencoded'].includes(contentType)?contentType:null,
-              queryNames:[...new Set([...u.searchParams.keys()])].map((_,i)=>'query'+(i+1)),headerNames:Object.keys(req.headers()).filter(k=>['authorization','cookie','content-type','accept','x-csrf-token','x-xsrf-token'].includes(k.toLowerCase())),requestSchema:input};
+              resourceType:type,queryNames:[...new Set([...u.searchParams.keys()])].map((_,i)=>'query'+(i+1)),headerNames:Object.keys(req.headers()).filter(k=>['authorization','cookie','content-type','accept','x-csrf-token','x-xsrf-token'].includes(k.toLowerCase())),requestSchema:input};
             metadataBytes+=new TextEncoder().encode(JSON.stringify(record)).length;
             if(metadataBytes>2097152){overflow=true;return;}records.push(record);
+            if(!['GET','HEAD','OPTIONS'].includes(record.method))later('after '+record.method+' '+(pageOf(req.url())||''));
           }catch{}};
-          p.__blinkCapture={records,listener,popup,worker,failed,serviceworker,missingOrigins,
-            overflow:()=>overflow,incomplete:()=>incomplete};p.on('response',listener);return {recording:true};
+          p.__blinkCapture={records,listener,popup,worker,failed,serviceworker,navigated,submitting,missingOrigins,assets,shots,
+            overflow:()=>overflow,incomplete:()=>incomplete,timer:()=>shotTimer};p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);
+          await shoot('start');return {recording:true};
         ''')
 
     def capture_stop(self, binding):
@@ -304,10 +319,25 @@ class BrowserBridge:
         return self._run_owned(owner, r'''
           const capture=p.__blinkCapture;if(!capture)throw Error('capture_not_running');
           p.off('response',capture.listener);p.off('popup',capture.popup);p.off('worker',capture.worker);p.off('requestfailed',capture.failed);
-          p.context().off('serviceworker',capture.serviceworker);delete p.__blinkCapture;
+          p.context().off('serviceworker',capture.serviceworker);p.off('framenavigated',capture.navigated);p.off('request',capture.submitting);clearTimeout(capture.timer());
+          delete p.__blinkCapture;p.__blinkShots=capture.shots;
           return {records:capture.records,overflow:capture.overflow(),incomplete:capture.incomplete(),
-            missingOrigins:[...capture.missingOrigins]};
+            missingOrigins:[...capture.missingOrigins],assets:capture.assets,screenshots:capture.shots.length};
         ''')
+
+    def capture_shot(self, binding, index):
+        """One screenshot of a stopped recording (base64 JPEG), fetched singly to stay under the message limit."""
+        owner = self.owners.get(binding)
+        if not owner:
+            raise BrowserUnavailable('Owned capture tab unavailable')
+        return self._run_owned(owner, r'''
+          const shot=(p.__blinkShots||[])[v.payload.index];return {shot:shot||null};
+        ''', {'index': index})
+
+    def capture_shots_clear(self, binding):
+        owner = self.owners.get(binding)
+        if owner:
+            self._run_owned(owner, 'delete p.__blinkShots;return {cleared:true};')
 
     def close_tab(self, binding):
         with self.lock:
@@ -315,7 +345,7 @@ class BrowserBridge:
             if owner:
                 self._run_owned(owner, '''const c=p.__blinkCapture;if(c){p.off('response',c.listener);
                     p.off('popup',c.popup);p.off('worker',c.worker);p.off('requestfailed',c.failed);p.context().off('serviceworker',c.serviceworker);
-                    delete p.__blinkCapture;}await p.close();return {closed:true};''')
+                    p.off('framenavigated',c.navigated);p.off('request',c.submitting);clearTimeout(c.timer());delete p.__blinkCapture;}delete p.__blinkShots;await p.close();return {closed:true};''')
                 self.owners.pop(binding, None)
 
     def _profile_call(self, name, payload):

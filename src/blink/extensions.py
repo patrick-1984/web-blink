@@ -85,8 +85,11 @@ class Extensions:
         if method == 'admin':
             action = params.get('action')
             if action == 'sessions':
-                return reply([{k: row.get(k) for k in ('id', 'createdAt', 'source', 'status')}
-                              for row in self.store.list('captures')], 'Redacted capture catalog')
+                from .learner import screenshot_dir
+                return reply([{**{k: row.get(k) for k in ('id', 'createdAt', 'source', 'status')},
+                               'screenshots': len(row.get('screenshots') or []),
+                               'folder': str(screenshot_dir(self.store, row['id'])) if row.get('source') == 'shared-playwright' else None}
+                              for row in self.store.list('captures')], 'Capture sessions kept locally')
             if action == 'jobs':
                 return reply(self.scheduler.list(), 'Schedule status')
             if action == 'job':
@@ -167,7 +170,9 @@ class Extensions:
                 self.browser.close_tab(params['binding'])
                 data = {'binding': params['binding'], 'closed': True}
             elif method == 'forget_capture':
+                from .learner import forget_screenshots
                 self.store.delete('captures', params['session'])
+                forget_screenshots(self.store, params['session'])
                 data = {'deleted': True}
             elif method.startswith('custody_'):
                 if method == 'custody_harvest':
