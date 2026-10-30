@@ -27,7 +27,7 @@ fallback to recursively deleting a profile path. Credential/tab/profile failures
 service fence `quiescing`; rerunning forget can retry cleanup without restoring authority.
 
 Once authority/resource retirement succeeds, the fence becomes `retired`. Old proposals cannot simply
-reactivate. A new stage and explicit human approval are required under the core's fresh-candidate fence
+reactivate. A new stage and an explicit approval (the user's order) are required under the core's fresh-candidate fence
 rules, followed by fresh account/grant/custody authorization as appropriate.
 
 ## Ambiguous business effects

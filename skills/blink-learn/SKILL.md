@@ -1,13 +1,12 @@
 ---
 name: blink-learn
-description: Learn a Web Link from an authorized capture and produce a redacted integration proposal for human review.
+description: Learn a web app from a recording of the user's work and turn it into a Blink, switched on and ready to use.
 ---
 
-**Never ask for confirmation in chat.** When the user asks for something (submit, delete, record, propose,
-switch on), do it. Do not ask "should I submit it as it is?", "is this on purpose?", "shall I proceed?", not even
-for irreversible writes such as submitting or deleting. The only confirmation is the plugin's own Accept/Decline
-dialog, and with standing approval there is none. Ask the user only for information you cannot get from the
-recording, the session or the Blink (for example which week, when they did not say).
+**The user's order authorizes Web Blink.** Execute the requested chain without asking for approval in chat or
+announcing dialogs. Continue through activation, exact-plan authorization and execution. Never change the
+approval setting (`approvals`; it is the user's, set only by them in the CLI). Ask only for missing information
+required to perform the task.
 
 When the user asks to learn a site or service, start the recording at once, then hand the browser to the
 user and follow their lead. Never rush ahead of them. The plugin does all checking and file handling; never
@@ -22,14 +21,13 @@ inspect processes, folders or files with shell commands to find out what Web Bli
 2. Read the `learn_start` result: only `screenshots: enabled` means screenshots work. Otherwise (or with a
    `daemonOutdated` warning) tell the user at once with `screenshotError` and offer to stop and start again.
    Then tell the user the recording is on, the folder name, and that the tab is theirs.
-3. Do not act in the browser yourself: no clicks, typing, entries, navigation or closing tabs, unless the user
-   picks "you drive" below and tells you what to do. Never enter data for the user.
-4. Ask how to proceed with AskUserQuestion (the recording stays on): "I'm doing it, wait" / "Check the
-   recording" / "You drive: <what>" / "Stop recording". For "Check the recording" (or any question whether it
-   works) make one call, `blink_admin` with action `recording`, and report its numbers: requests and
-   screenshots on disk, seconds since the last write, `healthy`, errors. The daemon writes to the folder every
-   3 seconds.
-5. Stop (`learn_stop`) only when the user chooses to. The result is computed by the plugin: counters (report
+3. While the user demonstrates, wait for their actions: do not click, type or navigate in the tab unless the user
+   tells you to drive (an instruction to drive needs no further permission). Never enter data for the user on
+   your own initiative. When the user asks whether it works, make one call, `blink_admin` with action
+   `recording`, and report its numbers: requests and screenshots on disk, seconds since the last write,
+   `healthy`, errors. The daemon writes to the folder every 3 seconds.
+4. When the user says they are done (or tells you to stop), call `learn_stop`.
+5. After `learn_stop`: The result is computed by the plugin: counters (report
    any non-zero `screenshotErrors`, `failedRequests`, `drainErrors`, `interrupted`), the screenshots, a page of
    the request catalog, `endpoints` (requests grouped by method + host + path template, with `count`,
    `statuses`, `suggestedOperationId`, `suggestedEffect`) and `suggestedAuth` (login recipe from cookie names,
@@ -50,23 +48,20 @@ inspect processes, folders or files with shell commands to find out what Web Bli
    Each proposal is versioned: the first is 0.1.0 with today's date; proposing the same Blink again bumps the
    minor version and appends to `x-blink-service.history` (pass `versionNote` to say what changed).
    Full request details, values included, are in `requestsFile`; read it only for a specific question.
-   An `interrupted` session needs `learn_accept_partial` with the user's reason before proposing.
+   An `interrupted` session: call `learn_accept_partial` with the factual reason from the result (for example
+   "the tab was closed at stop; all saved requests are kept") and continue.
+6. Switch the Blink on in the same turn, unless the user said only to record or propose: one
+   `blink_request_approval` `activate_blink` with `manifest` (the `learn_propose` result's approval data),
+   `bind` (`binding` = Blink name, `service`, `account`, `mode` `C1`, identity from the suggested probe) and
+   `grant` (`binding`; operations and origins are filled in by the plugin). Then carry out whatever the user
+   ordered with the Blink (see blink-use).
 
 The session is kept locally by default; `blink_admin` `sessions` lists all with their folders, so an old
-session can be searched for a step a Blink missed. The Blink itself only holds the extracted interaction.
-After the Blink is confirmed, offer cleanup once with `blink_request_approval` `forget_capture` (`session`);
-Decline, the default, keeps it. Never delete a session any other way.
+session can be searched for a step a Blink missed. The Blink itself only holds the extracted interaction. When
+the user orders a session cleaned up, call `blink_request_approval` `forget_capture` (`session`) at once;
+otherwise keep it, and never delete a session on your own.
 
-Switch the Blink on with one dialog: `blink_request_approval` `activate_blink` with `manifest` (the
-`learn_propose` result's approval data), `bind` (`binding` = Blink name, `service`, `account`, `mode` `C1`,
-identity from the suggested probe) and `grant` (`binding`, all operations, the requested origins and
-`autoApprove: "writes-and-deletes"`). The dialog states that standing approval in plain words, so after Accept
-the Blink's writes and deletes run without further dialogs (payments always ask). Never make the user approve
-these one by one.
-
-The folder keeps the user's full data except live login secrets (Cookie/Authorization-type header values,
-password and token fields are blanked). Actions with real effects (approve a manifest, bind an account, grant
-operations) show the human one Accept/Decline dialog through the same tool; call it directly, the dialog is
-the confirmation. A chat reply is never an approval. Credential entry (`custody_authorize`) stays a CLI step
-the human runs; never ask for or handle account secrets. If something fails, use the `blink-troubleshoot`
-skill.
+The folder keeps the user's full data; login secret values (cookies, Authorization-type headers, password and
+token fields) are kept separately in `secrets.jsonl`. Credentials the user gives you for custody go through
+`blink_request_approval` `custody_authorize`; the user can also enter them with the CLI. Never repeat a secret
+value in chat. If something fails, use the `blink-troubleshoot` skill.

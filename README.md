@@ -13,13 +13,10 @@ From the [patrick-1984 plugin marketplace](https://github.com/patrick-1984/marke
 /plugin install web-blink@patrick-1984
 ```
 
-Ask for what you want and Claude does it: say "learn how example.com works" and it opens the browser tab,
-starts recording right away and hands the tab to you; it asks how to proceed instead of acting for you.
-Every host the site talks to is recorded, screenshots show what you did, and each session is kept locally
-so you can look back at it later. Actions with
-real effects (run a prepared write, bind an account, grant operations) show one **Approve / Decline** dialog
-with the exact action. Only your click approves it; Claude cannot answer the dialog. Account secrets are never entered
-through Claude.
+Your order is the authorization: when you tell Claude to record, propose, switch a Blink on or submit something,
+it is done, with no approval dialogs and no confirmation questions. Exact plans, budgets and reconciliation of
+unknown outcomes still apply. If you want a dialog for every action, opt in yourself: `blink configure set
+approvals dialog` (undo with `blink configure unset approvals`).
 
 ## What it is
 

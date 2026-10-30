@@ -227,6 +227,8 @@ def _config_command(tokens, store, flags):
             sources = {}
         if args.action == 'get':
             key = normalize_key(args.key)
+            if key == 'approvals':  # global policy, 'none' when unset
+                return _envelope(store.approval_mode(), 'Approval policy', 'ok')
             if key not in settings:
                 return _envelope({}, 'Setting is not configured', 'setting_not_found')
             data = settings[key]
@@ -308,7 +310,8 @@ def _arguments(tokens, schema, *, prog):
                                'Use --set NAME=VALUE for an argument whose name conflicts with a global flag.')
     parser.add_argument('--set', action='append', default=[], metavar='NAME=JSON')
     parser.add_argument('--setting', action='append', default=[], metavar='KEY=JSON')
-    parser.add_argument('--yes', action='store_true', help='Confirm the exact prepared mutation for scripting')
+    parser.add_argument('--yes', action='store_true',
+                        help='Only under the opt-in approvals=dialog policy: confirm the exact prepared mutation for scripting')
     parser.add_argument('--request-id', help='Stable mutation request ID for safe script resumption (1–100 letters/digits/_.-)')
     parser.add_argument('--body', help='JSON request body or file://path.json')
     parser.add_argument('--arguments', help='JSON object of operation arguments')
@@ -395,7 +398,9 @@ def _dry_plan(service, operation, arguments, binding, request_id=None):
                      'Resolved operation plan; no business request or intent was created')
 
 
-def _execute(service, operation, arguments, settings, flags, yes=False, request_id=None):
+def _execute(service, operation, arguments, settings, flags, yes=False, request_id=None, mode='none'):
+    """Under the default 'none' policy the user's order authorizes the exact prepared plan: prepare, issue its
+    native exact-plan authorization and execute, without terminal input or --yes. 'dialog' (opt-in) confirms first."""
     params = {'service': service, 'operation': operation['operation'], 'arguments': arguments}
     if settings.get('binding'):
         params['binding'] = settings['binding']
@@ -416,11 +421,12 @@ def _execute(service, operation, arguments, settings, flags, yes=False, request_
     if prepared.get('status') not in ('prepared', 'approved'):
         # Terminal and ambiguous states remain the original intent. In particular, unknown is not retry.
         return prepared
-    from .cli import confirm
-    try:
-        confirm('execute reviewed Blink operation', prepared['data'], yes)
-    except ValueError:
-        return _envelope(prepared.get('data'), 'Exact prepared intent needs native confirmation or --yes', 'approval_required')
+    if mode == 'dialog':
+        from .cli import confirm
+        try:
+            confirm('execute reviewed Blink operation', prepared['data'], yes, mode=mode)
+        except ValueError:
+            return _envelope(prepared.get('data'), 'Exact prepared intent needs native confirmation or --yes', 'approval_required')
     if prepared['status'] != 'approved':
         from .client import control_request
         approved = control_request('approve_intent', {'intentId': prepared['data']['intentId']},
@@ -445,7 +451,8 @@ def _service_help(service, flags):
         offset += len(rows)
     print('\nUse blink <integration> <action> --help for operation options.\n'
           'Global options: --binding --region --language --output --debug --dry-run.\n'
-          'Mutation scripts must supply --yes; config never enables confirmation automatically.')
+          'Mutations run as ordered (approvals=none, the default). After the user opts into\n'
+          'approvals=dialog, mutation scripts must supply --yes or confirm in a terminal.')
     return None
 
 
@@ -458,10 +465,13 @@ def _legacy(tokens, flags, store):
     parser = cli.build_parser()
     parser.error = lambda _: (_ for _ in ()).throw(UsageError('Invalid legacy command syntax'))
     args = parser.parse_args(normalized + tokens)
+    # The invoking client's selected store (--config-dir or environment) decides the policy for every gate below.
+    mode = store.approval_mode()
+    args._approval_mode = mode
     needs_confirmation = (args.command in {'human', 'install', 'approve-manifest', 'approve-intent', 'forget', 'purge'}
         or (args.command in cli.MANAGEMENT and not (args.management_action == 'list'))
         or (args.command == 'sources' and args.source_action not in {'sync', 'list'}))
-    if needs_confirmation and not getattr(args, 'yes', False) and not sys.stdin.isatty():
+    if mode == 'dialog' and needs_confirmation and not getattr(args, 'yes', False) and not sys.stdin.isatty():
         preliminary, _ = store.effective(cli=_settings_flags(flags))
         if not preliminary.get('dry_run'):
             return _envelope({}, 'Native management command needs terminal confirmation or --yes', 'invalid_request'), preliminary
@@ -612,7 +622,7 @@ def route(argv=None):
             if settings.get('debug'):
                 print(json.dumps({'debug': True, 'service': service, 'operation': operation['operation'],
                                   'settingSources': sources}, sort_keys=True), file=sys.stderr)
-            result = _execute(service, operation, arguments, settings, flags, yes, request_id)
+            result = _execute(service, operation, arguments, settings, flags, yes, request_id, store.approval_mode())
         return render(result, output)
     except SystemExit as exc:
         return int(exc.code)

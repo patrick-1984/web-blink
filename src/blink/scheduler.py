@@ -273,8 +273,6 @@ class Scheduler:
                 occurrence.update(state='expired', reason='latest_start_passed')
             elif job['state'] != 'active':
                 occurrence.update(state='parked', reason='job_paused')
-            elif job['effect'] == 'financial' and not job['firstRunConfirmed'] and not human:
-                occurrence.update(state='parked', reason='first_financial_run_needs_human')
             else:
                 occurrence.update(state='running', startedAt=occurrence.get('startedAt', now))
             self.store.put('occurrences', oid, occurrence, connection=db)
@@ -314,7 +312,8 @@ class Scheduler:
                 if job['effect'] == 'financial' and (prepared.get('amount') is None
                         or prepared['amount'] > job['maxAmount'] or prepared.get('currency') != job['currency']):
                     raise ValueError('standing_approval_amount_changed')
-                # Exact persisted human-created job authorization, never model-relayed consent.
+                # Creating the bounded schedule through the authorized control path authorizes every occurrence,
+                # the first financial one included; digests, expiry, amount/currency limits and caps still apply.
                 if status == 'prepared':
                     approval = self.runtime.dispatch('approve_intent', {'intentId': prepared['intentId']}, human=True)
                     if approval.get('status') != 'approved':

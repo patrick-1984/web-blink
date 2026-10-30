@@ -43,8 +43,9 @@ allowing a declared operation flag with a global name, for example `... -- --out
 Conventional management groups use the same native confirmation and private control channel as the
 advanced `human` command. Each mutating action accepts `--input` or `--cli-input-json` with a literal
 JSON object, `file://path.json`, a plain file path, or `-` for stdin. Files/stdin are suitable for private
-credential bundles. Input is strict JSON and bounded to 1 MiB. `--yes` confirms the exact parsed payload;
-without it a mutating action requires terminal confirmation.
+credential bundles. Input is strict JSON and bounded to 1 MiB. With the default approval policy
+(`approvals: none`) a mutating action runs without terminal confirmation; `--yes` is accepted and ignored.
+With `blink configure set approvals dialog` it asks in the terminal, and `--yes` confirms the exact parsed payload.
 
 | Group | Actions |
 |---|---|
@@ -207,8 +208,8 @@ cancel independently authorized background schedules.
 
 Reads dispatch after normal runtime policy checks. Mutations prepare an exact plan, obtain native terminal
 confirmation or explicit `--yes`, issue approval through the private human control channel, and only then
-execute. Without confirmation in a noninteractive script, the CLI exits nonzero and leaves the intent
-unsent. Persistent settings never enable `--yes`. Existing advanced `prepare`, `approve-intent` and
+execute. Under the default policy no confirmation is needed, also in noninteractive scripts; with
+`approvals: dialog`, a noninteractive script without `--yes` exits nonzero and leaves the intent unsent. Persistent settings never enable `--yes`. Existing advanced `prepare`, `approve-intent` and
 `execute` commands remain available for two-stage scripting.
 Advanced `execute --intent-id`, intent approval/reconciliation and binding/job management derive their
 per-Blink configuration scope from read-only metadata for the actual target. Supplying an unrelated
