@@ -8,7 +8,7 @@
       "requestedRef": "main",
       "commit": "0123456789abcdef0123456789abcdef01234567",
       "catalogPath": "blink-catalog.json",
-      "catalogSha256": "35e934963382a0c838423e6c3da7308764d86d850eb15c078d34950998c6460d"
+      "catalogSha256": "d1b4c01931eddb438a071d7d3bef1415cbada7490b962b2d0b836b1c5a87a01f"
     }
   ],
   "installed": [
@@ -17,12 +17,12 @@
       "id": "com.banana",
       "version": "1.0.0",
       "descriptor": "blinks/com.banana/1.0.0/weblink.json",
-      "descriptorSha256": "ee7db24a9c30b44d42d9304be5fac965a80f5908256f0a0e887a8c15e520d2db",
+      "descriptorSha256": "430a00040efa7fe3a6919c37e02069de885d93972f6eaddde8fa9c681533c6f2",
       "snapshot": {
         "repository": "https://git.example/team/weblinks.git",
         "commit": "0123456789abcdef0123456789abcdef01234567",
         "catalogPath": "blink-catalog.json",
-        "catalogSha256": "35e934963382a0c838423e6c3da7308764d86d850eb15c078d34950998c6460d"
+        "catalogSha256": "d1b4c01931eddb438a071d7d3bef1415cbada7490b962b2d0b836b1c5a87a01f"
       }
     }
   ]

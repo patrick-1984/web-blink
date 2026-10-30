@@ -71,6 +71,15 @@ blink tools list
 blink forget --input '{"service":"team:hours"}' --yes
 ```
 
+The private Blink (your own login hints, field defaults, preferences and process notes for one Blink) uses
+the `human` command and the public admin read; secret values are typed only into the CLI and never shown:
+
+```sh
+blink human private_set --input '{"service":"local:hours","patch":{"preferences":{"leavePtoEmpty":true}}}' --yes
+blink human private_secret_set --input - --yes   # {"service":"local:hours","name":"pin","value":"..."}
+blink admin --input '{"action":"private","service":"local:hours"}'
+```
+
 `learn list` and `jobs list` use non-authorizing public status tools; `tools list` uses a private read
 request. These list commands never ask for approval. `--dry-run` suppresses every mutating management
 action before confirmation or control dispatch, including service cleanup and purge. It does not disable

@@ -253,7 +253,9 @@ def run(args):
             from .client import restart_legacy_daemon
             return restart_legacy_daemon(state_dir=args.state_dir, plugin_root=args.plugin_root)
         params = command_input(args)
-        confirm(args.method, params, args.yes)
+        # A private secret is confirmed by name; its value is never echoed to the terminal.
+        hidden = dict(params, value='[hidden]') if args.method == 'private_secret_set' and 'value' in params else None
+        confirm(args.method, params, args.yes, preview=hidden)
         return native_dispatch(args, args.method, params)
     if args.command == 'approve-manifest':
         params = {'service': args.service, 'digest': args.digest}

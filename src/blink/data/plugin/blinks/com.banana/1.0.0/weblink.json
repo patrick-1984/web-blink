@@ -9,7 +9,7 @@
     {
       "role": "openapi",
       "path": "openapi.json",
-      "sha256": "101df797eaa71ec619df3da53e28ccecfc8583e5fa7142f1c2a0abe6b1ae5bd2",
+      "sha256": "fd35674eb86a5956f8059dc17043a6d133a0e23d05f77432d3ecde8e34c51156",
       "mediaType": "application/json"
     }
   ]

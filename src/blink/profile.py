@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from jsonschema import Draft202012Validator
 from .errors import BlinkError
+from .schemaver import compatibility_problem, parse as parse_version
 from .storage import digest, encoded
 
 def schema_path():
@@ -65,6 +66,46 @@ def walk_schema(value,depth=0):
             walk_schema(item,depth+1)
     elif isinstance(value,list):
         for item in value:walk_schema(item,depth+1)
+
+
+NOTE_LIMIT = 2000
+
+
+def _note(value):
+    if not isinstance(value, str) or len(value) > NOTE_LIMIT:
+        raise BlinkError('invalid_manifest', f'x-blink-notes must be a string of at most {NOTE_LIMIT} characters')
+    return visible_text(value, NOTE_LIMIT)
+
+
+def field_notes(schema, prefix, out, depth=0):
+    """Collect x-blink-notes from a JSON Schema's own nodes (never from property names) as field -> note."""
+    if not isinstance(schema, dict) or depth > 30:
+        return out
+    if 'x-blink-notes' in schema and prefix:
+        out[prefix] = _note(schema['x-blink-notes'])
+    properties = schema.get('properties')
+    if isinstance(properties, dict):
+        for name, child in properties.items():
+            field_notes(child, f'{prefix}.{name}' if prefix else name, out, depth + 1)
+    if isinstance(schema.get('items'), dict):
+        field_notes(schema['items'], f'{prefix}[]', out, depth + 1)
+    for key in ('allOf', 'anyOf', 'oneOf'):
+        for child in schema.get(key, []) if isinstance(schema.get(key), list) else []:
+            field_notes(child, prefix, out, depth + 1)
+    return out
+
+
+def service_history(service):
+    """The Blink's own version and dated, append-only history (ascending versions ending at the current one)."""
+    version, history = service.get('version'), service.get('history')
+    if history is None:
+        return version, []
+    if version is None:
+        raise BlinkError('invalid_manifest', 'x-blink-service.history requires x-blink-service.version')
+    versions = [parse_version(entry['version']) for entry in history]
+    if any(a >= b for a, b in zip(versions, versions[1:])) or not versions or versions[-1] != parse_version(version):
+        raise BlinkError('invalid_manifest', 'x-blink-service.history must list strictly increasing versions ending at x-blink-service.version')
+    return version, copy.deepcopy(history)
 
 
 def settings_contract(value):
@@ -186,6 +227,8 @@ def compile_manifest(document, *, allow_http=False):
     if len(encoded(document).encode())>2_000_000:
         raise BlinkError('invalid_manifest','Manifest exceeds the size limit')
     schema=json.loads(schema_path().read_text())
+    problem=compatibility_problem(document,schema,'Blink manifest')
+    if problem:raise BlinkError('unsupported_schema_version',problem)
     errors=sorted(Draft202012Validator(schema).iter_errors(document),key=lambda e:len(list(e.absolute_path)))
     if errors:
         # Say which field is wrong and why, so a proposal can be corrected instead of guessed.
@@ -194,6 +237,7 @@ def compile_manifest(document, *, allow_http=False):
     doc=copy.deepcopy(document)
     service=doc['x-blink-service']; auth=service['auth']
     settings=settings_contract(service.get('settings',{'type':'object','properties':{},'additionalProperties':False}))
+    blink_version,history=service_history(service)
     if auth.get('refresh'):
         recipe=auth['refresh']
         recipe.setdefault('authentication','none' if auth['kind']=='oauth-refresh' else 'same')
@@ -238,7 +282,7 @@ def compile_manifest(document, *, allow_http=False):
             if opid in ops:raise BlinkError('invalid_manifest','Operation IDs must be unique')
             if operation['x-blink-effect']=='read' and method not in ('get','head','post'):
                 raise BlinkError('invalid_manifest','Read operations may use GET, HEAD or explicitly confirmed POST')
-            properties={};required=[];params=operation.get('parameters',[]);seen=set();path_names=set()
+            properties={};required=[];params=operation.get('parameters',[]);seen=set();path_names=set();notes_by_field={}
             for param in params:
                 name=param['name']; location=param['in']
                 if name in seen or name=='body' or SENSITIVE.search(name):
@@ -250,6 +294,9 @@ def compile_manifest(document, *, allow_http=False):
                     path_names.add(name)
                     if not param.get('required'):raise BlinkError('invalid_manifest','Path parameters must be required')
                 walk_schema(param['schema']);Draft202012Validator.check_schema(param['schema'])
+                if 'x-blink-notes' in param:notes_by_field[name]=_note(param['x-blink-notes'])
+                elif isinstance(param['schema'],dict) and 'x-blink-notes' in param['schema']:
+                    notes_by_field[name]=_note(param['schema']['x-blink-notes'])
                 properties[name]=param['schema']
                 if param.get('required'):required.append(name)
             if placeholders!=path_names:raise BlinkError('invalid_manifest','Path parameter declarations do not match placeholders')
@@ -277,6 +324,7 @@ def compile_manifest(document, *, allow_http=False):
                     if not set(body_schema.get('required',[])).issubset(body_schema['properties']):
                         raise BlinkError('invalid_manifest','Required form fields must be declared')
                 properties['body']=body_schema
+                field_notes(body_schema,'body',notes_by_field)
                 if body.get('required'):required.append('body')
             for response in operation['responses'].values():
                 for media in response.get('content',{}).values():
@@ -315,6 +363,9 @@ def compile_manifest(document, *, allow_http=False):
                       'money':operation.get('x-blink-money'),'prestate':operation.get('x-blink-prestate'),'authUpdate':operation.get('x-blink-auth-update',{}),'auth':auth,'exec':service['exec'],
                       'settingsSchema':settings,'settingMap':copy.deepcopy(setting_map),
                       'policy':service.get('policy',{})}
+            # Structural authoring notes are reviewed content; added only when present so older digests stay stable.
+            if 'x-blink-notes' in operation:compiled['notes']=_note(operation['x-blink-notes'])
+            if notes_by_field:compiled['fieldNotes']=notes_by_field
             compiled['digest']=digest(compiled)
             ops[opid]=compiled
     for operation in ops.values():
@@ -340,4 +391,5 @@ def compile_manifest(document, *, allow_http=False):
         raise BlinkError('invalid_manifest','Keepalive must name a separately granted maintenance operation')
     if not ops:raise BlinkError('invalid_manifest','No operations')
     semantic={'id':service['id'],'title':visible_text(doc['info']['title']),'requestedOrigins':requested,'operations':ops}
-    return {**semantic,'settingsSchema':settings,'version':doc['info']['version'],'digest':digest(semantic),'document':doc}
+    return {**semantic,'settingsSchema':settings,'version':doc['info']['version'],'blinkVersion':blink_version,'history':history,
+            'digest':digest(semantic),'document':doc}

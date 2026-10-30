@@ -20,7 +20,8 @@ from .storage import Store,digest,encoded
 from .paths import plugin_root as resolve_plugin_root
 
 PUBLIC={'services','search','describe','call_read','prepare','execute','admin','doctor'}
-HUMAN={'approve_manifest','set_trust','grant','bind','custody_authorize','approve_intent','reconcile','revoke','retry_intent'}
+HUMAN={'approve_manifest','set_trust','grant','bind','custody_authorize','approve_intent','reconcile','revoke','retry_intent',
+       'private_set','private_secret_set'}
 ID=re.compile(r'^[a-z0-9]+(?:[.-][a-z0-9]+)*$')
 
 
@@ -93,6 +94,10 @@ class Runtime:
                 raise BlinkError('service_retired', 'Source installation is blocked while cleanup is in progress')
             previous=self.store.get('active_manifest',service,connection=db)
             expected=previous['digest'] if previous else None
+            old_history=(previous or {}).get('compiled',{}).get('history') or []
+            new_history=compiled.get('history') or []
+            if old_history and new_history and new_history[:len(old_history)]!=old_history:
+                raise BlinkError('invalid_manifest','Blink history is append-only: the new version must keep every earlier history entry unchanged')
             candidate=digest({'service':service,'digest':compiled['digest'],'provenance':provenance,'expected':expected})
             record={'service':service,'digest':compiled['digest'],'candidate':candidate,'expectedOldDigest':expected,
                     'document':copy.deepcopy(document),'compiled':compiled,'provenance':copy.deepcopy(provenance or {}),
@@ -163,7 +168,31 @@ class Runtime:
                         'method': op['method'], 'requiresReadVerification': op.get('requiresReadVerification', False),
                         'summary':op['summary'],'inputSchema':op['inputSchema'],'digest':op['digest'],'idempotency':op['idempotency'],
                         'settingsSchema':op.get('settingsSchema',{'type':'object','properties':{},'additionalProperties':False}),
-                        'settingMap':op.get('settingMap',{})})
+                        'settingMap':op.get('settingMap',{}),**self._describe_notes(record,op)})
+
+    def _describe_notes(self,record,op):
+        """Authoring notes from the shared Blink and this user's private Blink (defaults, preferences, process notes)."""
+        from .private import for_operation
+        extra={}
+        if op.get('notes'):extra['notes']=op['notes']
+        if op.get('fieldNotes'):extra['fieldNotes']=op['fieldNotes']
+        compiled=record.get('compiled',{})
+        if compiled.get('blinkVersion'):extra['blinkVersion']=compiled['blinkVersion']
+        private=for_operation(record['service'].rsplit(':',1)[-1],op['operationId'])
+        if private:
+            extra['private']=dict(private,usage='This user\'s own preferences for this Blink: fill fields from defaults and follow the process notes unless the user says otherwise.')
+        return extra
+
+    def _private_set(self,p):
+        from .private import blink_name,set_private
+        if set(p)-{'blink','service','patch'}:raise BlinkError('invalid_arguments','private_set takes blink (or service) and patch')
+        return envelope('ok','Private Blink updated',set_private(blink_name(p.get('blink',p.get('service'))),p.get('patch')))
+
+    def _private_secret_set(self,p):
+        from .private import blink_name,set_secret
+        if set(p)-{'blink','service','name','value'}:raise BlinkError('invalid_arguments','private_secret_set takes blink (or service), name and value')
+        return envelope('ok','Private secret stored separately; its value is never shown',
+                        set_secret(blink_name(p.get('blink',p.get('service'))),p.get('name'),p.get('value')))
 
     def _approve_manifest(self,p):
         service=p.get('service');wanted=p.get('digest');candidate_id=p.get('candidate')
@@ -893,6 +922,10 @@ class Runtime:
                 'method': op['method'], 'requiresReadVerification': op.get('requiresReadVerification', False),
                 'origin': op['origin'], 'appOrigin': op.get('appOrigin'), 'execution': op['exec'],
                 'inputSchema':op['inputSchema']} for op in candidate['compiled']['operations'].values()]})
+        if action=='private':
+            from .private import blink_name,public_view
+            name=blink_name(p.get('blink',p.get('service',p.get('id'))))
+            return envelope('ok','Private Blink (this user\'s own data; secret values are never shown)',public_view(name))
         if action=='intent':
             with self.store.transaction() as db:row=db.execute('SELECT * FROM intents WHERE id=?',(p.get('intentId'),)).fetchone()
             if not row:raise BlinkError('unknown_intent','Intent not found')

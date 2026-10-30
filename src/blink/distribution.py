@@ -11,6 +11,8 @@ from pathlib import Path, PurePosixPath
 
 from jsonschema import Draft202012Validator
 
+from .schemaver import compatibility_problem, edition
+
 JSON_PATH = re.compile(r"(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\.json")
 MAX_JSON = 2 * 1024 * 1024
 
@@ -99,7 +101,10 @@ def _index_entries(index):
     config = index.get('configProfile', {}).get('schemas', [])
     if not isinstance(config, list):
         raise ValueError('Malformed configuration schema entries')
-    return [*entries, *execution, *config]
+    private = index.get('privateProfile', {}).get('schemas', [])
+    if not isinstance(private, list):
+        raise ValueError('Malformed private Blink schema entries')
+    return [*entries, *execution, *config, *private]
 
 
 def schema_index(plugin_root: Path) -> dict:
@@ -121,6 +126,8 @@ def schema_index(plugin_root: Path) -> dict:
         schema = strict_json(raw)
         if schema.get("$id") != entry["id"]:
             raise ValueError("Bundled schema ID mismatch")
+        if (entry.get("version"), entry.get("released")) != edition(schema):
+            raise ValueError("Bundled schema edition (version/release date) disagrees with the index")
         _offline_refs(schema)
         Draft202012Validator.check_schema(schema)
     return index
@@ -154,7 +161,10 @@ def refresh_schema_index(plugin_root: Path) -> dict:
             raise ValueError("Schema refresh cannot change a published schema ID")
         _offline_refs(schema)
         Draft202012Validator.check_schema(schema)
-        entry["sha256"] = digest(raw)
+        sha256 = digest(raw)
+        entry.pop("sha256", None)
+        entry["version"], entry["released"] = edition(schema)
+        entry["sha256"] = sha256
     fd, name = tempfile.mkstemp(prefix=".blink-schema-index-", dir=root)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as output:
@@ -174,16 +184,19 @@ class Distribution:
     def __init__(self, plugin_root: Path):
         self.root = Path(plugin_root)
         self.index = schema_index(self.root)
-        self.validators = {}
+        self.validators, self.schemas = {}, {}
         for item in self.index["schemas"]:
-            self.validators[item["id"]] = Draft202012Validator(
-                strict_json(regular_file(self.root / "schemas", item["path"]).read_bytes()))
+            self.schemas[item["id"]] = strict_json(regular_file(self.root / "schemas", item["path"]).read_bytes())
+            self.validators[item["id"]] = Draft202012Validator(self.schemas[item["id"]])
         expected = {f"urn:web-blink:schema:{name}:1" for name in ("sources", "catalog", "weblink", "source-lock")}
         if not expected.issubset(self.validators):
             raise ValueError("Missing bundled distribution schema")
 
     def validate(self, name: str, value: dict):
         schema_id = f"urn:web-blink:schema:{name}:1"
+        problem = compatibility_problem(value, self.schemas[schema_id], f"{name} document")
+        if problem:
+            raise ValueError(problem)
         try:
             self.validators[schema_id].validate(value)
         except Exception as exc:
@@ -238,4 +251,5 @@ def export_schemas(plugin_root: Path, destination: Path) -> dict:
     return {"path": str(destination), "schemas": len(_index_entries(index)),
             "distributionSchemas": len(index["schemas"]),
             "executionSchemas": len(index.get("executionProfile", {}).get("schemas", [])),
-            "configurationSchemas": len(index.get("configProfile", {}).get("schemas", []))}
+            "configurationSchemas": len(index.get("configProfile", {}).get("schemas", [])),
+            "privateSchemas": len(index.get("privateProfile", {}).get("schemas", []))}
