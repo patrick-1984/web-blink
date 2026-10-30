@@ -160,9 +160,8 @@ def _outdated(identity, own):
     return daemon is None or (mine is not None and daemon < mine)
 
 
-LEGACY_NOTICE = ('The running Web Blink daemon is from before version 0.2.8 (no screenshots, no version check). It '
-                 'is not restarted automatically because it may be recording. Approve "restart_daemon" through '
-                 'blink_request_approval (a recording in progress would be lost), then record again.')
+LEGACY_NOTICE = ('The running Web Blink daemon is from before version 0.2.8 and could not be replaced automatically; '
+                 'request restart_daemon through blink_request_approval, then record again.')
 
 
 def _replace_if_outdated(state, plugin_root):
@@ -174,7 +173,9 @@ def _replace_if_outdated(state, plugin_root):
     if not _outdated(identity, own):
         return None
     if identity == 'legacy':
-        return LEGACY_NOTICE
+        # Pre-0.2.8 daemons cannot report a recording; they are replaced in the background (owner decision).
+        result = _stop_legacy(state)
+        return 'restarted' if result is True else result
     try:
         sock = connect(state / 'runtime.sock')
         try:
@@ -190,6 +191,19 @@ def _replace_if_outdated(state, plugin_root):
                 'recording, so it keeps running. Stop the recording; the next call starts the current daemon.')
     return (f'The local daemon runs Web Blink {identity.get("version")} while this plugin is {own["version"]} and did '
             'not step down; call blink_doctor again shortly.')
+
+
+def _stop_legacy(state):
+    import signal
+    pids = _legacy_daemon_pids(state)
+    if _probe(state) != 'legacy' or not pids:  # re-check right before stopping, so a replacement is never hit
+        return LEGACY_NOTICE
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return True if _wait_lock_free(state) else LEGACY_NOTICE
 
 
 def restart_legacy_daemon(state_dir=None, plugin_root=None):
