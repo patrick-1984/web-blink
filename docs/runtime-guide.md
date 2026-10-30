@@ -48,7 +48,7 @@ that run keeps using the old folder, `blink doctor` warns, and the move happens 
 daemon has stopped. An explicit `BLINK_HOME`, state or configuration folder never triggers the move.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.7.0-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.8.0-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -128,6 +128,29 @@ secrets are blanked (Cookie, Set-Cookie, Authorization-type header values and pa
 Nothing is deleted automatically: only `forget_capture` (offered once after a Blink is confirmed, Decline keeps
 the session) or a purge removes it. A Blink never contains session data or screenshots; its catalog uses real
 paths, `{id}` path templates and field names, never values.
+
+### Company- and user-specific values become variables
+
+A Blink describes the service for everyone; your tenant, company, workspace, login, email, user ID or case IDs
+are yours. `learn_stop` lists the specific values it found (`specifics.found`), from login forms, identity reads
+(`/me` and the like), the private Blink and values you name. `learn_propose` reads every selected request line by
+line (host labels, path segments, query values, top-level body fields) and parameterizes both the operation and
+the call:
+
+- the server and requested origins hold a host variable, `https://{company}.workspace.example` (a whole host label
+  in front of a fixed domain, so a value can pick your tenant, never another site);
+- path segments become path parameters (`/workspaces/{company}/time-entries`), and query, header and body fields
+  get `x-blink-variable`; all of them are declared in `x-blink-service.variables`;
+- the values go to the private Blink, section `variables` (`~/.web-blink/private/<blink>.json`); installing the
+  Blink fills the host from there, and each call fills the other fields unless you pass them (`blink_describe`
+  shows them under `filledFromPrivate`);
+- a second review reads the finished Blink line by line, replaces leftovers in titles, summaries and notes with
+  `{variable}`, and reports anything else in `specifics.remaining` (and a Blink name holding a value in
+  `specifics.serviceName` with a neutral suggestion).
+
+Someone installing a shared Blink with variables first saves their own values
+(`private_set` with `{"variables": {"company": "acme"}}`); without them installation stops with
+`private_values_required`. Pass `parameterize: false` to `learn_propose` to keep values as recorded.
 
 The session catalog that proposals read holds real paths, path templates with `{id}` for id-like segments, query
 and body field names and types, never values.

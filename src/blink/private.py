@@ -23,7 +23,7 @@ SCHEMA_ID = 'urn:web-blink:schema:private-blink:1'
 SCHEMA_FILE = 'schemas/v1/private-blink.schema.json'
 ID = re.compile(r'[a-z0-9]+(?:[.-][a-z0-9]+)*')
 SECRET_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,99}')
-SECTIONS = ('identity', 'defaults', 'preferences', 'processNotes')
+SECTIONS = ('identity', 'defaults', 'variables', 'preferences', 'processNotes')
 MAX_BYTES = 256 * 1024
 
 
@@ -142,6 +142,11 @@ def _secrets(name):
     _, secrets = _paths(name)
     document = _read(secrets)
     return dict(document.get('secrets') or {}) if isinstance(document, dict) else {}
+
+
+def variables(name):
+    """This user's values for the Blink's declared variables (tenant, workspace, login, user ID)."""
+    return dict(load(name).get('variables') or {})
 
 
 def public_view(name):

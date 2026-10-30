@@ -3,7 +3,7 @@
   "$id": "urn:web-blink:schema:execution:1",
   "title": "Web Blink execution profile v1",
   "x-blink-schema": {
-    "version": "1.1.0",
+    "version": "1.2.0",
     "released": "2026-10-30"
   },
   "type": "object",
@@ -438,6 +438,45 @@
           "type": "object",
           "maxProperties": 100,
           "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+        },
+        "variables": {
+          "description": "User- or company-specific values (tenant, workspace, login, user ID) kept out of the shared Blink. Each is filled from the user's private Blink (section variables). A server URL or requested origin may hold {name} as a whole host label in front of a fixed registrable domain; a parameter or top-level body field marks its value source with x-blink-variable.",
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": {
+            "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x-(?!blink-)": {}
+            },
+            "properties": {
+              "description": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "in": {
+                "type": "array",
+                "maxItems": 5,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "host",
+                    "path",
+                    "query",
+                    "header",
+                    "body"
+                  ]
+                }
+              },
+              "kind": {
+                "type": "string",
+                "maxLength": 40
+              }
+            }
+          }
         }
       },
       "required": [
@@ -529,6 +568,11 @@
                         "type": "string",
                         "maxLength": 2000,
                         "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
+                      },
+                      "x-blink-variable": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])",
+                        "description": "Filled from the user's private Blink variable of this name when the caller leaves it out."
                       }
                     },
                     "required": [
@@ -869,6 +913,11 @@
                         "type": "string",
                         "maxLength": 2000,
                         "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
+                      },
+                      "x-blink-variable": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])",
+                        "description": "Filled from the user's private Blink variable of this name when the caller leaves it out."
                       }
                     },
                     "required": [
@@ -1209,6 +1258,11 @@
                         "type": "string",
                         "maxLength": 2000,
                         "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
+                      },
+                      "x-blink-variable": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])",
+                        "description": "Filled from the user's private Blink variable of this name when the caller leaves it out."
                       }
                     },
                     "required": [
@@ -1549,6 +1603,11 @@
                         "type": "string",
                         "maxLength": 2000,
                         "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
+                      },
+                      "x-blink-variable": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])",
+                        "description": "Filled from the user's private Blink variable of this name when the caller leaves it out."
                       }
                     },
                     "required": [
@@ -1889,6 +1948,11 @@
                         "type": "string",
                         "maxLength": 2000,
                         "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
+                      },
+                      "x-blink-variable": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])",
+                        "description": "Filled from the user's private Blink variable of this name when the caller leaves it out."
                       }
                     },
                     "required": [
@@ -2229,6 +2293,11 @@
                         "type": "string",
                         "maxLength": 2000,
                         "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
+                      },
+                      "x-blink-variable": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])",
+                        "description": "Filled from the user's private Blink variable of this name when the caller leaves it out."
                       }
                     },
                     "required": [
