@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.5.0'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.5.1'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -280,7 +280,7 @@ class BrowserBridge:
           // values and password/token fields. The daemon drains this buffer to disk every few seconds.
           const records=[],shots=[],missingOrigins=new Set(),assets={};
           let seq=0,shotSeq=0,bufferBytes=0,overflow=false,incomplete=false,failedRequests=0,workers=0,serviceWorker=false;
-          const events=[],owned=new Set([p]),capabilities={cdp:false,browser:null};let wsSeq=0,cdp=null;
+          const events=[],owned=new Set([p]),sockets=[],seenOrigins=new Set(),capabilities={cdp:false,browser:null};let wsSeq=0,cdp=null;
           try{capabilities.browser=p.context().browser()?.version()||null;}catch{}
           let shooting=null,shotTimer=null,last=null,assetsTruncated=false,shotErrors=0,lastShotError=null,shotsDropped=0,queued=0,pending=null;
           const STATIC=new Set(['image','font','stylesheet','media','script','manifest','texttrack']);
@@ -344,21 +344,31 @@ class BrowserBridge:
               resourceType:typeof req.resourceType==='function'?req.resourceType():'other',failure:(req.failure()||{}).errorText||'failed'});}catch{}};
           const serviceworker=w=>{try{if(new URL(w.url()).origin===new URL(p.url()).origin)serviceWorker=true;event({type:'serviceworker',url:cleanUrl(w.url(),'sw')});}catch{}};
           const websocket=ws=>{const id=++wsSeq;event({type:'websocket',id,url:cleanUrl(ws.url(),'websocket '+id)});
+            // Redact the whole message first, then cut it.
             const frame=dir=>f=>{try{const d=typeof f.payload==='string'?f.payload:'<binary '+(f.payload?.length||0)+' bytes>';
-              const [body,cut]=keep(d.length>16384?d.slice(0,16384):d,'websocket '+id);event({type:'websocket-frame',id,dir,payload:body,truncated:cut||d.length>16384});}catch{}};
-            ws.on('framesent',frame('sent'));ws.on('framereceived',frame('received'));ws.on('close',()=>event({type:'websocket-close',id}));};
+              let [body,cut]=keep(d,'websocket '+id);if(typeof body==='string'&&body.length>16384){body=body.slice(0,16384);cut=true;}
+              event({type:'websocket-frame',id,dir,payload:body,truncated:cut});}catch{}};
+            const handlers={framesent:frame('sent'),framereceived:frame('received'),close:()=>event({type:'websocket-close',id})};
+            for(const [n,h] of Object.entries(handlers))ws.on(n,h);sockets.push([ws,handlers]);};
           const download=d=>{try{event({type:'download',url:cleanUrl(d.url(),'download'),file:d.suggestedFilename()});}catch{}};
           const attach=pg=>{owned.add(pg);pg.on('response',listener);pg.on('requestfailed',failed);pg.on('websocket',websocket);
             pg.on('download',download);pg.on('popup',popup);pg.on('worker',worker);pg.on('framenavigated',navigated);pg.on('request',submitting);};
+          const detachSockets=()=>{for(const [ws,h] of sockets.splice(0))for(const [n,f] of Object.entries(h)){try{ws.off(n,f);}catch{}}};
           const detach=pg=>{pg.off('response',listener);pg.off('requestfailed',failed);pg.off('websocket',websocket);
             pg.off('download',download);pg.off('popup',popup);pg.off('worker',worker);pg.off('framenavigated',navigated);pg.off('request',submitting);};
-          const popup=child=>{try{event({type:'popup',url:cleanUrl(child.url(),'popup')});}catch{}try{attach(child);}catch{incomplete=true;}};
+          const popup=child=>{try{event({type:'popup',url:cleanUrl(child.url(),'popup')});}catch{}if(!owned.has(child)){try{attach(child);}catch{incomplete=true;}}};
+          // New pages are attached as soon as they exist (before their first redirect); kept only if opened by an owned page.
+          const newPage=async pg=>{try{attach(pg);const opener=await pg.opener();if(!opener||!owned.has(opener)){detach(pg);owned.delete(pg);}}catch{}};
+          try{p.context().on('page',newPage);}catch{}
           // Session state: the cookie jar (HttpOnly included), web storage per frame, IndexedDB and Cache Storage
           // names, service worker registrations. Values that look like credentials go to the vault.
           const CRED=/token|auth|sess|jwt|secret|key|cred|sid|csrf|xsrf|saml|password/i;
           const keepValue=(k,v,where)=>{const t=String(v);return CRED.test(k)||/^eyJ[\w-]+\.[\w-]+/.test(t)?secret(t,where+' '+k):t.length>4000?t.slice(0,4000):t;};
           const snapshot=async reason=>{
-            try{const list=await p.context().cookies();event({type:'cookies',reason,cookies:list.slice(0,500).map(c=>({name:c.name,domain:c.domain,path:c.path,
+            // Only cookies for origins this recording touched: never the rest of the shared browser's jar.
+            for(const pg of owned){try{const o=new URL(pg.url()).origin;if(o.startsWith('http'))seenOrigins.add(o);}catch{}}
+            if(!seenOrigins.size){event({type:'cookies',reason,cookies:[],note:'no page loaded yet'});}
+            else try{const list=await p.context().cookies([...seenOrigins].slice(0,50));event({type:'cookies',reason,cookies:list.slice(0,500).map(c=>({name:c.name,domain:c.domain,path:c.path,
               expires:c.expires,httpOnly:c.httpOnly,secure:c.secure,sameSite:c.sameSite,partitionKey:c.partitionKey,value:secret(c.value,'cookie jar '+c.name)}))});}catch(e){event({type:'cookies',reason,error:String(e).slice(0,200)});}
             const frames=[];for(const pg of owned){try{frames.push(...pg.frames().slice(0,20));}catch{}}
             for(const f of frames){try{const st=await f.evaluate(async()=>{const out={origin:location.origin,local:{},session:{}};
@@ -369,7 +379,9 @@ class BrowserBridge:
                 try{out.serviceWorkers=(await navigator.serviceWorker.getRegistrations()).map(r=>r.scope);}catch{}
                 try{out.csrfMeta=[...document.querySelectorAll('meta[name*=csrf i],meta[name*=xsrf i]')].map(m=>m.getAttribute('name'));}catch{}
                 return out;});
-              const vaulted=o=>Object.fromEntries(Object.entries(o||{}).map(([k,v])=>[k,keepValue(k,v,'storage '+st.origin)]));
+              // Bounded: values up to 4000 characters and about 200 KB per area; the rest is noted, not sent.
+              const vaulted=o=>{const out={};let used=0,dropped=0;for(const [k,v] of Object.entries(o||{})){const val=keepValue(k,v,'storage '+st.origin);
+                const n=JSON.stringify(val).length+k.length;if(used+n>200000){dropped++;continue;}used+=n;out[k]=val;}if(dropped)out['<omitted entries>']=dropped;return out;};
               event({type:'storage',reason,frame:cleanUrl(f.url(),'frame'),origin:st.origin,local:vaulted(st.local),session:vaulted(st.session),
                 indexedDB:st.indexedDB,caches:st.caches,serviceWorkers:st.serviceWorkers,csrfMeta:st.csrfMeta});}catch{}}};
           const pendingBodies=new Set();
@@ -377,6 +389,7 @@ class BrowserBridge:
           const record=async response=>{try{
             const req=response.request(),u=new URL(req.url());if(!['http:','https:'].includes(u.protocol))return;
             const type=typeof req.resourceType==='function'?req.resourceType():'other';
+            if(type==='document'||type==='xhr'||type==='fetch')seenOrigins.add(u.origin);
             if(STATIC.has(type)){const key=u.origin+' '+type;if(key in assets||Object.keys(assets).length<500)assets[key]=(assets[key]||0)+1;else assetsTruncated=true;return;}
             if(bufferBytes>20971520){overflow=true;return;}  // only if the daemon stopped draining
             const raw=typeof req.postData==='function'?req.postData():null;
@@ -401,7 +414,7 @@ class BrowserBridge:
           const counters=()=>({seq,overflow,incomplete,failedRequests,workers,serviceWorker,assets,assetsTruncated,bodiesLoading:pendingBodies.size,
             capabilities,events:events.length,
             missingOrigins:[...missingOrigins],shotErrors,lastShotError,shotsDropped,shotsAbandoned:queued});
-          p.__blinkCapture={records,shots,vault,events,owned,detach,snapshot,cdpRef:()=>cdp,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
+          p.__blinkCapture={records,shots,vault,events,owned,detach,detachSockets,newPage,snapshot,cdpRef:()=>cdp,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
             timer:()=>shotTimer,pending:()=>pending,inflight:()=>shooting,drained:n=>{bufferBytes=Math.max(0,bufferBytes-n);}};
           attach(p);p.on('console',ui);p.context().on('serviceworker',serviceworker);
           // Low-level network events (cookie headers as sent, blocked cookies, raw Set-Cookie) where CDP is available.
@@ -413,7 +426,7 @@ class BrowserBridge:
             cdp.on('Network.requestWillBeSent',e=>event({type:'cdp-request',requestId:e.requestId,url:cleanUrl(e.request?.url||'','cdp'),method:e.request?.method,
               redirectFrom:e.redirectResponse?{status:e.redirectResponse.status,url:cleanUrl(e.redirectResponse.url||'','cdp')}:null,initiator:e.initiator?.type}));
             cdp.on('Network.loadingFailed',e=>event({type:'cdp-failed',requestId:e.requestId,error:e.errorText,blocked:e.blockedReason||null,cors:e.corsErrorStatus?.corsError||null}));
-            cdp.on('Network.eventSourceMessageReceived',e=>{const [d]=keep(String(e.data||'').slice(0,16384),'eventsource');event({type:'eventsource',requestId:e.requestId,event:e.eventName,data:d});});
+            cdp.on('Network.eventSourceMessageReceived',e=>{let [d]=keep(String(e.data||''),'eventsource');if(typeof d==='string'&&d.length>16384)d=d.slice(0,16384);event({type:'eventsource',requestId:e.requestId,event:e.eventName,data:d});});
           }catch(e){capabilities.cdp=false;capabilities.cdpError=String(e).slice(0,200);}
           await snapshot('start');
           if(v.payload&&v.payload.url){try{await p.goto(v.payload.url);}catch(e){event({type:'navigation-error',error:String(e).slice(0,200)});}}
@@ -442,7 +455,9 @@ class BrowserBridge:
             // Budget by the doubly encoded size (the result travels as JSON text inside JSON) to stay under 4 MB.
             const size=x=>JSON.stringify(JSON.stringify(x)).length;
             const take=(list,limit)=>{const out=[];let used=0;
-              while(list.length){const n=size(list[0]);if(out.length&&used+n>limit)break;out.push(list.shift());used+=n;}return [out,used];};
+              while(list.length){let n=size(list[0]);if(out.length&&used+n>limit)break;
+                let item=list.shift();if(n>limit){item={oversized:true,type:item&&item.type,seq:item&&item.seq,size:n};n=size(item);}  // never above the transport limit
+                out.push(item);used+=n;}return [out,used];};
             const [secrets]=take(c.vault,500000);const [records,used]=take(c.records,1100000);const [events,usedEvents]=take(c.events,600000);
             c.drained(used+usedEvents);const [shots]=take(c.shots,1100000);
             c.batch={id:(c.batchSeq=(c.batchSeq||0)+1),records,shots,secrets,events};
@@ -458,7 +473,8 @@ class BrowserBridge:
         return self._run_owned(owner, r'''
           const capture=p.__blinkCapture;if(!capture)throw Error('capture_not_running');
           await capture.snapshot('stop');
-          for(const pg of capture.owned)capture.detach(pg);
+          for(const pg of capture.owned)capture.detach(pg);capture.detachSockets();
+          try{p.context().off('page',capture.newPage);}catch{}
           p.context().off('serviceworker',capture.serviceworker);p.off('console',capture.ui);
           try{const c=capture.cdpRef();if(c)await c.detach();}catch{}
           clearTimeout(capture.timer());clearInterval(capture.ticker);

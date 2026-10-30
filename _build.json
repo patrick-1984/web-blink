@@ -3,7 +3,7 @@
     {
       "bytes": 391,
       "path": ".claude-plugin/plugin.json",
-      "sha256": "a0dd058bf867b55d70833c354b7697af7aba7f502927983877470d6fb716fbe5"
+      "sha256": "90dde289461c9fea8af18a807c3e3ac1c621246031dbf61b7861da28914e1c9e"
     },
     {
       "bytes": 188,
@@ -63,7 +63,7 @@
     {
       "bytes": 12621,
       "path": "docs/runtime-guide.md",
-      "sha256": "2527fc5de6a94e3f9c75e30268acc15a2d69df61474651e7b9847a9401d7602c"
+      "sha256": "f31030184a5bdb72c1c55db86abc6dbf9bca582256c234366380b955979c66d0"
     },
     {
       "bytes": 7120,
@@ -83,7 +83,7 @@
     {
       "bytes": 17556,
       "path": "mcp/server.mjs",
-      "sha256": "3ac72dfe093427617a6cb5c6b6159b3d98d3537da71407c1fa3945bbf7db7604"
+      "sha256": "172828346c4cefee4aaf33e2f9f369639940082b956541be636e091a8acb89e7"
     },
     {
       "bytes": 1858,
@@ -93,7 +93,7 @@
     {
       "bytes": 607,
       "path": "pyproject.toml",
-      "sha256": "38caa53b36152ab9c354ac2ee9fbb3852f82c448da6dd828af8c3d520a72f473"
+      "sha256": "57f67a314e474e48df788e36e5033466e48f83d3b30b8739dbaff0d70b14fa3e"
     },
     {
       "bytes": 12305,
@@ -178,7 +178,7 @@
     {
       "bytes": 69,
       "path": "src/blink/__init__.py",
-      "sha256": "1343ef96a0b2e5fafa4aaf2363d3d88df4f0ecd4e82f6f15d902b7e15b00757a"
+      "sha256": "bb8d96bfae21e51d3859f67e09f7dec40d2793213794c54614079424f49e84af"
     },
     {
       "bytes": 48,
@@ -196,9 +196,9 @@
       "sha256": "971182cba7a5286b7115ef3d11bc5c77d66cf5f6c5df50c7f8c509744ecee839"
     },
     {
-      "bytes": 38365,
+      "bytes": 40187,
       "path": "src/blink/browser.py",
-      "sha256": "b85bfdff537e0d7fd1b845bfb461659775eee39792c4b36ca59202a588d6e629"
+      "sha256": "10bf2a2747e320f5c34467a18dc0e83c664e8bb4f4993a0dde1d7ec7a40f87b7"
     },
     {
       "bytes": 25502,
@@ -316,9 +316,9 @@
       "sha256": "5feb13123b218de0319056ae93099a475cd81c4c07a1e3f5ae4fd37f6bb0d90a"
     },
     {
-      "bytes": 63302,
+      "bytes": 63789,
       "path": "src/blink/learner.py",
-      "sha256": "8cbeebdd06e8895198ba5701c1d9e7ebf20ca80e1fe25ef1990cbb606c26b219"
+      "sha256": "ca3fe426144fb0d8c0e273a4ce39ffe891a4812c3d61823f80c5de7ce8d97fce"
     },
     {
       "bytes": 482,
@@ -377,6 +377,6 @@
     "license": "MIT",
     "name": "web-blink",
     "repository": "https://github.com/patrick-1984/web-blink",
-    "version": "0.5.0"
+    "version": "0.5.1"
   }
 }

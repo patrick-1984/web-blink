@@ -43,7 +43,9 @@ def path_template(path):
     return '/'.join(out) or '/'
 
 
-COVERAGE_GAPS = ['WebAuthn/passkeys and FedCM ceremonies (only their network requests)', 'client certificates',
+COVERAGE_GAPS = ['WebAuthn/passkeys, FedCM and Credential Management API ceremonies (only their network requests)', 'client certificates',
+                 'BroadcastChannel and postMessage between frames or windows', 'push subscriptions and background sync',
+                 'shared workers', 'pages opened by the work tab before Playwright reports them (rare)',
                  'HTTP authentication challenges (recorded as 401 responses only)', 'WebTransport and WebRTC data channels',
                  'IndexedDB and Cache Storage contents (names only)', 'requests made inside service or shared workers',
                  'file contents of uploads larger than 256 KB']
@@ -544,38 +546,40 @@ class Learner:
             _private_write(run['folder'] / 'events.jsonl', ''.join(json.dumps(e, ensure_ascii=False) + '\n' for e in events), 'a')
             run['eventsBatch'] = data.get('batch')
             run['events'] = run.get('events', 0) + len(events)
-        # A batch sent again after a partial write: requests and screenshots already written are skipped.
-        done = run.get('maxSeq', 0)
+        # A batch sent again after a partial write: requests and screenshots already written are skipped. Responses
+        # finish out of order, so the exact set of saved sequence numbers is kept, not a high-water mark.
+        saved = run.setdefault('savedSeqs', set())
         records = [r for r in (data.get('records') or []) if isinstance(r, dict)
-                   and not (isinstance(r.get('seq'), int) and r['seq'] <= done)]
+                   and not (isinstance(r.get('seq'), int) and r['seq'] in saved)]
         if records:
             _private_write(run['folder'] / 'requests.jsonl',
                            ''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in records), 'a')
             run['requests'] += len(records)
-            run['maxSeq'] = max([done] + [r['seq'] for r in records if isinstance(r.get('seq'), int)])
+            saved.update(r['seq'] for r in records if isinstance(r.get('seq'), int))
         lines = []
         for shot in data.get('shots') or []:
-            if isinstance(shot, dict) and isinstance(shot.get('index'), int) and shot['index'] <= run.get('maxShot', 0):
+            if isinstance(shot, dict) and shot.get('index') in run.setdefault('savedShots', set()):
                 continue
             try:
                 image = base64.b64decode(shot['data'], validate=True)
                 if not image.startswith(b'\xff\xd8') or len(image) > MAX_SHOT_BYTES or run['shots'] >= MAX_SHOTS:
                     continue
-                run['shots'] += 1
-                if isinstance(shot.get('index'), int):
-                    run['maxShot'] = shot['index']
-                name = f'screenshots/{run["shots"]:04d}.jpg'
+                name = f'screenshots/{run["shots"] + 1:04d}.jpg'
                 with os.fdopen(os.open(run['folder'] / name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'wb') as handle:
                     handle.write(image)
-                lines.append(json.dumps({'file': name, 'afterRecord': shot.get('afterRecord'), 'time': (shot.get('t') or 0) / 1000,
-                                         'reason': str(shot.get('reason', ''))[:100], 'page': shot.get('page')}) + '\n')
+                _private_write(run['folder'] / 'screenshots.jsonl', json.dumps({
+                    'file': name, 'afterRecord': shot.get('afterRecord'), 'time': (shot.get('t') or 0) / 1000,
+                    'reason': str(shot.get('reason', ''))[:100], 'page': shot.get('page')}) + '\n', 'a')
+                run['shots'] += 1  # only after the file and its index line are on disk
+                if isinstance(shot.get('index'), int):
+                    run['savedShots'].add(shot['index'])
             except OSError:
                 raise  # disk problems: the batch is not acknowledged and is sent again
             except Exception:
                 run['shotWriteErrors'] = run.get('shotWriteErrors', 0) + 1
                 continue
         if lines:
-            _private_write(run['folder'] / 'screenshots.jsonl', ''.join(lines), 'a')
+            _private_write(run['folder'] / 'screenshots.jsonl', ''.join(lines), 'a')  # (legacy path; normally empty)
         secrets = [x for x in (data.get('secrets') or []) if isinstance(x, dict)]
         if secrets:  # login secret values, kept privately; the readable recording refers to them as <secret:N>
             _private_write(run['folder'] / 'secrets.jsonl', ''.join(json.dumps(x, ensure_ascii=False) + '\n' for x in secrets), 'a')
