@@ -207,7 +207,12 @@ def _stop_legacy(state):
 
 
 def restart_legacy_daemon(state_dir=None, plugin_root=None):
-    """Human-approved only (restart_daemon dialog): stop a pre-0.2.8 or older daemon and start the current one."""
+    """Explicit restart (restart_daemon): always replaces the running daemon and verifies a different PID.
+
+    Separate from automatic upgrade retirement (``_replace_if_outdated``), which only retires an idle, older daemon.
+    A current daemon stops on an exact-command permit (``shutdown_daemon``); an older current-style daemon retires;
+    a pre-0.2.8 daemon is stopped by exact same-owner/state process matching. Dispatching intents are never
+    resubmitted: the new daemon's startup recovery marks them outcome_unknown."""
     import signal
     state = secure_state_directory(state_dir)
     own = _own_identity(plugin_root)
@@ -218,9 +223,19 @@ def restart_legacy_daemon(state_dir=None, plugin_root=None):
             return result
         return {'status': 'ok', 'summary': 'No daemon was running; the current one was started',
                 'data': result.get('data'), 'warnings': result.get('warnings', [])}
-    if not _outdated(identity, own):
-        return {'status': 'ok', 'summary': 'The running daemon is already current', 'data': {'daemon': identity}, 'warnings': []}
-    if isinstance(identity, dict):
+    before = identity.get('pid') if isinstance(identity, dict) else None
+    if isinstance(identity, dict) and not _outdated(identity, own):
+        daemon, mine = _version(identity.get('version')), _version(own['version'])
+        if daemon is not None and mine is not None and daemon > mine:
+            return {'status': 'not_restarted', 'summary': f'The running daemon is Web Blink {identity.get("version")}, newer '
+                    f'than this plugin ({own["version"]}); restart it from the newer installation', 'warnings': []}
+        answer = control_request('shutdown_daemon', {}, state_dir=state, plugin_root=plugin_root, autostart=False)
+        if answer.get('status') not in ('ok', 'control_outcome_unknown'):
+            return {'status': 'not_restarted', 'summary': 'The daemon did not accept the restart: ' + str(answer.get('summary', '')),
+                    'warnings': answer.get('warnings', [])}
+        if not _wait_lock_free(state, 20):
+            return {'status': 'not_restarted', 'summary': 'The daemon did not stop', 'warnings': []}
+    elif isinstance(identity, dict):
         notice = _replace_if_outdated(state, plugin_root)
         if notice != 'restarted':
             return {'status': 'not_restarted', 'summary': notice, 'warnings': []}
@@ -228,6 +243,7 @@ def restart_legacy_daemon(state_dir=None, plugin_root=None):
         pids = _legacy_daemon_pids(state)
         if _probe(state) != 'legacy' or not pids:  # re-check right before stopping, so a replacement is never hit
             return {'status': 'not_restarted', 'summary': 'The old daemon could not be identified safely', 'warnings': []}
+        before = pids[0] if len(pids) == 1 else None
         for pid in pids:
             try:
                 os.kill(pid, signal.SIGTERM)
@@ -239,8 +255,13 @@ def restart_legacy_daemon(state_dir=None, plugin_root=None):
     if result.get('status') not in ('ok', 'degraded'):
         return {'status': 'not_restarted', 'summary': 'The old daemon stopped but the current one did not start: '
                 + str(result.get('summary', '')), 'data': result.get('data'), 'warnings': result.get('warnings', [])}
-    return {'status': 'ok', 'summary': 'The daemon was restarted on the current version',
-            'data': result.get('data'), 'warnings': result.get('warnings', [])}
+    after = ((result.get('data') or {}).get('daemon') or {}).get('pid')
+    if not isinstance(after, int) or (before is not None and after == before):
+        return {'status': 'not_restarted', 'summary': 'The daemon process was not replaced',
+                'data': result.get('data'), 'warnings': result.get('warnings', [])}
+    data = dict(result.get('data') or {}, previousPid=before)
+    return {'status': 'ok', 'summary': 'The daemon was restarted on the current version (new process)',
+            'data': data, 'warnings': result.get('warnings', [])}
 
 
 def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=True):
