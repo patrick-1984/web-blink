@@ -207,6 +207,17 @@ class RecorderJavascriptTests(unittest.TestCase):
         self.assertIn('SECRET', json.dumps(result['vault']))
 
 
+    def test_scoped_cookie_jar_full_scrub_and_sockets_detached_at_stop(self):
+        result = self.record('''
+          let asked=null;ctx.cookies=async urls=>{asked=urls;return [];};
+          const ws=new (require('node:events').EventEmitter)();ws.url=()=> 'wss://app.example/live';
+          p.emit('response',res(req('https://app.example/api','GET','fetch')));await sleep(30);
+          p.emit('websocket',ws);ws.emit('framesent',{payload:JSON.stringify({token:'SECRET',pad:'x'.repeat(20000)})});
+          globalThis.__ws=ws;globalThis.__asked=()=>asked;'''.replace('await sleep(30);', 'await sleep(30);'))
+        frame = [e for e in result['events'] if e['type'] == 'websocket-frame'][0]
+        self.assertNotIn('SECRET', json.dumps(frame)); self.assertTrue(frame['truncated'])
+
+
 class LocalSessionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -643,6 +654,48 @@ class GrantDefaultsTests(unittest.TestCase):
             wrong = runtime.dispatch('grant', {'binding': 'a', 'origins': ['https://www.app.example']}, human=True)
             self.assertIn('http://127.0.0.1:9', wrong['summary'])
             self.assertEqual(runtime.dispatch('grant', {'binding': 'a'}, human=True)['status'], 'ok')
+
+
+class CoverageFixTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.runtime = Runtime(self.tmp.name)
+
+    def test_out_of_order_responses_are_all_kept(self):
+        class Browser:
+            batches = [[2], [1]]
+            def open(self, binding, url, navigate=True): pass
+            def capture_start(self, binding, url=None): return {'recording': True, 'screenshots': 'enabled'}
+            def capture_drain(self, binding, ack=None):
+                if not Browser.batches:
+                    return {'batch': ack, 'records': [], 'shots': [], 'more': False}
+                seqs = Browser.batches.pop(0)
+                return {'batch': 10 - len(Browser.batches), 'more': False, 'shots': [], 'records': [
+                    {'seq': n, 'method': 'GET', 'url': f'https://a.example/{n}', 'origin': 'https://a.example', 'path': f'/{n}', 'status': 200}
+                    for n in seqs]}
+            def capture_stop(self, binding): return {'stopped': True}
+            def capture_shots_clear(self, binding): pass
+        learner = Learner(self.runtime, Browser())
+        started = learner.start('b', 'https://a.example/', None)
+        learner.tick(now=10 ** 10); learner.running['b']['lastDrain'] = 0; learner.tick(now=10 ** 10 + 10)
+        lines = Path(started['folder'], 'requests.jsonl').read_text().splitlines()
+        self.assertEqual(sorted(json.loads(x)['seq'] for x in lines), [1, 2])
+        learner.close()
+
+    def test_a_failed_screenshot_write_is_retried_not_skipped(self):
+        learner = Learner(self.runtime)
+        run = learner._open_session('b', 'https://a.example/', ['https://a.example'])
+        shot = {'index': 1, 'data': base64.b64encode(JPEG).decode(), 'afterRecord': 0, 't': 0, 'reason': 'x'}
+        real = os.open
+        def failing(path, *args, **kwargs):
+            if str(path).endswith('.jpg'):
+                raise OSError(28, 'No space left on device')
+            return real(path, *args, **kwargs)
+        with mock.patch('blink.learner.os.open', side_effect=failing):
+            with self.assertRaises(OSError):
+                learner._persist(run, {'shots': [shot]})
+        learner._persist(run, {'shots': [shot]})
+        self.assertEqual(len(list((run['folder'] / 'screenshots').glob('*.jpg'))), 1)
 
 
 if __name__ == '__main__':
