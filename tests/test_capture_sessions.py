@@ -43,7 +43,7 @@ class RecorderJavascriptTests(unittest.TestCase):
           EVENTS
           const result=await eval('('+code[1]+')')(p);
           result.listeners=['response','framenavigated','request','popup'].reduce((n,e)=>n+p.listenerCount(e),0);
-          const fin=p.__blinkFinal;result.records=fin.records;result.screenshots=fin.shots.length;
+          const fin=p.__blinkFinal;result.records=fin.records;result.vault=fin.vault;result.screenshots=fin.shots.length;
           result.kept=fin.shots.map(s=>({reason:s.reason,page:s.page,afterRecord:s.afterRecord}));
           console.log(JSON.stringify(result));})().catch(e=>{console.error(e);process.exit(1);});
         '''.replace('EVENTS', events)
@@ -126,7 +126,8 @@ class RecorderJavascriptTests(unittest.TestCase):
         self.assertIn('banana banana apple', record['requestBody'])
         self.assertIn('banana banana apple', record['responseBody'])
         self.assertNotIn('SECRET', json.dumps(record)); self.assertNotIn('hunter2', json.dumps(record))
-        self.assertEqual(record['requestHeaders']['cookie'], 'sid=<redacted>')  # names kept, values blanked
+        self.assertRegex(record['requestHeaders']['cookie'], r'^sid=<secret:\d+>$')  # name readable, value in the vault
+        self.assertIn('SECRET', json.dumps(result['vault']))
 
 
     def test_stop_waits_for_loading_bodies_and_secrets_are_blanked_before_cutting(self):
@@ -164,6 +165,22 @@ class RecorderJavascriptTests(unittest.TestCase):
         out = json.loads(run.stdout)
         self.assertEqual(out['a'], [1, 1]); self.assertEqual(out['again'], [1, 1])  # unacknowledged: sent again
         self.assertEqual(out['acked'], [2, 0])
+
+
+    def test_cookies_come_from_all_headers_and_sso_assertions_go_to_the_vault(self):
+        result = self.record('''
+          const r={url:()=> 'https://app.example/saml/acs',method:()=> 'POST',resourceType:()=> 'document',
+            postData:()=> 'SAMLResponse=PHNhbWw%2B&RelayState=week',headers:()=>({'content-type':'application/x-www-form-urlencoded'}),
+            allHeaders:async()=>({'content-type':'application/x-www-form-urlencoded',cookie:'sid=abc; theme=dark'})};
+          p.emit('response',{request:()=>r,status:()=>302,headers:()=>({}),
+            allHeaders:async()=>({'set-cookie':'session=NEW; Path=/; HttpOnly\\nprefs=1; Path=/'})});
+          await sleep(50);''')
+        record = result['records'][0]
+        self.assertRegex(record['requestHeaders']['cookie'], r'^sid=<secret:\d+>; theme=<secret:\d+>$')
+        self.assertIn('HttpOnly', record['responseHeaders']['set-cookie'])
+        self.assertIn('RelayState=week', record['requestBody'])
+        self.assertNotIn('PHNhbWw', json.dumps(record))
+        self.assertIn('PHNhbWw%2B'.replace('%2B', '+'), json.dumps(result['vault']))
 
 
 class LocalSessionTests(unittest.TestCase):
@@ -515,6 +532,48 @@ class FromRecordingToProposalTests(unittest.TestCase):
         self.assertEqual(list(paths['/api/time-entries/{id}']['delete']['responses']), ['204'])
         self.assertNotIn('banana', json.dumps(manifest))
         self.assertEqual(result['proposal']['status'], 'quarantined', result['proposal'])
+
+
+class ProposeEverythingTests(unittest.TestCase):
+    def test_default_proposal_covers_every_api_endpoint_with_query_parameters_and_text_fields(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = Runtime(temp)
+            learner = Learner(runtime)
+            def rec(method, path, status, body=None, query=''):
+                return Learner._catalog_record({'method': method, 'origin': 'https://api.app.example', 'path': path,
+                                                'url': 'https://api.app.example' + path + query, 'status': status, 'resourceType': 'fetch',
+                                                'requestHeaders': {'content-type': 'application/json'} if body is not None else {},
+                                                'requestBody': json.dumps(body) if body is not None else None}, ['https://api.app.example'])
+            records = [rec('GET', '/weeks', 200, query='?date=2026-10-19'), rec('POST', '/entries', 201, {'notes': None, 'hours': 1}),
+                       rec('POST', '/entries', 201, {'notes': 'banana', 'hours': 2}), rec('DELETE', '/entries/7', 204, query='?date=x&typeId=1')]
+            session = learner._save(records, 'test')
+            manifest = learner.propose(session['id'], 'app-example', None, auth={'kind': 'none'})['manifest']
+            self.assertEqual(set(manifest['paths']), {'/weeks', '/entries', '/entries/{id}'})
+            weeks = manifest['paths']['/weeks']['get']['parameters']
+            self.assertIn({'name': 'date', 'in': 'query', 'required': False, 'schema': {'type': 'string'}}, weeks)
+            delete = {p['name'] for p in manifest['paths']['/entries/{id}']['delete']['parameters']}
+            self.assertEqual(delete, {'id', 'date', 'typeId'})
+            notes = manifest['paths']['/entries']['post']['requestBody']['content']['application/json']['schema']['properties']['notes']
+            self.assertEqual(notes, {'type': 'string'})  # an empty value never fixes the type
+
+    def test_wrong_auth_kind_says_what_is_accepted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            learner = Learner(Runtime(temp))
+            session = learner._save([Learner._catalog_record({'method': 'GET', 'origin': 'https://a.example', 'path': '/x',
+                                     'status': 200, 'resourceType': 'fetch'}, ['https://a.example'])], 'test')
+            with self.assertRaisesRegex(ValueError, 'cookie-session'):
+                learner.propose(session['id'], 'a-example', None, auth={'kind': 'cookie'})
+
+    def test_activation_is_one_dialog(self):
+        from blink.approval import describe, METHODS
+        self.assertIn('activate_blink', METHODS); self.assertIn('approve_intents', METHODS)
+        with tempfile.TemporaryDirectory() as temp:
+            shown = describe('activate_blink', {'manifest': {'service': 'own:x', 'digest': 'd'}, 'bind': {'binding': 'x'},
+                                                'grant': {'binding': 'x', 'operations': ['a'], 'origins': ['https://x.example']}},
+                             state_dir=temp)
+            self.assertEqual(shown['status'], 'ok')
+            for part in ('approve', 'bind', 'grant', 'https://x.example'):
+                self.assertIn(part, shown['data']['text'])
 
 
 if __name__ == '__main__':

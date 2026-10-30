@@ -185,11 +185,12 @@ def post_read_contract(schema):
 def compile_manifest(document, *, allow_http=False):
     if len(encoded(document).encode())>2_000_000:
         raise BlinkError('invalid_manifest','Manifest exceeds the size limit')
-    try:
-        schema=json.loads(schema_path().read_text())
-        Draft202012Validator(schema).validate(document)
-    except Exception:
-        raise BlinkError('invalid_manifest','Manifest does not match execution profile v1') from None
+    schema=json.loads(schema_path().read_text())
+    errors=sorted(Draft202012Validator(schema).iter_errors(document),key=lambda e:len(list(e.absolute_path)))
+    if errors:
+        # Say which field is wrong and why, so a proposal can be corrected instead of guessed.
+        where='/'.join(str(p) for p in errors[0].absolute_path) or '(document)'
+        raise BlinkError('invalid_manifest',f'Manifest does not match execution profile v1 at {where}: {str(errors[0].message)[:300]}')
     doc=copy.deepcopy(document)
     service=doc['x-blink-service']; auth=service['auth']
     settings=settings_contract(service.get('settings',{'type':'object','properties':{},'additionalProperties':False}))

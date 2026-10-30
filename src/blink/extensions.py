@@ -156,7 +156,7 @@ class Extensions:
             elif method == 'learn_accept_partial':
                 data = self.learner.accept_partial(params['session'], params['reason'])
             elif method == 'learn_propose':
-                data = self.learner.propose(params['session'], params['service'], params['operations'],
+                data = self.learner.propose(params['session'], params['service'], params.get('operations'),
                     source=params.get('source', 'local'), auth=params.get('auth'),
                     execution=params.get('execution'), app_origin=params.get('appOrigin'))
                 return reply(data, 'Untested Blink proposal staged in quarantine', 'quarantined')

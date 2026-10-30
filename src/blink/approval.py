@@ -24,7 +24,7 @@ METHODS = frozenset({
     'forget_capture', 'tools_add', 'tools_remove',
     'trust_pin', 'trust_unpin', 'health_enable', 'health_disable', 'health_clear',
     'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover', 'custody_forget',
-    'forget_service', 'purge_state', 'restart_daemon',
+    'forget_service', 'purge_state', 'restart_daemon', 'activate_blink', 'approve_intents',
 })
 # Local, reversible actions with no effect on any web service: they run as soon as the user asks for
 # them (no dialog). Recording stays limited to the exact origins given; proposals stay quarantined.
@@ -38,6 +38,8 @@ TITLES = {
     'forget_service': 'Forget a service', 'purge_state': 'Purge local Web Blink state',
     'forget_capture': 'Clean up this capture session locally (Decline keeps it)',
     'restart_daemon': 'Restart the outdated Web Blink daemon (a recording in progress would be lost)',
+    'activate_blink': 'Switch on a Blink: approve it, connect your account and allow its operations',
+    'approve_intents': 'Run these prepared writes',
 }
 
 
@@ -61,6 +63,22 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
     # CLI-only), and redacting would let a model hide an action's real target under a secret-like key.
     data = {'method': method, 'title': TITLES.get(method, method.replace('_', ' ').capitalize()),
             'parameters': params, 'exactParametersSha256': digest(params)}
+    if method == 'activate_blink':
+        # One dialog instead of three: the exact approve_manifest, bind and grant parameters, each shown below.
+        if set(params) - {'manifest', 'bind', 'grant'} or not isinstance(params.get('manifest'), dict):
+            return {'status': 'forbidden', 'summary': 'activate_blink takes manifest (approve_manifest parameters), '
+                    'optional bind and grant parameters', 'warnings': []}
+    if method == 'approve_intents':
+        ids = params.get('intentIds')
+        if set(params) != {'intentIds'} or not isinstance(ids, list) or not 1 <= len(ids) <= 50 or not all(isinstance(i, str) for i in ids):
+            return {'status': 'forbidden', 'summary': 'approve_intents takes intentIds: a list of 1-50 string ids', 'warnings': []}
+        from .client import request
+        context = []
+        for intent in ids:
+            review = request('admin', {'action': 'intent', 'intentId': intent}, state_dir=state_dir, plugin_root=plugin_root)
+            if review.get('status') != 'ok':
+                return {'status': 'approval_unavailable', 'summary': f'Write {intent} cannot be shown for review; nothing was approved', 'warnings': []}
+            context.append(review.get('data'))
     if method == 'restart_daemon':
         if params:
             return {'status': 'forbidden', 'summary': 'restart_daemon takes no parameters', 'warnings': []}
@@ -90,6 +108,18 @@ def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None):
     if method == 'restart_daemon':
         from .client import restart_legacy_daemon
         return restart_legacy_daemon(state_dir=state_dir, plugin_root=plugin_root)
+    if method in ('activate_blink', 'approve_intents'):
+        from .client import control_request
+        steps = ([('approve_manifest', params['manifest'])] + [(m, params[k]) for m, k in (('bind', 'bind'), ('grant', 'grant')) if k in params]
+                 if method == 'activate_blink' else [('approve_intent', {'intentId': i}) for i in params['intentIds']])
+        results = []
+        for step, step_params in steps:  # in order; stops at the first failure and reports what was done
+            outcome = control_request(step, step_params, state_dir=state_dir, plugin_root=plugin_root)
+            results.append({'step': step, 'status': outcome.get('status'), 'summary': outcome.get('summary'), 'data': outcome.get('data')})
+            if outcome.get('status') not in ('ok', 'approved', 'quarantined'):
+                return {'status': outcome.get('status', 'failed'), 'summary': f'{step} failed: {outcome.get("summary")}',
+                        'data': {'steps': results}, 'warnings': outcome.get('warnings', [])}
+        return {'status': 'ok', 'summary': f'{len(results)} step(s) done', 'data': {'steps': results}, 'warnings': []}
     from .client import control_request
     return control_request(method, params, state_dir=state_dir, plugin_root=plugin_root)
 
