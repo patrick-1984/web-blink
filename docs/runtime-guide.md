@@ -25,7 +25,7 @@ hosts; Windows has diagnostics only. Git and OpenSSL are needed only for their r
 and signature features.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.4.1-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.4.2-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor

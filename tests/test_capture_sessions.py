@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
@@ -574,6 +575,36 @@ class ProposeEverythingTests(unittest.TestCase):
             self.assertEqual(shown['status'], 'ok')
             for part in ('approve', 'bind', 'grant', 'https://x.example'):
                 self.assertIn(part, shown['data']['text'])
+
+
+class FewerDialogsTests(unittest.TestCase):
+    def test_standing_approval_approves_prepared_writes_without_a_dialog(self):
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = Runtime(temp, allow_http=True)
+            learner = Learner(runtime)
+            record = Learner._catalog_record({'method': 'POST', 'origin': 'http://127.0.0.1:9', 'path': '/submit', 'status': 201,
+                                              'resourceType': 'fetch', 'requestHeaders': {'content-type': 'application/json'},
+                                              'requestBody': json.dumps({'week': 'x'})}, ['http://127.0.0.1:9'])
+            session = learner._save([record], 'test')
+            stage = learner.propose(session['id'], 'app', None, auth={'kind': 'none'})['proposal']['data']
+            self.assertEqual(runtime.dispatch('approve_manifest', dict(stage, confirmReadOperations=[]), human=True)['status'], 'ok')
+            self.assertEqual(runtime.dispatch('bind', {'binding': 'a', 'service': stage['service'], 'account': 'me', 'mode': 'C5'}, human=True)['status'], 'ok')
+            for standing, expected in (('none', 'prepared'), ('writes', 'approved')):
+                runtime.dispatch('grant', {'binding': 'a', 'operations': ['createSubmit'], 'origins': ['http://127.0.0.1:9'],
+                                           'autoApprove': standing}, human=True)
+                prepared = runtime.dispatch('prepare', {'service': stage['service'], 'operation': 'createSubmit', 'binding': 'a',
+                                                        'arguments': {'body': {'week': standing}}})
+                self.assertEqual(prepared['status'], expected, prepared)
+
+    def test_post_reads_are_filled_in_the_same_way_for_dialog_and_apply(self):
+        from blink import approval
+        review = {'operations': [{'operation': 'lookup', 'method': 'POST', 'effect': 'read'},
+                                 {'operation': 'save', 'method': 'POST', 'effect': 'write'}]}
+        with mock.patch.object(approval, '_review', return_value=review):
+            shown = approval.complete('approve_manifest', {'service': 'own:x', 'digest': 'd', 'candidate': 'c'})
+            again = approval.complete('activate_blink', {'manifest': {'service': 'own:x', 'digest': 'd', 'candidate': 'c'}})
+        self.assertEqual(shown['confirmReadOperations'], ['lookup'])
+        self.assertEqual(again['manifest']['confirmReadOperations'], ['lookup'])
 
 
 if __name__ == '__main__':

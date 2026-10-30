@@ -43,11 +43,45 @@ TITLES = {
 }
 
 
+def _review(manifest, state_dir, plugin_root):
+    from .client import request
+    candidate = manifest.get('candidate') if isinstance(manifest, dict) else None
+    if not isinstance(candidate, str):
+        return None
+    review = request('admin', {'action': 'review', 'candidate': candidate}, state_dir=state_dir, plugin_root=plugin_root)
+    return review.get('data') if review.get('status') == 'ok' else None
+
+
+def complete(method, params, *, state_dir=None, plugin_root=None):
+    """Fill in what the plugin can decide itself, identically when showing the dialog and when applying it:
+    the POST requests that only read (from the candidate), so the model never has to name them."""
+    params = strict_json(encoded(params))
+    target = params if method == 'approve_manifest' else params.get('manifest') if method == 'activate_blink' else None
+    if isinstance(target, dict) and 'confirmReadOperations' not in target:
+        review = _review(target, state_dir, plugin_root)
+        if review:
+            target['confirmReadOperations'] = sorted(op['operation'] for op in review.get('operations', [])
+                                                     if op.get('method') == 'POST' and op.get('effect') == 'read')
+    return params
+
+
 def describe(method, params, *, state_dir=None, plugin_root=None):
     if method not in METHODS:
         return {'status': 'forbidden', 'summary': 'This action cannot be approved in the dialog', 'warnings': []}
-    params = strict_json(encoded(params))
+    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root)
     context = None
+    if method in ('approve_manifest', 'activate_blink'):
+        manifest = params if method == 'approve_manifest' else params.get('manifest')
+        review = _review(manifest, state_dir, plugin_root) if isinstance(manifest, dict) else None
+        if review:
+            context = {'operations': [f"{op['operation']}: {op['effect']} ({op['method']})" for op in review.get('operations', [])],
+                       'postRequestsThatOnlyRead': (manifest or {}).get('confirmReadOperations', []),
+                       'login': review.get('authRecipe', {}).get('kind') if isinstance(review.get('authRecipe'), dict) else None}
+        grant = params.get('grant') if method == 'activate_blink' else None
+        if isinstance(grant, dict) and grant.get('autoApprove') in ('writes', 'writes-and-deletes'):
+            context = dict(context or {}, standingApproval=(
+                'Claude may run this Blink\'s writes' + (' and deletes' if grant['autoApprove'] == 'writes-and-deletes' else '')
+                + ' without asking you each time. Payments always ask.'))
     if method == 'approve_intent':
         if set(params) != {'intentId'} or not isinstance(params['intentId'], str):
             return {'status': 'forbidden', 'summary': 'approve_intent takes exactly a string intentId', 'warnings': []}
@@ -102,7 +136,7 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
 def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None):
     if method not in METHODS:
         return {'status': 'forbidden', 'summary': 'This action cannot be approved in the dialog', 'warnings': []}
-    params = strict_json(encoded(params))
+    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root)
     if digest(params) != expected_digest:
         return {'status': 'authorization_required', 'summary': 'Parameters differ from the approved dialog', 'warnings': []}
     if method == 'restart_daemon':
