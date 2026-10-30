@@ -50,13 +50,17 @@ class HandshakeTests(unittest.TestCase):
             data = client.request('doctor', state_dir=self.state, plugin_root=ROOT)['data']
         self.assertEqual(data['daemon']['pid'], first)
 
-    def test_a_pre_handshake_daemon_is_never_killed_automatically(self):
+    def test_a_pre_handshake_daemon_is_replaced_in_the_background(self):
         first = self.daemon_pid()
-        with mock.patch.object(client, '_probe', return_value='legacy'):
-            result = client.request('doctor', state_dir=self.state, plugin_root=ROOT)
-        self.assertIn(client.LEGACY_NOTICE, result['warnings'])
-        self.assertTrue(result['data']['daemonOutdated'])
-        self.assertEqual(self.daemon_pid(), first)
+        real = client._probe
+        calls = []
+        def legacy_then_real(state):
+            calls.append(1)
+            return 'legacy' if len(calls) <= 2 else real(state)
+        with mock.patch.object(client, '_probe', side_effect=legacy_then_real):
+            data = client.request('doctor', state_dir=self.state, plugin_root=ROOT)['data']
+        self.assertTrue(data.get('daemonRestarted'))
+        self.assertNotEqual(self.daemon_pid(), first)
 
     def test_the_daemon_process_is_matched_exactly_even_with_spaces_in_the_path(self):
         pid = self.daemon_pid()

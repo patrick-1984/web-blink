@@ -59,7 +59,7 @@ class McpSession:
 
 
 def approve(_params):
-    return {'action': 'accept', 'content': {'decision': 'approve'}}
+    return {'action': 'accept', 'content': {}}
 
 
 @unittest.skipUnless(shutil.which('node'), 'Node is required for Claude MCP')
@@ -105,7 +105,7 @@ class ApprovalDialogTests(unittest.TestCase):
         self.assertIn('approve_manifest', text)
         self.assertIn('Parameters SHA-256', text)
         self.assertIn("Claude's stated reason (not verified): install fixture", text)
-        self.assertEqual(session.dialogs[0]['requestedSchema']['properties']['decision']['enum'], ['approve', 'decline'])
+        self.assertEqual(session.dialogs[0]['requestedSchema']['properties'], {})  # one click: Accept approves
         bound = session.tool('blink_request_approval',
                              {'method': 'bind', 'params': {'binding': 'account', 'service': 'own:fixture',
                                                            'account': 'alice', 'mode': 'C5'}}, approve)
@@ -113,8 +113,7 @@ class ApprovalDialogTests(unittest.TestCase):
 
     def test_decline_cancel_and_wrong_answers_change_nothing(self):
         session = self.session()
-        for answer in ({'action': 'decline'}, {'action': 'cancel'},
-                       {'action': 'accept', 'content': {'decision': 'decline'}}, {'action': 'accept', 'content': {}}):
+        for answer in ({'action': 'decline'}, {'action': 'cancel'}):
             result = session.tool('blink_request_approval', {'method': 'approve_manifest', 'params': self.staged['data']},
                                   lambda _p, a=answer: a)
             self.assertEqual(result['status'], 'declined', answer)
@@ -153,7 +152,7 @@ class ApprovalDialogTests(unittest.TestCase):
         def cancel_then_accept(_params):
             session.write({'jsonrpc': '2.0', 'method': 'notifications/cancelled', 'params': {'requestId': session.next_id - 1}})
             time.sleep(.2)
-            return {'action': 'accept', 'content': {'decision': 'approve'}}
+            return {'action': 'accept', 'content': {}}
         result = session.tool('blink_request_approval', {'method': 'approve_manifest', 'params': self.staged['data']},
                               cancel_then_accept)
         self.assertEqual(result['status'], 'declined')
