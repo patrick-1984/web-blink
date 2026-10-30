@@ -94,7 +94,13 @@ class Handler(socketserver.StreamRequestHandler):
             return self.server.runtime.dispatch(method, params, human=True) if result is None else result
         method, params = parse_request(raw)
         result = self.server.extensions.dispatch(method, params, human=False) if self.server.extensions else None
-        return self.server.runtime.dispatch(method, params, human=False) if result is None else result
+        result = self.server.runtime.dispatch(method, params, human=False) if result is None else result
+        if (method == 'doctor' or method == 'admin' and params.get('action') == 'status') and isinstance(result, dict):
+            # Identity handshake: clients replace an older daemon unless it is recording.
+            learner = getattr(self.server.extensions, 'learner', None)
+            data = result.setdefault('data', {}) if isinstance(result.get('data', {}), dict) else {}
+            data['daemon'] = dict(self.server.identity, recording=bool(getattr(learner, 'running', None)))
+        return result
 
     def handle(self):
         self.request.settimeout(35)
@@ -172,10 +178,15 @@ def serve(state_dir=None, plugin_root=None):
         SourceManager(runtime)
         server = Server(str(socket_path), Handler)
         control_server = Server(str(control_path), ControlHandler)
+        from . import __version__
+        from .paths import plugin_root as locate_root
+        identity = {'version': __version__, 'pluginRoot': str(locate_root(plugin_root)), 'pid': os.getpid(),
+                    'startedAt': time.time()}
         shared_lock = threading.RLock()
         for instance, path in ((server, socket_path), (control_server, control_path)):
             os.chmod(path, 0o600)
             instance.runtime, instance.extensions, instance.call_lock = runtime, extensions, shared_lock
+            instance.identity = identity
         control_worker = threading.Thread(target=lambda: control_server.serve_forever(poll_interval=.2), daemon=True)
         control_worker.start()
         if extensions:

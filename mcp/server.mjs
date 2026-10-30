@@ -57,6 +57,18 @@ function doctor() {
   dependencyPolicy:'Doctor probes cached dependencies offline. Prepare pinned dependencies with the documented native setup command before runtime use; the MCP launcher stays offline.'},
   warnings:unix?[]:['Windows supports diagnostics; the current local runtime requires POSIX Unix sockets.']};
 }
+async function doctorWithDaemon(){
+ // Ask the daemon too: its handshake replaces an outdated one, and a version mismatch is reported here.
+ const local=doctor();
+ if(!local.data.capabilities.runtime)return local;
+ const remote=await backend('doctor',{});
+ local.data.daemon=remote?.data?.daemon??null;
+ local.data.client=remote?.data?.client??null;
+ local.data.daemonMatchesClient=remote?.data?.daemonMatchesClient===true;
+ if(!local.data.daemonMatchesClient)local.warnings.push('The local daemon does not match this plugin version: '+JSON.stringify(local.data.daemon?.version??'unknown')+' vs '+JSON.stringify(local.data.client?.version??'unknown')+'. Stop any recording, then call blink_doctor again to restart it.');
+ for(const w of remote?.warnings??[])local.warnings.push(w);
+ return local;
+}
 function backend(method,params,module=['blink.client'],timeout=45000) {
  return new Promise(resolve=>{
   const launch=launcher();
@@ -165,7 +177,7 @@ async function handle(message){
   if(!tool)return rpcError(id,-32602,'Unknown tool');
   const args=p.arguments??{};
   if(!validArguments(tool,args))return rpcError(id,-32602,'Invalid tool arguments');
-  const result=p.name==='blink_doctor'?doctor():p.name==='blink_request_approval'?await approval(args,id):await backend(methods.get(p.name),args);
+  const result=p.name==='blink_doctor'?await doctorWithDaemon():p.name==='blink_request_approval'?await approval(args,id):await backend(methods.get(p.name),args);
   return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large'].includes(result.status)}};
  }
  return rpcError(id,-32601,'Method not found');

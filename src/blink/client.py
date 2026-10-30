@@ -33,6 +33,126 @@ def connect(path):
     return sock
 
 
+def _version(value):
+    try:
+        return tuple(int(part) for part in str(value).split('.')[:3])
+    except ValueError:
+        return None
+
+
+def _own_identity(plugin_root):
+    from . import __version__
+    from .paths import plugin_root as locate_root
+    return {'version': __version__, 'pluginRoot': str(locate_root(plugin_root))}
+
+
+def _start_daemon(state, plugin_root):
+    command = [sys.executable, '-m', 'blink.daemon', '--state-dir', str(state)]
+    if plugin_root:
+        command += ['--plugin-root', str(plugin_root)]
+    from .paths import plugin_root as locate_root
+    trusted_root = locate_root(plugin_root)
+    environment = dict(os.environ)
+    environment.pop('PYTHONPATH', None)
+    if (trusted_root / 'src').is_dir():
+        environment['PYTHONPATH'] = str(trusted_root / 'src')
+    subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, cwd=trusted_root, env=environment,
+                     start_new_session=True, close_fds=True)
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        try:
+            return connect(state / 'runtime.sock')
+        except (FileNotFoundError, ConnectionRefusedError):
+            time.sleep(0.05)
+    return None
+
+
+def _exchange(sock, method, params):
+    wire = json.dumps({'method': method, 'params': params or {}}, allow_nan=False).encode() + b'\n'
+    if len(wire) > MAX_MESSAGE:
+        raise ValueError('request exceeds transport limit')
+    sock.sendall(wire)
+    response = sock.makefile('rb').readline(MAX_MESSAGE + 1)
+    if len(response) > MAX_MESSAGE or not response.endswith(b'\n'):
+        raise ValueError('invalid daemon response size')
+    result = json.loads(response)
+    if not isinstance(result, dict) or not isinstance(result.get('status'), str):
+        raise ValueError('invalid daemon response')
+    return result
+
+
+def _daemon_pids(state, identity):
+    """The running daemon's PID: from its handshake, else (older daemons) from this user's process list."""
+    if isinstance(identity, dict) and isinstance(identity.get('pid'), int):
+        return [identity['pid']]
+    try:
+        listing = subprocess.run(['ps', '-U', str(os.getuid()), '-o', 'pid=,command='], capture_output=True,
+                                 text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    pids = []
+    for line in listing.splitlines():
+        pid, _, command = line.strip().partition(' ')
+        words = command.split()
+        if 'blink.daemon' in words and '--state-dir' in words and words[words.index('--state-dir') + 1:][:1] == [str(state)]:
+            if pid.isdigit() and int(pid) != os.getpid():
+                pids.append(int(pid))
+    return pids
+
+
+def _lock_free(state):
+    import fcntl
+    try:
+        fd = os.open(state / 'runtime.lock', os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0))
+    except FileNotFoundError:
+        return True
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return True
+    except BlockingIOError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def _replace_if_outdated(state, plugin_root):
+    """Handshake: a daemon older than this client (or from before the handshake) is stopped so the current
+    one starts, unless it is recording. A newer daemon is kept, so two installed versions never fight."""
+    own = _own_identity(plugin_root)
+    try:
+        probe = connect(state / 'runtime.sock')
+        try:
+            doctor = _exchange(probe, 'doctor', {})
+        finally:
+            probe.close()
+    except Exception:
+        return None
+    identity = (doctor.get('data') or {}).get('daemon') if isinstance(doctor.get('data'), dict) else None
+    daemon_version = _version(identity.get('version')) if isinstance(identity, dict) else None
+    own_version = _version(own['version'])
+    if daemon_version is not None and own_version is not None and daemon_version >= own_version:
+        return None
+    running = identity.get('version') if isinstance(identity, dict) else 'pre-0.2.8'
+    if isinstance(identity, dict) and identity.get('recording') is True:
+        return (f'The local daemon runs Web Blink {running} while this plugin is {own["version"]}; it is recording, '
+                'so it was not restarted. Stop the recording, then the next call restarts it.')
+    import signal
+    for pid in _daemon_pids(state, identity):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline and not _lock_free(state):
+        time.sleep(0.1)
+    if not _lock_free(state):
+        return (f'The local daemon runs Web Blink {running} while this plugin is {own["version"]} and could not '
+                'be stopped; restart it to get the current features.')
+    return 'restarted'
+
+
 def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=True):
     if params is None:
         params = {}
@@ -42,47 +162,35 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
         return {'status': 'unsupported', 'summary': 'Windows daemon transport is not supported; use diagnostics', 'warnings': []}
     state = secure_state_directory(state_dir)
     path = state / 'runtime.sock'
-    sock = None
+    sock, notice = None, None
     try:
         sock = connect(path)
     except (FileNotFoundError, ConnectionRefusedError):
         if not autostart:
             raise
-        command = [sys.executable, '-m', 'blink.daemon', '--state-dir', str(state)]
-        if plugin_root:
-            command += ['--plugin-root', str(plugin_root)]
-        from .paths import plugin_root as locate_root
-        trusted_root = locate_root(plugin_root)
-        environment = dict(os.environ)
-        environment.pop('PYTHONPATH', None)
-        if (trusted_root / 'src').is_dir():
-            environment['PYTHONPATH'] = str(trusted_root / 'src')
-        subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, cwd=trusted_root, env=environment,
-                         start_new_session=True, close_fds=True)
-        deadline = time.monotonic() + 12
-        while time.monotonic() < deadline:
-            try:
-                sock = connect(path)
-                break
-            except (FileNotFoundError, ConnectionRefusedError):
-                time.sleep(0.05)
+    if sock is not None and autostart:
+        notice = _replace_if_outdated(state, plugin_root)
+        if notice == 'restarted':
+            sock.close()
+            sock = None
+    if sock is None:
+        sock = _start_daemon(state, plugin_root)
         if sock is None:
             return {'status': 'env_unavailable', 'summary': 'Local daemon did not become available', 'warnings': []}
     try:
-        wire = json.dumps({'method': method, 'params': params or {}}, allow_nan=False).encode() + b'\n'
-        if len(wire) > MAX_MESSAGE:
-            raise ValueError('request exceeds transport limit')
-        sock.sendall(wire)
-        response = sock.makefile('rb').readline(MAX_MESSAGE + 1)
-        if len(response) > MAX_MESSAGE or not response.endswith(b'\n'):
-            raise ValueError('invalid daemon response size')
-        result = json.loads(response)
-        if not isinstance(result, dict) or not isinstance(result.get('status'), str):
-            raise ValueError('invalid daemon response')
-        return result
+        result = _exchange(sock, method, params)
     finally:
         sock.close()
+    if notice and notice != 'restarted':
+        result.setdefault('warnings', []).append(notice)
+    if method == 'doctor' and isinstance(result.get('data'), dict):
+        own = _own_identity(plugin_root)
+        daemon = result['data'].get('daemon')
+        result['data']['client'] = own
+        result['data']['daemonMatchesClient'] = isinstance(daemon, dict) and daemon.get('version') == own['version']
+        if notice == 'restarted':
+            result['data']['daemonRestarted'] = True
+    return result
 
 
 def control_request(method, params=None, *, state_dir=None, plugin_root=None, autostart=True):

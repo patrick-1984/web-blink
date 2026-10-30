@@ -45,6 +45,7 @@ Writes need an exact native approval; unknown outcomes retain their intent and b
 - [Git sources](docs/source-commands.md): immutable imports, local trust and publisher verification.
 - [Custody providers](docs/custody-provider.md): isolated harvest, C4 permission and fenced hand-back.
 - [State cleanup](docs/state-lifecycle.md): forget/purge and retained unknown-outcome evidence.
+- Troubleshooting: when something fails, Claude diagnoses it on the spot and can file an anonymized problem report (you review it first).
 - [Claude compatibility](docs/claude-compatibility.md): official plugin layout and host support.
 - [Blinks](blinks/README.md) and [schema index](schemas/index.json): versioned portable interaction files.
 
