@@ -36,7 +36,8 @@ after confirmation, through `blink.client.control_request`. The CLI records a ra
 containing only the method, exact canonical parameter digest, issue/expiry times (at most 60 seconds)
 and state. No credential-bearing parameters are stored in the permit. The daemon checks and atomically
 consumes it before dispatching with human authority. Forged, expired, mismatched and replayed permits
-are rejected. Both sockets are mode 0600 inside the checked mode-0700 state directory; the public
+are rejected. Both sockets are mode 0600 inside the checked mode-0700 state directory (`~/.web-blink/state`
+by default, see the runtime guide); the public
 `runtime.sock` accepts only `{method, params}` and always dispatches with `human=False`.
 
 This follows the existing same-user host boundary: code permitted to run as the owner can access owner
@@ -67,7 +68,9 @@ python3 scripts/build.py --output /tmp/web-blink.zip
 
 Use `--help` for the CLI's input JSON and confirmation options. `human custody_authorize --input FILE`
 reads account material from a file or stdin rather than placing it in command arguments. Do not copy
-runtime state or credential files into the plugin directory or a release artifact.
+runtime state or credential files into the plugin directory or a release artifact. Web Blink keeps all user
+data in `~/.web-blink` (`BLINK_HOME`), outside the plugin tree; the SessionStart hook reads
+`~/.web-blink/state` too, and the old `~/.local/state/web-blink` only until it has moved.
 
 The build script includes only selected runtime, schema, Blink, MCP, skill, hook and documentation files.
 Its fixed ZIP metadata makes unchanged builds reproducible; `_build.json` records every packaged file's

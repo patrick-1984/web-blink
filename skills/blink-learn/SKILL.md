@@ -15,7 +15,7 @@ inspect processes, folders or files with shell commands to find out what Web Bli
 
 1. Call `blink_request_approval` with `learn_start` and only `{"url": ...}`. The plugin names the Blink after the
    host reached after redirects (`www.msn.com` -> `msn-com`), sets the origins, opens its own work tab and
-   creates the session folder `<blink>-<UTC start time>` (`meta.json`, `requests.jsonl`, `screenshots/`,
+   creates the session folder `~/.web-blink/state/captures/<blink>-<UTC start time>` (`meta.json`, `requests.jsonl`, `screenshots/`,
    `screenshots.jsonl`, `index.json`). Pass `binding` only when the user names the Blink, and `origins` only
    when they ask for a specific scope. Do not open, close or switch other tabs; never touch tab 0 or another
    session's tabs. Every other host the site talks to is recorded too (`inScope: false`).

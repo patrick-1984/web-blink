@@ -13,11 +13,8 @@ def default_state_dir() -> Path:
     configured = os.environ.get('BLINK_STATE_DIR')
     if configured:
         return Path(configured).expanduser().absolute()
-    if sys.platform == 'win32':
-        return Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData/Local')) / 'WebBlink'
-    if sys.platform == 'darwin':
-        return Path.home() / 'Library/Application Support/WebBlink'
-    return Path(os.environ.get('XDG_STATE_HOME', Path.home() / '.local/state')) / 'web-blink'
+    from .home import state_dir
+    return state_dir()
 
 
 def secure_state_directory(value=None) -> Path:
@@ -48,6 +45,8 @@ def report(state_dir=None):
               'git': {'available': shutil.which('git') is not None},
               'node': {'available': shutil.which('node') is not None},
               'unixTransport': {'available': unix_ok}}
+    from .home import home_dir, layout
+    paths, moving = layout(() if state_dir or os.environ.get('BLINK_STATE_DIR') else ('state',))
     state_ok = True
     try:
         path = secure_state_directory(state_dir)
@@ -70,5 +69,9 @@ def report(state_dir=None):
     return {'status': 'ok' if capabilities['runtime'] else 'degraded',
             'summary': 'Host capability report',
             'data': {'checks': checks, 'capabilities': capabilities,
-                     'stateDir': str(path) if path else None, 'preflight': preflight},
-            'warnings': [] if unix_ok else ['Local daemon transport is currently supported on POSIX hosts only.']}
+                     'homeDir': str(home_dir()), 'stateDir': str(path) if path else None,
+                     'configDir': os.environ.get('BLINK_CONFIG_DIR') or str(paths['config']),
+                     'privateDir': str(paths['private']), 'preflight': preflight},
+            'warnings': ([] if unix_ok else ['Local daemon transport is currently supported on POSIX hosts only.'])
+            + ([f"Web Blink data stays in its old folder until it can move to {home_dir()}: {moving['reason']}"]
+               if moving['status'] in ('deferred', 'failed') else [])}

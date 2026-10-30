@@ -235,7 +235,7 @@ def restart_legacy_daemon(state_dir=None, plugin_root=None):
                 pass
         if not _wait_lock_free(state):
             return {'status': 'not_restarted', 'summary': 'The old daemon did not stop', 'warnings': []}
-    result = request('doctor', state_dir=state, plugin_root=plugin_root)
+    result = request('doctor', state_dir=state_dir, plugin_root=plugin_root)  # a default folder may move first
     if result.get('status') not in ('ok', 'degraded'):
         return {'status': 'not_restarted', 'summary': 'The old daemon stopped but the current one did not start: '
                 + str(result.get('summary', '')), 'data': result.get('data'), 'warnings': result.get('warnings', [])}
@@ -263,6 +263,8 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
         if notice == 'restarted':
             sock.close()
             sock, notice, restarted = None, None, True
+            if not state_dir:  # the old daemon let go of its folder: a deferred move to ~/.web-blink happens now
+                state = secure_state_directory()
     if sock is None:
         sock = _start_daemon(state, plugin_root)
         if sock is None:
@@ -283,6 +285,8 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
         own = _own_identity(plugin_root)
         daemon = result['data'].get('daemon')
         result['data']['client'] = own
+        from .home import home_dir
+        result['data']['homeDir'] = str(home_dir())
         result['data']['daemonMatchesClient'] = isinstance(daemon, dict) and daemon.get('version') == own['version']
         if restarted:
             result['data']['daemonRestarted'] = True
