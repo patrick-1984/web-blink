@@ -131,6 +131,29 @@ class RecorderJavascriptTests(unittest.TestCase):
         self.assertIn('SECRET', json.dumps(result['vault']))
 
 
+    def test_popup_start_and_redirect_before_the_page_is_reported_are_recorded(self):
+        # Real Chrome: a popup's first navigation responses reach only the context, and frame() throws until
+        # Playwright knows the frame; they must be recorded once the popup turns out to be opened by the work tab.
+        result = self.record('''
+          const child=new EventEmitter();child.url=()=> 'https://app.example/landing';child.frames=()=>[];
+          child.opener=async()=>p;let known=false;const cf={page:()=>child};
+          const nav=url=>({url:()=>url,method:()=> 'GET',resourceType:()=> 'document',postData:()=>null,headers:()=>({}),
+            serviceWorker:()=>null,frame:()=>{if(!known)throw Error('Frame for this navigation request is not available');return cf;}});
+          ctx.emit('response',res(nav('https://app.example/popup-start')));
+          ctx.emit('response',{request:()=>({...nav('https://other.example/x'),frame:()=>({page:()=>({})})}),status:()=>200});
+          known=true;ctx.emit('page',child);await sleep(50);''')
+        self.assertEqual([r['url'] for r in result['records']], ['https://app.example/popup-start'])
+        self.assertEqual(result['listeners'], 0)
+
+    def test_form_and_query_secret_references_stay_readable(self):
+        result = self.record('''
+          const r={url:()=> 'https://app.example/cb?code_x=1&access_token=SECRET',method:()=> 'POST',resourceType:()=> 'document',
+            postData:()=> 'username=alice&password=hunter2',headers:()=>({})};
+          p.emit('response',{request:()=>r,status:()=>302,headers:()=>({})});await sleep(50);''')
+        record = result['records'][0]
+        self.assertRegex(record['requestBody'], r'^username=alice&password=<secret:\d+>$')
+        self.assertRegex(record['url'], r'access_token=<secret:\d+>$')
+
     def test_stop_waits_for_loading_bodies_and_secrets_are_blanked_before_cutting(self):
         result = self.record('''
           const big=JSON.stringify({password:'hunter2',access_token:'SECRET',filler:'x'.repeat(300000)});
