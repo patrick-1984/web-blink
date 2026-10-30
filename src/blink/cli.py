@@ -248,6 +248,10 @@ def run(args):
         data = export_schemas(Path(args.plugin_root), Path(destination)) if destination else schema_index(Path(args.plugin_root))
         return {'status': 'ok', 'summary': 'Bundled schema contract', 'data': data, 'warnings': []}
     if args.command == 'human':
+        if args.method == 'restart_daemon':  # a local process action, not a daemon method
+            confirm('restart_daemon', {}, args.yes)
+            from .client import restart_legacy_daemon
+            return restart_legacy_daemon(state_dir=args.state_dir, plugin_root=args.plugin_root)
         params = command_input(args)
         confirm(args.method, params, args.yes)
         return native_dispatch(args, args.method, params)

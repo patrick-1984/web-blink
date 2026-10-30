@@ -3,7 +3,7 @@
     {
       "bytes": 391,
       "path": ".claude-plugin/plugin.json",
-      "sha256": "7b3345b5905c91b6533da8098ed046e53a561785c9272c9da092f0f9b666b62b"
+      "sha256": "b296cc115327ac39b005a47b817879c290e2a61692e101469b66be415a9a552f"
     },
     {
       "bytes": 188,
@@ -16,9 +16,9 @@
       "sha256": "b645385b4fd24278a3688f278f3191d943140859723ef4e9a6ec6db9497ec0c5"
     },
     {
-      "bytes": 3721,
+      "bytes": 3859,
       "path": "README.md",
-      "sha256": "1886e050344d76ae752e42003c14ce45fa1da83d9b3b1041a9ca7ff99e5aa055"
+      "sha256": "ff36d5c0bb5706c4d3f58c5017f81286f2449d8159d5ea6ee6e40c6eef736b37"
     },
     {
       "bytes": 336,
@@ -63,7 +63,7 @@
     {
       "bytes": 12490,
       "path": "docs/runtime-guide.md",
-      "sha256": "5b4ca9959a123ff67b920b89997a3635d84a1f6dfaa961938a08aca5b006d18c"
+      "sha256": "3a6dc09fc015f26cd8b1fe6a716453a0a90c5b9e2661bafd398db8e9764ab663"
     },
     {
       "bytes": 7120,
@@ -81,9 +81,9 @@
       "sha256": "757e80ccb22573a0f5478c820e6a004ca37edd044aba8c0936909e9f8763abc1"
     },
     {
-      "bytes": 15946,
+      "bytes": 17071,
       "path": "mcp/server.mjs",
-      "sha256": "6a825b0cd8fff9ac53b7662ceb58dea703b4c58a63def7bf61932822d6d90c78"
+      "sha256": "ee94a086535eccba29affa808091c1407bbb19d0cb5972b5a9ad0980f9dc2e96"
     },
     {
       "bytes": 1858,
@@ -93,7 +93,7 @@
     {
       "bytes": 607,
       "path": "pyproject.toml",
-      "sha256": "89c9ba5a0013faa562330289ab1137692004b77dc1fbd83669f3f8c15ae0bcf5"
+      "sha256": "8027be9e89243cf403725176929c76cfe9b3cff7b1b023724121dff4c0f2aaee"
     },
     {
       "bytes": 12305,
@@ -156,14 +156,19 @@
       "sha256": "0e0f8dacbd8e64e2dcad8bd9a4d810dd2b4d8d806e236bcfea10d988931d9672"
     },
     {
-      "bytes": 3434,
+      "bytes": 4241,
       "path": "skills/blink-learn/SKILL.md",
-      "sha256": "cb1c4e71913231495c48f8aad88cb36c565048f3aa48b0dfaf1d80008d8b9d4e"
+      "sha256": "8c9610d318251ae54abf3f6c7d9997f93344c3adf659d513140aa9a70a6f9613"
     },
     {
       "bytes": 1144,
       "path": "skills/blink-review/SKILL.md",
       "sha256": "39f6e59d596b104130d382353f8153cb1f438ee4f6414538396c4c3483ff1be7"
+    },
+    {
+      "bytes": 3266,
+      "path": "skills/blink-troubleshoot/SKILL.md",
+      "sha256": "25e81686c621b750a74175e037a2c51b84b19b680469476b0573d6a9f01709c6"
     },
     {
       "bytes": 1279,
@@ -173,7 +178,7 @@
     {
       "bytes": 69,
       "path": "src/blink/__init__.py",
-      "sha256": "87dc3304d701febb4c3b14705bd7599f7bfaed0371edf232acb7b41017bb412f"
+      "sha256": "1a29d85b10f67e246d716651347159c8558067ef2cbce231ce536ebc5dd5a5c5"
     },
     {
       "bytes": 48,
@@ -181,9 +186,9 @@
       "sha256": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d"
     },
     {
-      "bytes": 6702,
+      "bytes": 7398,
       "path": "src/blink/approval.py",
-      "sha256": "b92caedcd6342f131e24b12cf252a07ce1b6d332d0381a0939e6d763ad8c5074"
+      "sha256": "987af48bcd5873a2a61b78f87f06e5aece6bc21b5649af734d105d3f5b513e4a"
     },
     {
       "bytes": 19918,
@@ -191,9 +196,9 @@
       "sha256": "971182cba7a5286b7115ef3d11bc5c77d66cf5f6c5df50c7f8c509744ecee839"
     },
     {
-      "bytes": 27052,
+      "bytes": 27510,
       "path": "src/blink/browser.py",
-      "sha256": "e4d80655474439cd592c8239e857461728b3d68fedee54c9ebba6b33c16f4a75"
+      "sha256": "f99a85961e217e0029eca96b7cdbaf3e1469064468fcb17a73f91e4f35dbb417"
     },
     {
       "bytes": 25502,
@@ -201,14 +206,14 @@
       "sha256": "5d8429a50ad4e075f35bb6a54175f373ea78ea7bd08e98132bd5dad172f616e4"
     },
     {
-      "bytes": 15695,
+      "bytes": 15989,
       "path": "src/blink/cli.py",
-      "sha256": "219d52ac1c681142b3fb963fe2bf957b0aa23b8c160e138227e5fa48eb9f7236"
+      "sha256": "169f0d188ec4b7d340a3a39efc45107936956952f5d36da0f14881422e2afb52"
     },
     {
-      "bytes": 7271,
+      "bytes": 15861,
       "path": "src/blink/client.py",
-      "sha256": "cb5486150b5abf7f96bc7f4a505a3faa0ba0b045053a389303ca3ab6a692f6ef"
+      "sha256": "b1f6a0005bc5d2eb6a07dcf1a697b9ef689da55b9a4b1927c52cf60bed0edac2"
     },
     {
       "bytes": 13098,
@@ -221,9 +226,9 @@
       "sha256": "c87308ce6200f679df3cb54834b237c5456e771a9d6ac934c67aacbdb2a13740"
     },
     {
-      "bytes": 9833,
+      "bytes": 12293,
       "path": "src/blink/daemon.py",
-      "sha256": "3fbbd7d922bc86f13ff655bfcd0d69e3104acd29ba999c9018b4bd0d206bfaee"
+      "sha256": "acf0f951158c28db1c89bccd65f4f5e3756c07df498b3c3c52b4f08db1ecfb27"
     },
     {
       "bytes": 336,
@@ -311,9 +316,9 @@
       "sha256": "79d3a1154f840f544c1bb16cd899eb3b14c90dfff20bbf4c7a28df1ae2026c22"
     },
     {
-      "bytes": 22106,
+      "bytes": 23007,
       "path": "src/blink/learner.py",
-      "sha256": "08c0882c0f44cb2a0b56ac7a0662609b6faa5c7bb4be213f67662df1e9e8e213"
+      "sha256": "26ead8074375e4ccc38cdb9071c7c3ea004c8af84e6c6eee0c515e53d88fa520"
     },
     {
       "bytes": 482,
@@ -372,6 +377,6 @@
     "license": "MIT",
     "name": "web-blink",
     "repository": "https://github.com/patrick-1984/web-blink",
-    "version": "0.2.7"
+    "version": "0.2.8"
   }
 }

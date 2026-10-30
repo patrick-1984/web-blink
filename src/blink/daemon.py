@@ -82,6 +82,12 @@ class Handler(socketserver.StreamRequestHandler):
     control = False
 
     def dispatch(self, raw):
+        if self.server.retiring.is_set():
+            return error('daemon_retiring', 'This daemon is shutting down for a newer version; call again')
+        if not self.control:
+            request = strict_json(raw)
+            if isinstance(request, dict) and request.get('method') == 'retire':
+                return self.retire(request.get('params'))
         if self.control:
             method, params, permit = parse_control_request(raw)
             if not consume_permit(self.server.runtime, method, params, permit):
@@ -94,7 +100,28 @@ class Handler(socketserver.StreamRequestHandler):
             return self.server.runtime.dispatch(method, params, human=True) if result is None else result
         method, params = parse_request(raw)
         result = self.server.extensions.dispatch(method, params, human=False) if self.server.extensions else None
-        return self.server.runtime.dispatch(method, params, human=False) if result is None else result
+        result = self.server.runtime.dispatch(method, params, human=False) if result is None else result
+        if (method == 'doctor' or method == 'admin' and params.get('action') == 'status') and isinstance(result, dict):
+            # Identity handshake: a newer client asks an older, idle daemon to retire.
+            learner = getattr(self.server.extensions, 'learner', None)
+            data = result.setdefault('data', {}) if isinstance(result.get('data', {}), dict) else {}
+            data['daemon'] = dict(self.server.identity, recording=bool(getattr(learner, 'running', None)))
+        return result
+
+    def retire(self, params):
+        """Step down for a newer client version. Runs under the call lock, so no request or scheduled job is in
+        flight; refuses while recording. After this, every request is refused until the process exits."""
+        from .client import _version
+        wanted = _version(params.get('ifOlderThan')) if isinstance(params, dict) else None
+        current = _version(self.server.identity['version'])
+        learner = getattr(self.server.extensions, 'learner', None)
+        if wanted is None or current is None or current >= wanted:
+            return error('not_older', 'This daemon is not older than the requested version')
+        if getattr(learner, 'running', None):
+            return error('recording', 'A recording is in progress; the daemon keeps running')
+        self.server.retiring.set()
+        threading.Thread(target=self.server.stop_all, daemon=True).start()
+        return {'status': 'ok', 'summary': 'Daemon retiring', 'warnings': []}
 
     def handle(self):
         self.request.settimeout(35)
@@ -172,10 +199,19 @@ def serve(state_dir=None, plugin_root=None):
         SourceManager(runtime)
         server = Server(str(socket_path), Handler)
         control_server = Server(str(control_path), ControlHandler)
+        retiring = threading.Event()
+        def stop_all():
+            server.shutdown()
+        from . import __version__
+        from .paths import plugin_root as locate_root
+        identity = {'version': __version__, 'pluginRoot': str(locate_root(plugin_root)), 'pid': os.getpid(),
+                    'startedAt': time.time()}
         shared_lock = threading.RLock()
         for instance, path in ((server, socket_path), (control_server, control_path)):
             os.chmod(path, 0o600)
             instance.runtime, instance.extensions, instance.call_lock = runtime, extensions, shared_lock
+            instance.identity = identity
+            instance.retiring, instance.stop_all = retiring, stop_all
         control_worker = threading.Thread(target=lambda: control_server.serve_forever(poll_interval=.2), daemon=True)
         control_worker.start()
         if extensions:
@@ -183,6 +219,8 @@ def serve(state_dir=None, plugin_root=None):
                 while not stopping.wait(1):
                     try:
                         with shared_lock:
+                            if retiring.is_set():
+                                continue  # checked under the lock: no scheduled work starts once retiring
                             extensions.tick()
                     except Exception:
                         pass  # Extension notifications record their own safe failures.

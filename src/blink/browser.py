@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.2.7'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.2.8'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -274,7 +274,7 @@ class BrowserBridge:
           if(p.__blinkCapture)throw Error('capture_already_running');
           const schema=(x,depth=0)=>depth>8?{}:x===null?{type:'null'}:Array.isArray(x)?{type:'array',items:x.length?schema(x[0],depth+1):{}}:
             typeof x==='object'?{type:'object',properties:Object.fromEntries(Object.values(x).slice(0,100).map((val,i)=>['field'+(i+1),schema(val,depth+1)]))}:{type:typeof x==='number'?'number':typeof x};
-          const records=[],missingOrigins=new Set(),assets={},shots=[];let overflow=false,incomplete=false,metadataBytes=0,shooting=null,shotTimer=null,last=null,assetsTruncated=false;
+          const records=[],missingOrigins=new Set(),assets={},shots=[];let overflow=false,incomplete=false,metadataBytes=0,shooting=null,shotTimer=null,last=null,assetsTruncated=false,shotErrors=0,lastShotError=null,shotsDropped=0;
           // Static files from any host (CDN, fonts, analytics) are counted per host; every other request is recorded.
           const STATIC=new Set(['image','font','stylesheet','media','script','manifest','texttrack']);
           const pageOf=url=>{try{const u=new URL(url);return u.origin+'/'+u.pathname.split('/').filter(Boolean).map((_,i)=>'{segment'+(i+1)+'}').join('/');}catch{return null;}};
@@ -283,10 +283,11 @@ class BrowserBridge:
           // An unchanged page (same pixels as the last shot) is not stored again.
           // Overlapping requests are queued (at most 10 waiting), never dropped.
           let queued=0;
-          const shoot=reason=>{if(shots.length+queued>=200||queued>=10)return shooting||Promise.resolve();queued++;
+          const shoot=reason=>{if(shots.length+queued>=200||queued>=10){shotsDropped++;return shooting||Promise.resolve();}queued++;
             const mark={afterRecord:records.length,t:Date.now(),reason,page:pageOf(p.url())};
             shooting=(shooting||Promise.resolve()).then(async()=>{try{const b=await p.screenshot({type:'jpeg',quality:50});const data=b.toString('base64');
-              if(b.length<=2097152&&data!==last){last=data;shots.push({index:shots.length,...mark,data});}}catch{}queued--;});
+              if(b.length>2097152)shotsDropped++;else if(data!==last){last=data;shots.push({index:shots.length,...mark,data});}}
+              catch(e){shotErrors++;lastShotError=String((e&&e.message)||e).slice(0,200);}queued--;});
             return shooting;};
           let pending=null;
           const later=reason=>{clearTimeout(shotTimer);pending=reason;shotTimer=setTimeout(()=>{pending=null;shoot(reason);},700);};
@@ -330,8 +331,10 @@ class BrowserBridge:
           }catch{}};
           p.__blinkCapture={records,listener,popup,worker,failed,serviceworker,navigated,submitting,missingOrigins,assets,shots,
             overflow:()=>overflow,incomplete:()=>incomplete,timer:()=>shotTimer,ticker,pending:()=>pending,inflight:()=>shooting,
-            assetsTruncated:()=>assetsTruncated,shoot,ui};p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
-          await shoot('start');return {recording:true};
+            assetsTruncated:()=>assetsTruncated,shoot,ui,errors:()=>({shotErrors,lastShotError,shotsDropped,shotsAbandoned:queued})};p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
+          // Prove screenshots work now, so a failure shows when recording starts, not after a long session.
+          await shoot('start');
+          return {recording:true,screenshots:shots.length?'enabled':'failed',screenshotError:lastShotError};
         ''')
 
     def capture_stop(self, binding):
@@ -350,7 +353,7 @@ class BrowserBridge:
           delete p.__blinkCapture;p.__blinkShots=capture.shots;
           return {records:capture.records,overflow:capture.overflow(),incomplete:capture.incomplete(),
             missingOrigins:[...capture.missingOrigins],assets:capture.assets,assetsTruncated:capture.assetsTruncated(),
-            screenshots:capture.shots.length};
+            screenshots:capture.shots.length,...capture.errors()};
         ''')
 
     def capture_shot(self, binding, index):

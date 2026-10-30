@@ -209,9 +209,16 @@ class Learner:
         if source not in origins:
             raise ValueError('Application origin is outside capture scope')
         self.browser.open(binding, url)
-        self.browser.capture_start(binding)
+        started = self.browser.capture_start(binding)
         self.running[binding] = origins
-        return {'binding': binding, 'recording': True}
+        # 'enabled' only when a real screenshot was just taken; anything else must be told to the user now.
+        state = started.get('screenshots') if isinstance(started, dict) else None
+        result = {'binding': binding, 'recording': True,
+                  'screenshots': state if state in ('enabled', 'failed') else 'unsupported'}
+        if result['screenshots'] != 'enabled':
+            error = started.get('screenshotError') if isinstance(started, dict) else None
+            result['screenshotError'] = str(error)[:200] if error else 'The browser did not return a screenshot'
+        return result
 
     def stop(self, binding):
         if binding not in self.running:
@@ -252,7 +259,11 @@ class Learner:
         extra = {'otherHosts': sorted({r['origin'] for r in records if not r['inScope']}),
                  'staticAssets': self._assets(data.get('assets')),
                  'screenshots': self._screenshots(binding, data.get('screenshots'), session_id),
-                 'assetsTruncated': bool(data.get('assetsTruncated'))}
+                 'assetsTruncated': bool(data.get('assetsTruncated')),
+                 'screenshotErrors': sum(data[k] for k in ('shotErrors', 'shotsDropped', 'shotsAbandoned')
+                                         if isinstance(data.get(k), int) and not isinstance(data.get(k), bool))}
+        if data.get('lastShotError'):
+            extra['lastScreenshotError'] = str(data['lastShotError'])[:200]
         if getattr(self, 'unsaved_screenshots', 0):
             extra['unsavedScreenshots'] = self.unsaved_screenshots
         session = self._save(records, 'shared-playwright', missing, reasons, session_id=session_id, extra=extra)

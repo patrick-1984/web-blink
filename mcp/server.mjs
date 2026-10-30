@@ -57,6 +57,22 @@ function doctor() {
   dependencyPolicy:'Doctor probes cached dependencies offline. Prepare pinned dependencies with the documented native setup command before runtime use; the MCP launcher stays offline.'},
   warnings:unix?[]:['Windows supports diagnostics; the current local runtime requires POSIX Unix sockets.']};
 }
+async function doctorWithDaemon(){
+ // Ask the daemon too: its handshake replaces an outdated one, and a version mismatch is reported here.
+ const local=doctor();
+ if(!local.data.capabilities.runtime)return local;
+ const remote=await backend('doctor',{});
+ if(!['ok','degraded'].includes(remote?.status)){
+  local.status='degraded';local.data.capabilities.runtime=false;local.data.daemonError={status:remote?.status??'unknown',summary:remote?.summary??''};
+  local.warnings.push('The local daemon is not reachable: '+(remote?.summary??'no answer'));return local;
+ }
+ local.data.daemon=remote?.data?.daemon??null;
+ local.data.client=remote?.data?.client??null;
+ local.data.daemonMatchesClient=remote?.data?.daemonMatchesClient===true;
+ if(!local.data.daemonMatchesClient)local.warnings.push('The local daemon does not match this plugin version: '+JSON.stringify(local.data.daemon?.version??'unknown')+' vs '+JSON.stringify(local.data.client?.version??'unknown')+'. Stop any recording, then call blink_doctor again to restart it.');
+ for(const w of remote?.warnings??[])local.warnings.push(w);
+ return local;
+}
 function backend(method,params,module=['blink.client'],timeout=45000) {
  return new Promise(resolve=>{
   const launch=launcher();
@@ -150,7 +166,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.2.7'},instructions:'Act on what the user asks without asking again in chat. Use blink_request_approval for host-confirmed actions: recording and other local steps run at once, actions with real effects get one Approve/Decline dialog for the human. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask, and ask them how to proceed instead of rushing ahead. Never ask the human to type shell commands unless the tool reports approval_unavailable.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.2.8'},instructions:'Act on what the user asks without asking again in chat. Use blink_request_approval for host-confirmed actions: recording and other local steps run at once, actions with real effects get one Approve/Decline dialog for the human. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask, and ask them how to proceed instead of rushing ahead. Never ask the human to type shell commands unless the tool reports approval_unavailable.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');
@@ -165,7 +181,7 @@ async function handle(message){
   if(!tool)return rpcError(id,-32602,'Unknown tool');
   const args=p.arguments??{};
   if(!validArguments(tool,args))return rpcError(id,-32602,'Invalid tool arguments');
-  const result=p.name==='blink_doctor'?doctor():p.name==='blink_request_approval'?await approval(args,id):await backend(methods.get(p.name),args);
+  const result=p.name==='blink_doctor'?await doctorWithDaemon():p.name==='blink_request_approval'?await approval(args,id):await backend(methods.get(p.name),args);
   return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large'].includes(result.status)}};
  }
  return rpcError(id,-32601,'Method not found');

@@ -24,7 +24,7 @@ METHODS = frozenset({
     'forget_capture', 'tools_add', 'tools_remove',
     'trust_pin', 'trust_unpin', 'health_enable', 'health_disable', 'health_clear',
     'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover', 'custody_forget',
-    'forget_service', 'purge_state',
+    'forget_service', 'purge_state', 'restart_daemon',
 })
 # Local, reversible actions with no effect on any web service: they run as soon as the user asks for
 # them (no dialog). Recording stays limited to the exact origins given; proposals stay quarantined.
@@ -37,6 +37,7 @@ TITLES = {
     'learn_propose': 'Stage a learned integration proposal', 'revoke': 'Revoke an account binding',
     'forget_service': 'Forget a service', 'purge_state': 'Purge local Web Blink state',
     'forget_capture': 'Clean up this capture session locally (Decline keeps it)',
+    'restart_daemon': 'Restart the outdated Web Blink daemon (a recording in progress would be lost)',
 }
 
 
@@ -60,6 +61,13 @@ def describe(method, params, *, state_dir=None, plugin_root=None):
     # CLI-only), and redacting would let a model hide an action's real target under a secret-like key.
     data = {'method': method, 'title': TITLES.get(method, method.replace('_', ' ').capitalize()),
             'parameters': params, 'exactParametersSha256': digest(params)}
+    if method == 'restart_daemon':
+        if params:
+            return {'status': 'forbidden', 'summary': 'restart_daemon takes no parameters', 'warnings': []}
+        from .client import _probe
+        from .doctor import secure_state_directory
+        running = _probe(secure_state_directory(state_dir))
+        context = {'runningDaemon': running if isinstance(running, dict) else (running or 'none')}
     if context is not None:
         data['context'] = context
     data['immediate'] = method in IMMEDIATE
@@ -79,6 +87,9 @@ def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None):
     params = strict_json(encoded(params))
     if digest(params) != expected_digest:
         return {'status': 'authorization_required', 'summary': 'Parameters differ from the approved dialog', 'warnings': []}
+    if method == 'restart_daemon':
+        from .client import restart_legacy_daemon
+        return restart_legacy_daemon(state_dir=state_dir, plugin_root=plugin_root)
     from .client import control_request
     return control_request(method, params, state_dir=state_dir, plugin_root=plugin_root)
 
