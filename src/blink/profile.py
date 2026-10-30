@@ -228,6 +228,22 @@ HOST_LABEL=re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
 PLACEHOLDER=re.compile(r'\{([^{}]*)\}')
 
 
+SECOND_LEVEL={'co','com','net','org','gov','edu','ac','ltd','plc','ne','or','go','gob','mil','nom','sch','biz','info'}
+# Hosts where each first label is a different owner's site: a variable in front of them could choose another site.
+SHARED_SUFFIXES={'github.io','gitlab.io','herokuapp.com','azurewebsites.net','cloudfront.net','vercel.app','netlify.app',
+                 'pages.dev','workers.dev','appspot.com','firebaseapp.com','web.app','blogspot.com','amazonaws.com',
+                 'onrender.com','fly.dev','ngrok.io','ngrok-free.app','glitch.me','repl.co','trycloudflare.com'}
+
+
+def _registrable_length(fixed):
+    """How many literal labels a fixed domain needs so that it names one registrable site: two (example.com), three
+    behind a country second level (example.co.uk) or a shared hosting suffix (team.github.io)."""
+    if len(fixed)>=2 and ('.'.join(fixed[-2:]).lower() in SHARED_SUFFIXES or
+                          len(fixed[-1])==2 and fixed[-2].lower() in SECOND_LEVEL):
+        return 3
+    return 2
+
+
 def _fill_host(url,declared,values,missing):
     """Fill {name} host labels of one server URL or origin. A placeholder must be a whole host label in front of a
     fixed registrable domain (at least two literal labels), so a private value can choose a tenant, never a site."""
@@ -235,7 +251,10 @@ def _fill_host(url,declared,values,missing):
     scheme,sep,rest=url.partition('://')
     host=rest.split('/',1)[0].split(':',1)[0]
     labels=host.split('.')
-    if not sep or len(labels)<3 or any(PLACEHOLDER.search(x) for x in labels[-2:]) or rest.count('{')!=sum(bool(PLACEHOLDER.fullmatch(x)) for x in labels):
+    last=max((i for i,x in enumerate(labels) if PLACEHOLDER.fullmatch(x)),default=-1)
+    fixed=labels[last+1:]
+    if (not sep or not all(labels) or len(fixed)<_registrable_length(fixed)
+            or rest.count('{')!=sum(bool(PLACEHOLDER.fullmatch(x)) for x in labels)):
         raise BlinkError('invalid_manifest','A server variable must be a whole host label in front of a fixed domain, such as https://{tenant}.example.com')
     out=[]
     for label in labels:

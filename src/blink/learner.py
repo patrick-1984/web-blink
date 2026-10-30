@@ -1156,9 +1156,9 @@ class Learner:
             for key in ('operationId', 'summary'):  # names built from a URL can hold the value too
                 if isinstance(selection.get(key), str):
                     for lower, kind, original in sorted(hints.items(), key=lambda h: -len(h[0])):
-                        if lower in selection[key].lower():
+                        if specifics.contains(selection[key], lower):
                             label = (kind or 'specific')[0].upper() + (kind or 'specific')[1:]
-                            renamed = re.sub(re.escape(lower), label, selection[key], flags=re.I)
+                            renamed = specifics.replace(selection[key], lower, label)
                             if key == 'operationId':
                                 renames[selection[key]] = renamed
                             selection[key] = renamed
@@ -1173,13 +1173,20 @@ class Learner:
                         kind = hints.kind(value) if value else None
                         if kind and (slot == segment or re.fullmatch(r'\{[A-Za-z0-9_]+\}', slot)):
                             name = variable(value, kind)
+                            # The path parameter gets its own name (never a query, header or another path name);
+                            # x-blink-variable links it to the private variable.
+                            taken = set(re.findall(r'\{([A-Za-z0-9_]+)\}', '/'.join(shape))) | {
+                                q for q in selection.get('queryNames') or [] if isinstance(q, str)} | {
+                                x.get('name') for x in selection.get('parameters') or [] if isinstance(x, dict)}
+                            taken.discard(slot[1:-1] if slot != segment else None)
+                            parameter_name = specifics.variable_name(name, taken)
                             if slot != segment:
                                 old = slot[1:-1]
                                 for parameter in selection.get('parameters') or []:
                                     if isinstance(parameter, dict) and parameter.get('name') == old and parameter.get('in') == 'path':
-                                        parameter['name'] = name
-                            shape[position] = '{' + name + '}'
-                            marks[(('path', name))] = name
+                                        parameter['name'] = parameter_name
+                            shape[position] = '{' + parameter_name + '}'
+                            marks[('path', parameter_name)] = name
                     template = '/'.join(shape)
                     selection['path'] = template
             for name, value in parse_qsl(parts.query, keep_blank_values=True):
@@ -1187,6 +1194,10 @@ class Learner:
                 if kind:
                     marks[('query', name)] = variable(value, kind)
             body = specifics._parsed_body(item.get('requestBody'), specifics._media(item))
+            recorded = records[selection['index']].get('requestSchema')
+            if 'requestSchema' not in selection and isinstance(recorded, dict) and recorded \
+                    and records[selection['index']]['method'] not in ('GET', 'HEAD'):
+                selection['requestSchema'] = copy.deepcopy(recorded)  # the schema propose would fall back to
             schema = selection.get('requestSchema')
             if isinstance(body, dict) and isinstance(schema, dict) and isinstance(schema.get('properties'), dict):
                 for field, value in body.items():
@@ -1339,11 +1350,20 @@ class Learner:
                                           'note': 'The Blink name holds a specific value; propose again under the suggested '
                                                   'name unless the user chose this name'}} if name_hits else {}),
                       'findings': [f for f in findings if not f['exact']][:50]}
-            if values:  # the user's own values go to the private Blink, never into the shared Blink
-                from . import private
-                private.set_private(private.blink_name(service), {'variables': values})
-        result = self.runtime.install_manifest(document, source, service,
+        stored, new_values = {}, {}
+        if values:
+            from . import private
+            stored = private.variables(private.blink_name(service))
+            # A value the user already keeps wins (an active Blink may use it); a different recorded value is
+            # reported, never written over it.
+            new_values = {k: v for k, v in values.items() if k not in stored}
+            conflicts = {k: {'kept': stored[k], 'recorded': v} for k, v in values.items() if k in stored and stored[k] != v}
+            if conflicts and review is not None:
+                review['conflicts'] = conflicts
+        result = self.runtime.install_manifest(document, source, service, variables={**stored, **new_values} if values else None,
                                                provenance={'capture': session, 'verified': False})
+        if new_values:  # only after the Blink was staged: the user's own values go to the private Blink
+            private.set_private(private.blink_name(service), {'variables': new_values})
         out = {'proposal': result, 'manifest': document, 'verified': False}
         if review is not None:
             out['specifics'] = review
@@ -1364,8 +1384,10 @@ class Learner:
             return origin
         scheme, _, rest = origin.partition('://')
         host, sep, port = rest.partition(':')
+        from .profile import _registrable_length
         labels = host.split('.')
-        for position, label in enumerate(labels[:-2]):
+        keep = max(_registrable_length(labels), 2)
+        for position, label in enumerate(labels[:-keep]):
             if label.lower() in hosts:
                 labels[position] = '{' + hosts[label.lower()] + '}'
         return scheme + '://' + '.'.join(labels) + sep + port
