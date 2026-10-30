@@ -122,7 +122,10 @@ class Extensions:
                 return reply({key: canary.get(key) for key in ('id', 'service', 'binding', 'state')},
                              'Canary routing metadata')
             if action == 'review' and (params.get('session') or self.store.get('captures', params.get('id'))):
-                return reply(self.learner.review(params.get('session', params.get('id'))), 'Redacted capture review')
+                offset = params.get('offset') if isinstance(params.get('offset'), int) and params.get('offset') >= 0 else 0
+                limit = params.get('limit') if isinstance(params.get('limit'), int) and 1 <= params.get('limit') <= 200 else 50
+                return reply(self.learner.summary(self.learner.review(params.get('session', params.get('id'))), offset, limit),
+                             'Capture review (one page of requests)')
             if action == 'review' and params.get('id'):
                 params = {**params, 'candidate': params['id']}
                 return self.runtime.dispatch('admin', params)
@@ -315,7 +318,7 @@ class Extensions:
 
     def tick(self):
         try:
-            self.learner.tick()  # write running recordings to their session folders every few seconds
+            self.learner.recover_once()  # sessions a previous daemon left 'recording' are finalized from disk
         except Exception:
             pass
         if not self.started:
@@ -358,6 +361,7 @@ class Extensions:
             self.store.put('canaries', canary['id'], canary)
 
     def close(self):
+        self.learner.close()
         self.browser.close()
 
 

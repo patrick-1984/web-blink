@@ -31,9 +31,16 @@ def _private_write(path, text, mode='w'):
 
 
 def path_template(path):
-    """The real path with id-like segments (numbers, UUIDs, long tokens, emails) as {id}."""
-    parts = [x for x in str(path or '').split('/') if x][:100]
-    return '/' + '/'.join('{id}' if DYNAMIC_SEGMENT.match(x) else x for x in parts)
+    """The real path with id-like segments (numbers, UUIDs, long tokens, emails) as {id}, {id2}, ...; slashes,
+    including a trailing one, are kept exactly."""
+    count, out = 0, []
+    for part in str(path or '/').split('/'):
+        if part and DYNAMIC_SEGMENT.match(part):
+            count += 1
+            out.append('{id}' if count == 1 else '{id%d}' % count)
+        else:
+            out.append(part)
+    return '/'.join(out) or '/'
 
 
 def named_types(value, depth=0):
@@ -198,8 +205,10 @@ def metadata(entry):
 
 class Learner:
     def __init__(self, runtime, browser=None):
+        import threading
         self.runtime, self.store, self.browser = runtime, runtime.store, browser
         self.running = {}
+        self.lock = threading.RLock()  # recording state; never the daemon's global request lock
 
     def _save(self, records, source, missing=(), reasons=(), *, session_id=None, extra=None):
         session = {'id': session_id or uuid.uuid4().hex, 'createdAt': time.time(), 'source': source,
@@ -247,13 +256,22 @@ class Learner:
         source = canonical_origin(f'{parsed.scheme}://{parsed.netloc}', allow_http=True)
         if source not in origins:
             raise ValueError('Application origin is outside capture scope')
-        self.browser.open(binding, url)
-        started = self.browser.capture_start(binding)
+        # The session folder comes first; if the browser part fails, the folder is marked failed and nothing runs.
+        run = self._open_session(binding, url, origins, 'starting')
+        try:
+            self.browser.open(binding, url)
+            started = self.browser.capture_start(binding)
+        except Exception:
+            self._abandon(run, 'start_failed')
+            raise
         # 'enabled' only when a real screenshot was just taken; anything else must be told to the user now.
         state = started.get('screenshots') if isinstance(started, dict) else None
         state = state if state in ('enabled', 'failed') else 'unsupported'
-        run = self._open_session(binding, url, origins, state)
-        self.running[binding] = run
+        run['screenshots'] = run['meta']['screenshots'] = state
+        _private_write(run['folder'] / 'meta.json', json.dumps(run['meta'], indent=2))
+        with self.lock:
+            self.running[binding] = run
+        self._ensure_collector()
         result = {'binding': binding, 'recording': True, 'screenshots': state, 'session': run['session'],
                   'folder': str(run['folder'])}
         if state != 'enabled':
@@ -298,6 +316,36 @@ class Learner:
         self._write_index(run)
         return run
 
+    def _abandon(self, run, reason):
+        try:
+            meta = dict(run['meta'], status=reason)
+            _private_write(run['folder'] / 'meta.json', json.dumps(meta, indent=2))
+            self.store.put('captures', run['session'], {'id': run['session'], 'createdAt': run['startedAt'],
+                                                         'source': 'shared-playwright', 'status': reason, 'records': [],
+                                                         'folder': str(run['folder'])})
+        except Exception:
+            pass
+
+    def _ensure_collector(self):
+        """Recordings are written to disk by a background thread, outside the daemon's request lock, so a slow
+        browser never blocks other calls."""
+        import threading
+        if getattr(self, '_collector', None) and self._collector.is_alive():
+            return
+        def loop():
+            while not self._stop_collector.wait(3):
+                try:
+                    self.tick()
+                except Exception:
+                    pass
+        self._stop_collector = threading.Event()
+        self._collector = threading.Thread(target=loop, daemon=True, name='blink-recording-collector')
+        self._collector.start()
+
+    def close(self):
+        if getattr(self, '_collector', None):
+            self._stop_collector.set()
+
     def _run(self, binding):
         run = self.running[binding]
         if not isinstance(run, dict):  # an origin list from older callers: open the session folder now
@@ -334,7 +382,10 @@ class Learner:
                     handle.write(image)
                 lines.append(json.dumps({'file': name, 'afterRecord': shot.get('afterRecord'), 'time': (shot.get('t') or 0) / 1000,
                                          'reason': str(shot.get('reason', ''))[:100], 'page': shot.get('page')}) + '\n')
+            except OSError:
+                raise  # disk problems: the batch is not acknowledged and is sent again
             except Exception:
+                run['shotWriteErrors'] = run.get('shotWriteErrors', 0) + 1
                 continue
         if lines:
             _private_write(run['folder'] / 'screenshots.jsonl', ''.join(lines), 'a')
@@ -346,22 +397,40 @@ class Learner:
         return bool(data.get('more'))
 
     def drain(self, binding, *, rounds=5):
-        run = self._run(binding)
-        fetch = getattr(self.browser, 'capture_drain', None)
-        if not callable(fetch):
-            return False
-        more = True
-        while more and rounds > 0:
-            rounds -= 1
-            more = self._persist(run, fetch(binding) or {})
-        return more
+        """Fetch batches and write them; a batch is acknowledged (and freed in the tab) only after it is on
+        disk, and a batch sent twice is written once."""
+        with self.lock:
+            run = self._run(binding)
+            fetch = getattr(self.browser, 'capture_drain', None)
+            if not callable(fetch):
+                return False
+            more = True
+            while more and rounds > 0:
+                rounds -= 1
+                try:
+                    data = fetch(binding, run.get('saved')) or {}
+                except TypeError:
+                    data = fetch(binding) or {}
+                batch = data.get('batch')
+                if batch is not None and batch == run.get('saved'):
+                    more = bool(data.get('more'))
+                    continue
+                more = self._persist(run, data)
+                run['saved'] = batch
+                run['lastSuccessfulDrain'] = time.time()
+                if data.get('running') is False and binding in self.running:
+                    run['recorderAlive'] = False
+            return more
 
     def tick(self, now=None):
         """Called by the daemon about every second: drain each recording to disk every 3 seconds."""
         now = time.time() if now is None else now
+        if not getattr(self, '_recovered', False):
+            self._recovered = True
+            self.recover_interrupted()
         for binding in list(self.running):
             run = self._run(binding)
-            if now - run['lastDrain'] < 3:
+            if now - run['lastDrain'] < 2.5:
                 continue
             run['lastDrain'] = now
             try:
@@ -372,7 +441,7 @@ class Learner:
                 self._write_index(run)
 
     def status(self):
-        """Deterministic recording status for the status tool: what is on disk right now, per session."""
+        """Deterministic recording status: what is on disk right now, with explicit reasons when it is not healthy."""
         now, running = time.time(), []
         for binding in list(self.running):
             run = self._run(binding)
@@ -381,30 +450,89 @@ class Learner:
             if (run['folder'] / 'requests.jsonl').exists():
                 with (run['folder'] / 'requests.jsonl').open() as handle:
                     requests_on_disk = sum(1 for _ in handle)
+            counters, reasons = run.get('counters') or {}, []
+            if run['screenshots'] != 'enabled':
+                reasons.append(f"screenshots are {run['screenshots']}")
+            if run.get('recorderAlive') is False:
+                reasons.append('the recorder in the browser tab is no longer running (tab closed or reloaded away?)')
+            if run['drainErrors']:
+                reasons.append(f"writing failed {run['drainErrors']} time(s): {run['lastDrainError']}")
+            last_ok = run.get('lastSuccessfulDrain') or run['startedAt']
+            if now - last_ok > 15:
+                reasons.append(f'nothing was saved for {round(now - last_ok)} s')
+            if counters.get('overflow'):
+                reasons.append('the browser buffer overflowed; some requests were not kept')
+            lost = sum(counters.get(k, 0) for k in ('shotErrors', 'shotsDropped') if isinstance(counters.get(k), int)) + run.get('shotWriteErrors', 0)
+            if lost:
+                reasons.append(f'{lost} screenshot(s) failed or were dropped')
+            if run['screenshots'] == 'enabled' and not shots_on_disk and now - run['startedAt'] > 15:
+                reasons.append('no screenshot file on disk yet')
             running.append({'blink': binding, 'session': run['session'], 'folder': str(run['folder']),
                             'recordingFor': round(now - run['startedAt']), 'screenshots': run['screenshots'],
                             'requestsOnDisk': requests_on_disk, 'screenshotsOnDisk': shots_on_disk,
-                            'secondsSinceLastWrite': round(now - run['lastWrite']), 'drainErrors': run['drainErrors'],
-                            'lastDrainError': run['lastDrainError'],
-                            'healthy': run['screenshots'] == 'enabled' and run['drainErrors'] == 0 and shots_on_disk > 0})
+                            'secondsSinceLastSave': round(now - last_ok), 'drainErrors': run['drainErrors'],
+                            'lastDrainError': run['lastDrainError'], 'healthy': not reasons, 'problems': reasons})
         recent = sorted(self.store.list('captures'), key=lambda c: c.get('createdAt', 0), reverse=True)[:5]
         return {'recording': running, 'recentSessions': [
             {'session': c.get('id'), 'status': c.get('status'), 'folder': c.get('folder'),
              'requests': len(c.get('records') or []), 'screenshots': len(c.get('screenshots') or [])} for c in recent]}
 
+    def _rebuild_run(self, row):
+        """A recording known only from its session folder (tab lost, daemon restarted)."""
+        folder = Path(row['folder'])
+        meta = json.loads((folder / 'meta.json').read_text())
+        requests = 0
+        if (folder / 'requests.jsonl').exists():
+            with (folder / 'requests.jsonl').open() as handle:
+                requests = sum(1 for _ in handle)
+        return {'session': row['id'], 'folder': folder, 'origins': meta.get('origins') or [], 'meta': meta,
+                'requests': requests, 'shots': len(list((folder / 'screenshots').glob('*.jpg'))),
+                'startedAt': row.get('createdAt') or time.time(), 'lastDrain': 0.0, 'lastWrite': time.time(),
+                'drainErrors': 0, 'lastDrainError': None, 'counters': {}, 'screenshots': meta.get('screenshots', 'unknown')}
+
+    def recover_interrupted(self):
+        """Sessions left 'recording' by a previous daemon are finalized from their files as interrupted."""
+        active = {run['session'] for run in self.running.values() if isinstance(run, dict)}
+        for row in self.store.list('captures'):
+            if row.get('status') in ('recording', 'starting') and row.get('folder') and row.get('id') not in active:
+                try:
+                    self._close_session(self._rebuild_run(row), interrupted='the daemon restarted during the recording')
+                except Exception:
+                    continue
+
+    def recover_once(self):
+        if not getattr(self, '_recovered', False):
+            self._recovered = True
+            self.recover_interrupted()
+
     def stop(self, binding):
+        with self.lock:
+            return self._stop(binding)
+
+    def _stop(self, binding):
         if binding not in self.running:
-            raise ValueError('Capture is not running in this process')
+            # Saved but no longer live (daemon restarted): finalize what is on disk.
+            rows = [r for r in self.store.list('captures') if r.get('status') in ('recording', 'starting')
+                    and str(r.get('id', '')).startswith(binding + '-') and r.get('folder')]
+            if not rows:
+                raise ValueError('No recording is running for this blink')
+            row = max(rows, key=lambda r: r.get('createdAt', 0))
+            return self._close_session(self._rebuild_run(row), interrupted='the recording was no longer running')
         run = self._run(binding)
-        data = self.browser.capture_stop(binding) or {}
+        try:
+            data = self.browser.capture_stop(binding) or {}
+        except Exception as exc:  # tab closed or browser gone: keep everything already saved
+            self.running.pop(binding, None)
+            return self._close_session(run, interrupted=f'the browser tab was not available at stop: {str(exc)[:120]}')
         if isinstance(data.get('records'), list):  # recorders that hand everything over at stop
             self._persist(run, {'records': data['records'], 'counters': data})
         run['counters'] = {**run.get('counters', {}), **{k: v for k, v in data.items() if k not in ('records',)}}
         deadline = time.monotonic() + 60
         try:
             while callable(getattr(self.browser, 'capture_drain', None)) and time.monotonic() < deadline:
-                if not self.drain(binding, rounds=1):
+                if not self.drain(binding, rounds=1) and not data.get('bodiesStillLoading'):
                     break
+                data['bodiesStillLoading'] = 0
         except Exception as exc:
             run['drainErrors'] += 1
             run['lastDrainError'] = str(exc)[:200]
@@ -420,7 +548,7 @@ class Learner:
         self.running.pop(binding, None)
         return self._close_session(run, legacy)
 
-    def _close_session(self, run, legacy_shots=()):
+    def _close_session(self, run, legacy_shots=(), interrupted=None):
         counters, records, other = run.get('counters') or {}, [], set()
         with (run['folder'] / 'requests.jsonl').open() as handle:
             for line in handle:
@@ -440,6 +568,8 @@ class Learner:
                 pass
         reasons = ['capture_limit_or_incomplete'] if counters.get('overflow') or counters.get('truncated') or (
             counters.get('incomplete') and not missing) else []
+        if interrupted:
+            reasons.append('interrupted: ' + interrupted)  # saved data kept; accept_partial to use it
         shots = []
         with (run['folder'] / 'screenshots.jsonl').open() as handle:
             for line in handle:
@@ -461,12 +591,30 @@ class Learner:
             extra['unsavedScreenshots'] = self.unsaved_screenshots
         if run['drainErrors']:
             extra['drainErrors'], extra['lastDrainError'] = run['drainErrors'], run['lastDrainError']
+        if interrupted:
+            extra['interrupted'] = interrupted
+        if run.get('shotWriteErrors'):
+            extra['screenshotErrors'] += run['shotWriteErrors']
         session = self._save(records, 'shared-playwright', missing, reasons, session_id=run['session'], extra=extra)
         _private_write(run['folder'] / 'session.json', json.dumps(session, indent=2))
         meta = dict(run['meta'], status='stopped', stoppedAt=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
         _private_write(run['folder'] / 'meta.json', json.dumps(meta, indent=2))
         self._write_index(run, status=session['status'])
-        return session
+        return self.summary(session)
+
+    @staticmethod
+    def summary(session, offset=0, limit=50):
+        """A bounded view of a session: all counters, one page of the request catalog."""
+        records = session.get('records') or []
+        view = {k: v for k, v in session.items() if k not in ('records', 'screenshots')}
+        view['requests'] = len(records)
+        view['records'] = records[offset:offset + limit]
+        view['recordsOffset'], view['recordsShown'] = offset, len(view['records'])
+        view['screenshotCount'] = len(session.get('screenshots') or [])
+        view['screenshots'] = (session.get('screenshots') or [])[:200]
+        if offset + limit < len(records):
+            view['more'] = 'blink_admin review with session, offset and limit shows the next records'
+        return view
 
     @staticmethod
     def _catalog_record(item, origins):
@@ -494,14 +642,18 @@ class Learner:
                                                 ('application/json', 'application/x-www-form-urlencoded') else None)
         shape = named_types(item.get('requestSchema'))
         body = item.get('requestBody')
-        if isinstance(body, str) and body:
-            try:
-                shape = named_shape(json.loads(body))
-            except ValueError:
+        # Field names come only from a parsed JSON or form body; anything else (text, truncated or broken JSON)
+        # gives no schema, so a value can never turn into a field name.
+        if isinstance(body, str) and body and not item.get('requestBodyTruncated'):
+            if media == 'application/json':
+                try:
+                    shape = named_shape(json.loads(body))
+                except ValueError:
+                    shape = {}
+            elif media == 'application/x-www-form-urlencoded':
                 from urllib.parse import parse_qsl
                 pairs = parse_qsl(body, keep_blank_values=True)
-                if pairs:
-                    shape = {'type': 'object', 'properties': {k[:100]: {'type': 'string'} for k, _ in pairs[:100]}}
+                shape = {'type': 'object', 'properties': {k[:100]: {'type': 'string'} for k, _ in pairs[:100]}} if pairs else {}
         from urllib.parse import parse_qsl
         query = [k for k, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)]
         return {'seq': item.get('seq'), 'method': method.upper(), 'origin': source, 'path': path,

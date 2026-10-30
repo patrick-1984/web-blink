@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.3.0'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.3.1'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -280,7 +280,9 @@ class BrowserBridge:
           let seq=0,shotSeq=0,bufferBytes=0,overflow=false,incomplete=false,failedRequests=0,workers=0,serviceWorker=false;
           let shooting=null,shotTimer=null,last=null,assetsTruncated=false,shotErrors=0,lastShotError=null,shotsDropped=0,queued=0,pending=null;
           const STATIC=new Set(['image','font','stylesheet','media','script','manifest','texttrack']);
-          const SECRET_HEADER=/^(cookie|set-cookie|authorization|proxy-authorization|x-api-key|x-auth-token)$/i;
+          const SECRET_HEADER=/^(cookie|set-cookie|authorization|proxy-authorization|x-api-key|x-auth-token|x-csrf-token|x-xsrf-token|x-csrftoken)$/i;
+          const SECRET_QUERY=/^(access_token|refresh_token|id_token|token|auth|api_key|apikey|client_secret|password|code_verifier|sig|signature)$/i;
+          const cleanUrl=href=>{try{const u=new URL(href);for(const k of [...u.searchParams.keys()])if(SECRET_QUERY.test(k))u.searchParams.set(k,'<redacted>');return u.href;}catch{return href;}};
           const SECRET_FIELD=/^(password|passwd|pwd|pass|passcode|client_secret|current_password|new_password|access_token|refresh_token|id_token)$/i;
           const LIMIT=262144;
           const pageOf=url=>{try{const u=new URL(url);return u.origin+u.pathname;}catch{return null;}};
@@ -291,7 +293,10 @@ class BrowserBridge:
             try{if(/^[^\s=&]+=[^\s]*$/.test(text)||/&/.test(text)&&!/\s/.test(text)){const q=new URLSearchParams(text);let hit=false;
               for(const k of [...q.keys()])if(SECRET_FIELD.test(k)){q.set(k,'<redacted>');hit=true;}if(hit)return q.toString();}}catch{}
             return text;};
-          const cut=t=>typeof t==='string'&&t.length>LIMIT?t.slice(0,LIMIT):t;
+          // Redact the whole body first, then cut it; a body that cannot be redacted reliably is not kept.
+          const keep=t=>{if(typeof t!=='string')return [t,false];const clean=scrub(t);
+            if(clean===t&&t.length>LIMIT&&/pass|secret|token|auth/i.test(t))return ['<omitted: large body with credential-like fields that could not be redacted>',true];
+            return clean.length>LIMIT?[clean.slice(0,LIMIT),true]:[clean,false];};
           // Screenshots: labels taken when requested; queued (10 waiting), never dropped silently; unchanged pixels skipped.
           const shoot=reason=>{if(shotSeq+queued>=1000||queued>=10){shotsDropped++;return shooting||Promise.resolve();}queued++;
             const mark={afterRecord:seq,t:Date.now(),reason,page:pageOf(p.url())};
@@ -317,25 +322,29 @@ class BrowserBridge:
           const failed=()=>{failedRequests++;};
           const serviceworker=w=>{try{if(new URL(w.url()).origin===new URL(p.url()).origin)serviceWorker=true;}catch{}};
           p.on('popup',popup);p.on('worker',worker);p.on('requestfailed',failed);p.context().on('serviceworker',serviceworker);
-          const listener=async response=>{try{
+          const pendingBodies=new Set();
+          const listener=response=>{const job=record(response);pendingBodies.add(job);job.finally(()=>pendingBodies.delete(job));};
+          const record=async response=>{try{
             const req=response.request(),u=new URL(req.url());if(!['http:','https:'].includes(u.protocol))return;
             const type=typeof req.resourceType==='function'?req.resourceType():'other';
             if(STATIC.has(type)){const key=u.origin+' '+type;if(key in assets||Object.keys(assets).length<500)assets[key]=(assets[key]||0)+1;else assetsTruncated=true;return;}
             if(bufferBytes>20971520){overflow=true;return;}  // only if the daemon stopped draining
             const raw=typeof req.postData==='function'?req.postData():null;
             const responseHeaders=typeof response.headers==='function'?response.headers():{};
-            let body=null,bodyCut=false;
+            const at=++seq,when=Date.now();
+            let body=null,bodyCut=false,bodyNote=null;
             if(/json|text|xml|html|javascript|form/.test(responseHeaders['content-type']||'')&&typeof response.text==='function'){
-              try{const t=await response.text();bodyCut=t.length>LIMIT;body=scrub(cut(t));}catch{}}
-            const record={seq:++seq,t:Date.now(),method:req.method(),url:u.href,origin:u.origin,path:u.pathname,status:response.status(),
-              resourceType:type,requestHeaders:headersOf(req.headers()),requestBody:raw==null?null:scrub(cut(raw)),
-              requestBodyTruncated:raw!=null&&raw.length>LIMIT,responseHeaders:headersOf(responseHeaders),responseBody:body,responseBodyTruncated:bodyCut};
-            bufferBytes+=JSON.stringify(record).length;records.push(record);
-            later('after '+record.method+' '+(pageOf(req.url())||''));
+              try{[body,bodyCut]=keep(await response.text());}catch(e){bodyNote='body unavailable';}}
+            const [requestBody,requestCut]=raw==null?[null,false]:keep(raw);
+            const item={seq:at,t:when,method:req.method(),url:cleanUrl(u.href),origin:u.origin,path:u.pathname,status:response.status(),
+              resourceType:type,requestHeaders:headersOf(req.headers()),requestBody,requestBodyTruncated:requestCut,
+              responseHeaders:headersOf(responseHeaders),responseBody:body,responseBodyTruncated:bodyCut,responseBodyNote:bodyNote};
+            bufferBytes+=JSON.stringify(item).length;records.push(item);
+            later('after '+item.method+' '+(pageOf(req.url())||''));
           }catch{}};
           const counters=()=>({seq,overflow,incomplete,failedRequests,workers,serviceWorker,assets,assetsTruncated,
             missingOrigins:[...missingOrigins],shotErrors,lastShotError,shotsDropped,shotsAbandoned:queued});
-          p.__blinkCapture={records,shots,listener,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
+          p.__blinkCapture={records,shots,listener,pendingBodies,popup,worker,failed,serviceworker,navigated,submitting,ui,ticker,counters,shoot,
             timer:()=>shotTimer,pending:()=>pending,inflight:()=>shooting,drained:n=>{bufferBytes=Math.max(0,bufferBytes-n);}};
           p.on('response',listener);p.on('framenavigated',navigated);p.on('request',submitting);p.on('console',ui);
           // Prove screenshots work now, so a failure shows when recording starts, not after a long session.
@@ -343,18 +352,26 @@ class BrowserBridge:
           return {recording:true,screenshots:shots.length?'enabled':'failed',screenshotError:lastShotError};
         ''')
 
-    def capture_drain(self, binding):
-        """Hand over what was recorded since the last call (about 3.5 MB at most) and free it in the tab."""
+    def capture_drain(self, binding, ack=None):
+        """Hand over the next batch (encoded size about 3 MB). A batch stays in the tab until the caller
+        acknowledges it was saved (ack = its id), and is sent again if it was not."""
         owner = self.owners.get(binding)
         if not owner:
             raise BrowserUnavailable('Owned capture tab unavailable')
         return self._run_owned(owner, r'''
           const c=p.__blinkCapture||p.__blinkFinal;if(!c)return {running:false,records:[],shots:[],more:false};
-          const take=(list,limit)=>{const out=[];let size=0;
-            while(list.length){const n=JSON.stringify(list[0]).length;if(out.length&&size+n>limit)break;out.push(list.shift());size+=n;}return [out,size];};
-          const [records,size]=take(c.records,2000000);c.drained(size);const [shots]=take(c.shots,1500000);
-          return {running:!!p.__blinkCapture,records,shots,more:c.records.length>0||c.shots.length>0,counters:c.counters()};
-        ''')
+          if(c.batch&&v.payload.ack===c.batch.id)c.batch=null;
+          if(!c.batch){
+            // Budget by the doubly encoded size (the result travels as JSON text inside JSON) to stay under 4 MB.
+            const size=x=>JSON.stringify(JSON.stringify(x)).length;
+            const take=(list,limit)=>{const out=[];let used=0;
+              while(list.length){const n=size(list[0]);if(out.length&&used+n>limit)break;out.push(list.shift());used+=n;}return [out,used];};
+            const [records,used]=take(c.records,1600000);c.drained(used);const [shots]=take(c.shots,1600000);
+            c.batch={id:(c.batchSeq=(c.batchSeq||0)+1),records,shots};
+          }
+          return {running:!!p.__blinkCapture,batch:c.batch.id,records:c.batch.records,shots:c.batch.shots,
+            more:c.records.length>0||c.shots.length>0,counters:c.counters()};
+        ''', {'ack': ack})
 
     def capture_stop(self, binding):
         owner = self.owners.get(binding)
@@ -367,9 +384,11 @@ class BrowserBridge:
           clearTimeout(capture.timer());clearInterval(capture.ticker);
           // Keep the last interaction: wait (bounded) for queued shots, then a final one. The rest is drained.
           const wait=ms=>new Promise(r=>setTimeout(r,ms));
+          await Promise.race([Promise.allSettled([...capture.pendingBodies]),wait(5000)]);  // responses still loading
           await Promise.race([capture.inflight(),wait(5000)]);await Promise.race([capture.shoot(capture.pending()||'stop'),wait(3000)]);
           delete p.__blinkCapture;p.__blinkFinal=capture;
-          return {stopped:true,...capture.counters(),pendingRecords:capture.records.length,pendingShots:capture.shots.length};
+          return {stopped:true,...capture.counters(),pendingRecords:capture.records.length,pendingShots:capture.shots.length,
+            bodiesStillLoading:capture.pendingBodies.size};
         ''')
 
     def capture_shots_clear(self, binding):
