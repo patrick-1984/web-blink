@@ -45,6 +45,18 @@ inspect processes, folders or files with shell commands to find out what Web Bli
    dotted for nested fields). They describe the service for every user. The user's *own* choices (their login
    name, "leave PTO empty for me", their usual task, how they fill a week) are not Blink content: save them
    with `blink_request_approval` `private_set` (see blink-use), never in the proposal.
+   Specific values are parameterized automatically. `learn_stop` already lists them in `specifics.found`
+   (tenant or company host labels such as `formula5` in `formula5.workspace.example`, the login, email, user,
+   workspace or case IDs in paths, query values and body fields; read from login forms, identity reads and the
+   private Blink). `learn_propose` reads every selected request line by line and turns each into a variable:
+   the server becomes `https://{company}.workspace.example`, the path `/workspaces/{company}/...`, and query and
+   body fields get `x-blink-variable`; the values go to the private Blink (`variables`), never into the shared
+   Blink, and every call fills them in unless an argument is passed explicitly. A second review of the finished
+   Blink rewrites leftover values in titles and notes and reports anything else in `specifics.remaining`. If
+   `specifics.remaining` is not empty, propose again with `operations` that name those paths as `{variable}`;
+   if `specifics.serviceName` is present and the user did not choose the name, propose again under
+   `serviceName.suggested`. Pass `specifics` (a list of values, or `{"company": "Formula5"}`) for values the user
+   mentions that the recording cannot show. Report the variables you created in one line.
    Each proposal is versioned: the first is 0.1.0 with today's date; proposing the same Blink again bumps the
    minor version and appends to `x-blink-service.history` (pass `versionNote` to say what changed).
    Full request details, values included, are in `requestsFile`; read it only for a specific question.

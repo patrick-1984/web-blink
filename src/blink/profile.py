@@ -223,7 +223,53 @@ def post_read_contract(schema):
     visit(schema)
 
 
-def compile_manifest(document, *, allow_http=False):
+VARIABLE=re.compile(r'[a-z][A-Za-z0-9_]{0,49}')
+HOST_LABEL=re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
+PLACEHOLDER=re.compile(r'\{([^{}]*)\}')
+
+
+def _fill_host(url,declared,values,missing):
+    """Fill {name} host labels of one server URL or origin. A placeholder must be a whole host label in front of a
+    fixed registrable domain (at least two literal labels), so a private value can choose a tenant, never a site."""
+    if '{' not in url and '}' not in url:return url
+    scheme,sep,rest=url.partition('://')
+    host=rest.split('/',1)[0].split(':',1)[0]
+    labels=host.split('.')
+    if not sep or len(labels)<3 or any(PLACEHOLDER.search(x) for x in labels[-2:]) or rest.count('{')!=sum(bool(PLACEHOLDER.fullmatch(x)) for x in labels):
+        raise BlinkError('invalid_manifest','A server variable must be a whole host label in front of a fixed domain, such as https://{tenant}.example.com')
+    out=[]
+    for label in labels:
+        match=PLACEHOLDER.fullmatch(label)
+        if not match:out.append(label);continue
+        name=match.group(1)
+        if name not in declared:raise BlinkError('invalid_manifest',f'Server variable {{{name}}} is not declared in x-blink-service.variables')
+        value=values.get(name)
+        if value is None:missing.add(name);out.append('placeholder');continue
+        if not isinstance(value,str) or not HOST_LABEL.fullmatch(value.lower()):
+            raise BlinkError('invalid_private',f'Private value {name} must be one host label (letters, digits, hyphens) to be used in a server address')
+        out.append(value.lower())
+    return scheme+'://'+'.'.join(out)+rest[len(host):]
+
+
+def resolve_variables(doc,values,*,require=True):
+    """Fill the host variables of server URLs and service origins from this user's private values (in place).
+    Path, query, header and body variables are filled per call from the private Blink (see Runtime)."""
+    service=doc['x-blink-service'];declared=service.get('variables') or {}
+    values=values or {};missing=set()
+    doc['servers'][0]['url']=_fill_host(doc['servers'][0]['url'],declared,values,missing)
+    service['requestedOrigins']=[_fill_host(x,declared,values,missing) for x in service['requestedOrigins']]
+    if 'appOrigin' in service:service['appOrigin']=_fill_host(service['appOrigin'],declared,values,missing)
+    for methods in doc['paths'].values():
+        for operation in methods.values():
+            if isinstance(operation,dict) and operation.get('servers'):
+                operation['servers'][0]['url']=_fill_host(operation['servers'][0]['url'],declared,values,missing)
+    if missing and require:
+        names=', '.join(sorted(missing))
+        raise BlinkError('private_values_required',f'This Blink needs your own value for {names}: save it in the private Blink '
+                         f'(private_set with {{"variables": {{"{sorted(missing)[0]}": "..."}}}}), then install it again')
+
+
+def compile_manifest(document, *, allow_http=False, variables=None, require_variables=True):
     if len(encoded(document).encode())>2_000_000:
         raise BlinkError('invalid_manifest','Manifest exceeds the size limit')
     schema=json.loads(schema_path().read_text())
@@ -236,6 +282,8 @@ def compile_manifest(document, *, allow_http=False):
         raise BlinkError('invalid_manifest',f'Manifest does not match execution profile v1 at {where}: {str(errors[0].message)[:300]}')
     doc=copy.deepcopy(document)
     service=doc['x-blink-service']; auth=service['auth']
+    declared=service.get('variables') or {}
+    resolve_variables(doc,variables,require=require_variables)
     settings=settings_contract(service.get('settings',{'type':'object','properties':{},'additionalProperties':False}))
     blink_version,history=service_history(service)
     if auth.get('refresh'):
@@ -282,7 +330,7 @@ def compile_manifest(document, *, allow_http=False):
             if opid in ops:raise BlinkError('invalid_manifest','Operation IDs must be unique')
             if operation['x-blink-effect']=='read' and method not in ('get','head','post'):
                 raise BlinkError('invalid_manifest','Read operations may use GET, HEAD or explicitly confirmed POST')
-            properties={};required=[];params=operation.get('parameters',[]);seen=set();path_names=set();notes_by_field={}
+            properties={};required=[];params=operation.get('parameters',[]);seen=set();path_names=set();notes_by_field={};variable_map={};body_variables={}
             for param in params:
                 name=param['name']; location=param['in']
                 if name in seen or name=='body' or SENSITIVE.search(name):
@@ -294,6 +342,10 @@ def compile_manifest(document, *, allow_http=False):
                     path_names.add(name)
                     if not param.get('required'):raise BlinkError('invalid_manifest','Path parameters must be required')
                 walk_schema(param['schema']);Draft202012Validator.check_schema(param['schema'])
+                if 'x-blink-variable' in param:
+                    if param['x-blink-variable'] not in declared:
+                        raise BlinkError('invalid_manifest',f'Parameter {name} uses an undeclared variable')
+                    variable_map[name]=param['x-blink-variable']
                 if 'x-blink-notes' in param:notes_by_field[name]=_note(param['x-blink-notes'])
                 elif isinstance(param['schema'],dict) and 'x-blink-notes' in param['schema']:
                     notes_by_field[name]=_note(param['schema']['x-blink-notes'])
@@ -325,6 +377,11 @@ def compile_manifest(document, *, allow_http=False):
                         raise BlinkError('invalid_manifest','Required form fields must be declared')
                 properties['body']=body_schema
                 field_notes(body_schema,'body',notes_by_field)
+                for field,shape in ((body_schema.get('properties') or {}).items() if isinstance(body_schema,dict) else ()):
+                    if isinstance(shape,dict) and 'x-blink-variable' in shape:
+                        if shape['x-blink-variable'] not in declared:
+                            raise BlinkError('invalid_manifest',f'Body field {field} uses an undeclared variable')
+                        body_variables[field]=shape['x-blink-variable']
                 if body.get('required'):required.append('body')
             for response in operation['responses'].values():
                 for media in response.get('content',{}).values():
@@ -366,6 +423,8 @@ def compile_manifest(document, *, allow_http=False):
             # Structural authoring notes are reviewed content; added only when present so older digests stay stable.
             if 'x-blink-notes' in operation:compiled['notes']=_note(operation['x-blink-notes'])
             if notes_by_field:compiled['fieldNotes']=notes_by_field
+            if variable_map:compiled['variables']=variable_map
+            if body_variables:compiled['bodyVariables']=body_variables
             compiled['digest']=digest(compiled)
             ops[opid]=compiled
     for operation in ops.values():
@@ -391,5 +450,6 @@ def compile_manifest(document, *, allow_http=False):
         raise BlinkError('invalid_manifest','Keepalive must name a separately granted maintenance operation')
     if not ops:raise BlinkError('invalid_manifest','No operations')
     semantic={'id':service['id'],'title':visible_text(doc['info']['title']),'requestedOrigins':requested,'operations':ops}
+    if declared:semantic['variables']=sorted(declared)
     return {**semantic,'settingsSchema':settings,'version':doc['info']['version'],'blinkVersion':blink_version,'history':history,
-            'digest':digest(semantic),'document':doc}
+            'digest':digest(semantic),'document':copy.deepcopy(document) if declared else doc}
