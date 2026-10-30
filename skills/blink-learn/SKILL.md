@@ -23,7 +23,7 @@ user and follow their lead. Never rush ahead of them.
 5. Stop (`learn_stop`) only when the user chooses to. Review the capture with the user: the recorded requests
    (`blink_admin` review), other hosts, static assets per host, and the screenshots (open the `file` of each
    entry in `screenshots`; `afterRecord` places it in the request timeline). Screenshots are taken at the start,
-   when a form is submitted (before and after), and on each page change, so what the user typed and clicked
+   when a form is submitted (before and after), on each click and field change, after typing or resting the mouse (hover boxes), and on each page change, so what the user typed and clicked
    can be told apart in long add/remove sequences. Then `learn_propose` (runs immediately; quarantined).
 
 The capture session is kept locally by default: `blink_admin` `sessions` lists every session with its

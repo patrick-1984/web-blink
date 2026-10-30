@@ -72,7 +72,7 @@ def build(output, root=ROOT):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', default=str(ROOT / 'dist/web-blink-0.2.6.zip'))
+    parser.add_argument('--output', default=str(ROOT / 'dist/web-blink-0.2.7.zip'))
     args = parser.parse_args(argv)
     try:
         print(json.dumps(build(args.output), sort_keys=True))

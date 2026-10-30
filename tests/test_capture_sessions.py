@@ -103,6 +103,15 @@ class RecorderJavascriptTests(unittest.TestCase):
         self.assertIn('before DELETE https://app.example/{segment1}', reasons)
 
 
+    def test_each_box_change_gets_its_own_shot_and_hover_waits_for_a_pause(self):
+        result = self.record('''
+          const ui=t=>p.emit('console',{text:()=>'__blink_ui:'+t});
+          ui('change');ui('change');ui('change');await sleep(50);ui('hover');await sleep(900);''')
+        reasons = [s['reason'] for s in result['kept']]
+        self.assertEqual(reasons.count('change'), 3)
+        self.assertIn('hover', reasons)
+
+
 class LocalSessionTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -223,6 +232,21 @@ class LocalSessionTests(unittest.TestCase):
         session = learner.stop('b')
         self.assertEqual(len(session['screenshots']), 5)
         self.assertEqual(Browser.calls, 3)
+
+    def test_a_failed_batch_falls_back_to_single_screenshots(self):
+        class Browser:
+            def capture_stop(self, binding):
+                return {'screenshots': 4, 'records': []}
+            def capture_shots(self, binding, start):
+                if start >= 2:
+                    raise TimeoutError('batch')
+                shot = {'data': base64.b64encode(JPEG).decode(), 'afterRecord': 0, 't': 0, 'reason': 'x'}
+                return {'shots': [shot, shot], 'next': 2, 'total': 4}
+            def capture_shot(self, binding, index):
+                return {'shot': {'data': base64.b64encode(JPEG).decode(), 'afterRecord': 0, 't': 0, 'reason': 'x'}}
+            def capture_shots_clear(self, binding): pass
+        learner = Learner(self.runtime, Browser()); learner.running['b'] = ['https://app.example']
+        self.assertEqual(len(learner.stop('b')['screenshots']), 4)
 
 
 if __name__ == '__main__':

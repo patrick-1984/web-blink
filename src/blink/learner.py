@@ -292,8 +292,11 @@ class Learner:
                 result = attempt(batch, start)
                 shots = result.get('shots') if isinstance(result, dict) else None
                 if not isinstance(shots, list) or not shots:
+                    # A failed batch falls back to one-by-one retrieval for the rest.
+                    single = getattr(self.browser, 'capture_shot', None)
                     for index in range(start, count):
-                        yield index, None
+                        one = attempt(single, index) if callable(single) else None
+                        yield index, one.get('shot') if isinstance(one, dict) else None
                     return
                 for offset, shot in enumerate(shots):
                     yield start + offset, shot

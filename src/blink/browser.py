@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.2.6'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.2.7'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -292,10 +292,14 @@ class BrowserBridge:
           const later=reason=>{clearTimeout(shotTimer);pending=reason;shotTimer=setTimeout(()=>{pending=null;shoot(reason);},700);};
           // Clicks, typing (after a pause), changes and submits in the page report through the console, so local
           // edits that send no request are shot too. The hook stays installed but is silent unless a recording runs.
-          const ui=msg=>{try{const t=msg.text();if(t.startsWith('__blink_ui:'))later(t.slice(11));}catch{}};
+          // Clicks, changes and submits each get their own (queued) shot, so every edited box is captured;
+          // typing and a resting mouse (hover boxes) wait for a pause.
+          const ui=msg=>{try{const t=msg.text();if(!t.startsWith('__blink_ui:'))return;const r=t.slice(11);
+            if(r==='typing'||r==='hover')later(r);else shoot(r);}catch{}};
           const hook=()=>{if(window.__blinkUi)return;window.__blinkUi=true;let k;const say=r=>console.debug('__blink_ui:'+r);
             addEventListener('click',()=>say('click'),true);addEventListener('change',()=>say('change'),true);
-            addEventListener('submit',()=>say('submit'),true);addEventListener('input',()=>{clearTimeout(k);k=setTimeout(()=>say('typing'),800);},true);};
+            addEventListener('submit',()=>say('submit'),true);addEventListener('input',()=>{clearTimeout(k);k=setTimeout(()=>say('typing'),800);},true);
+            let h;addEventListener('mousemove',()=>{clearTimeout(h);h=setTimeout(()=>say('hover'),1000);},true);};
           try{if(typeof p.addInitScript==='function'){await p.addInitScript(hook);await p.evaluate(hook);}}catch{}
           // Typing and local edits send nothing: a periodic shot (skipped when unchanged) records them too.
           const ticker=setInterval(()=>{shoot('periodic');},10000);
@@ -340,7 +344,9 @@ class BrowserBridge:
           p.context().off('serviceworker',capture.serviceworker);p.off('framenavigated',capture.navigated);p.off('request',capture.submitting);p.off('console',capture.ui);
           clearTimeout(capture.timer());clearInterval(capture.ticker);
           // Keep the last interaction: finish an in-flight shot, then take the pending one or a final one.
-          await capture.inflight();await capture.shoot(capture.pending()||'stop');
+          // Wait for queued shots at most 5 s so stopping never outlasts the browser call; then a final shot.
+          const wait=ms=>new Promise(r=>setTimeout(r,ms));
+          await Promise.race([capture.inflight(),wait(5000)]);await Promise.race([capture.shoot(capture.pending()||'stop'),wait(3000)]);
           delete p.__blinkCapture;p.__blinkShots=capture.shots;
           return {records:capture.records,overflow:capture.overflow(),incomplete:capture.incomplete(),
             missingOrigins:[...capture.missingOrigins],assets:capture.assets,assetsTruncated:capture.assetsTruncated(),
