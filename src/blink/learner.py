@@ -10,7 +10,7 @@ import re
 import time
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 from .profile import origin as canonical_origin
 from .schemaver import bump_minor, parse as parse_version
@@ -702,7 +702,22 @@ class Learner:
 
     def stop(self, binding):
         with self.lock:
-            return self._stop(binding)
+            result = self._stop(binding)
+        try:  # early pass: the specific values a Blink built from this recording would turn into variables
+            capture = self.review(result['id'])
+            hints, raw = self.specifics(capture, capture.get('blink') or binding)
+            scoped = {r.get('seq') for r in capture.get('records') or [] if r.get('inScope')}
+            in_scope = [r for seq, r in raw.items() if seq in scoped]
+            from . import specifics
+            found = specifics.scan(in_scope, hints)
+            if found:
+                result['specifics'] = {
+                    'found': found[:100],
+                    'note': 'User- or company-specific values (tenant, company, workspace, login, user ID). learn_propose turns '
+                            'them into variables kept in the private Blink, in the operation and in the call.'}
+        except Exception:
+            pass
+        return result
 
     def _stop(self, binding):
         if binding not in self.running:
@@ -1080,12 +1095,121 @@ class Learner:
                 raise ValueError(f'fieldNotes names an unknown field: {field}')
             node['x-blink-notes'] = note
 
+    def _raw_records(self, capture):
+        """The full local requests of a capture (URLs, query values, bodies) by sequence number; empty for imports."""
+        folder = capture.get('folder')
+        path = Path(folder) / 'requests.jsonl' if isinstance(folder, str) else None
+        records = {}
+        if path is None or not path.is_file():
+            return records
+        with path.open(encoding='utf-8', errors='replace') as handle:
+            for line in handle:
+                try:
+                    item = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(item, dict) and isinstance(item.get('seq'), int):
+                    records[item['seq']] = item
+        return records
+
+    def specifics(self, capture, service, raw=None, extra=None):
+        """Early pass: specific values (tenant, company, workspace, login, email, user ID) in this capture."""
+        from . import private, specifics
+        raw = self._raw_records(capture) if raw is None else raw
+        try:
+            mine = private.load(private.blink_name(service)) if service else None
+        except Exception:
+            mine = None
+        hints = specifics.collect_hints(list(raw.values()), private=mine, extra=extra)
+        return hints, raw
+
+    def _parameterize(self, capture, service, operations, extra):
+        """Turn the specific values found in the selected requests into variables: host labels into {variable}
+        server labels, path segments into path parameters, query and top-level body fields into fields filled from
+        the private Blink. Returns the selections (rewritten), the host label map and the variable values."""
+        from . import specifics
+        hints, raw = self.specifics(capture, service, extra=extra)
+        records = capture.get('records') or []
+        chosen = [raw[records[x['index']]['seq']] for x in operations if isinstance(x, dict) and isinstance(x.get('index'), int)
+                  and 0 <= x['index'] < len(records) and records[x['index']].get('seq') in raw]
+        findings = specifics.scan(chosen, hints)
+        names, values = {}, {}
+
+        def variable(value, kind):
+            lower = value.lower()
+            if lower not in names:
+                names[lower] = specifics.variable_name(kind or 'specific', set(values))
+                values[names[lower]] = value
+            return names[lower]
+
+        hosts, rewritten, renames = {}, [], {}
+        for item in findings:
+            if item['where'] == 'host' and item['exact']:
+                hosts[item['value'].lower()] = variable(item['value'], item['kind'])
+        for selection in operations:
+            if not isinstance(selection, dict) or not isinstance(selection.get('index'), int) \
+                    or not 0 <= selection['index'] < len(records) or records[selection['index']].get('seq') not in raw:
+                rewritten.append(selection)
+                continue
+            selection = copy.deepcopy(selection)
+            item = raw[records[selection['index']]['seq']]
+            for key in ('operationId', 'summary'):  # names built from a URL can hold the value too
+                if isinstance(selection.get(key), str):
+                    for lower, kind, original in sorted(hints.items(), key=lambda h: -len(h[0])):
+                        if lower in selection[key].lower():
+                            label = (kind or 'specific')[0].upper() + (kind or 'specific')[1:]
+                            renamed = re.sub(re.escape(lower), label, selection[key], flags=re.I)
+                            if key == 'operationId':
+                                renames[selection[key]] = renamed
+                            selection[key] = renamed
+            parts = urlsplit(item.get('url') or '')
+            template = selection.get('path', records[selection['index']].get('pathTemplate', records[selection['index']]['path']))
+            marks = {}
+            if isinstance(template, str):
+                real, shape = parts.path.split('/'), template.split('/')
+                if len(real) == len(shape):
+                    for position, (segment, slot) in enumerate(zip(real, shape)):
+                        value = unquote(segment)
+                        kind = hints.kind(value) if value else None
+                        if kind and (slot == segment or re.fullmatch(r'\{[A-Za-z0-9_]+\}', slot)):
+                            name = variable(value, kind)
+                            if slot != segment:
+                                old = slot[1:-1]
+                                for parameter in selection.get('parameters') or []:
+                                    if isinstance(parameter, dict) and parameter.get('name') == old and parameter.get('in') == 'path':
+                                        parameter['name'] = name
+                            shape[position] = '{' + name + '}'
+                            marks[(('path', name))] = name
+                    template = '/'.join(shape)
+                    selection['path'] = template
+            for name, value in parse_qsl(parts.query, keep_blank_values=True):
+                kind = hints.kind(value)
+                if kind:
+                    marks[('query', name)] = variable(value, kind)
+            body = specifics._parsed_body(item.get('requestBody'), specifics._media(item))
+            schema = selection.get('requestSchema')
+            if isinstance(body, dict) and isinstance(schema, dict) and isinstance(schema.get('properties'), dict):
+                for field, value in body.items():
+                    if field in schema['properties'] and isinstance(value, (str, int)) and not isinstance(value, bool):
+                        kind = hints.kind(str(value))
+                        if kind and isinstance(schema['properties'][field], dict):
+                            schema['properties'][field]['x-blink-variable'] = variable(str(value), kind)
+            if marks:
+                selection['_variables'] = marks
+            rewritten.append(selection)
+        return rewritten, hosts, values, findings, renames
+
     def propose(self, session, service, operations, *, source='local', auth=None, execution=None, app_origin=None,
-                version_note=None):
+                version_note=None, parameterize=True, specifics=None):
         capture = self.review(session)
         if capture['status'] == 'incomplete':
             raise ValueError('Resolve incomplete capture scope before proposing an executable Blink')
         operations, auth = self._expand_selections(capture, operations, auth)
+        hosts, values, findings = {}, {}, []
+        if parameterize and isinstance(operations, list):
+            operations, hosts, values, findings, renames = self._parameterize(capture, service, operations, specifics)
+            if isinstance(auth, dict) and auth.get('probe') in renames:
+                auth = dict(auth, probe=renames[auth['probe']])
         if (not isinstance(service, str) or not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*', service)
                 or not isinstance(operations, list) or not 1 <= len(operations) <= 1000):
             raise ValueError('Valid service ID and explicitly curated operations are required')
@@ -1123,6 +1247,10 @@ class Learner:
                 given = {(x.get('in'), x.get('name')) for x in selection['parameters'] if isinstance(x, dict)}
                 selection = dict(selection, parameters=[clean_schema(x) for x in selection['parameters']] + [
                     x for x in parameters if x['in'] == 'path' and ('path', x['name']) not in given])
+            marks = selection.get('_variables') or {}
+            for parameter in selection.get('parameters', parameters):
+                if isinstance(parameter, dict) and (parameter.get('in'), parameter.get('name')) in marks:
+                    parameter['x-blink-variable'] = marks[(parameter['in'], parameter['name'])]
             op = {'operationId': operation_id, 'x-blink-effect': effect,
                   'summary': selection.get('summary', operation_id),
                   'parameters': copy.deepcopy(selection.get('parameters', parameters)),
@@ -1170,13 +1298,76 @@ class Learner:
         else:
             version = '0.1.0'
             history = [{'version': version, 'date': today, 'note': version_note or f'Learned from capture {session}'[:500]}]
+        server = self._host_template(origin, hosts)
+        app = self._host_template(app_origin or origin, hosts)
         document = {'openapi': '3.1.0', 'info': {'title': service, 'version': version},
-                    'servers': [{'url': origin}], 'x-blink-service': {
+                    'servers': [{'url': server}], 'x-blink-service': {
                         'id': service, 'version': version, 'history': history,
-                        'requestedOrigins': [origin], 'appOrigin': app_origin or origin,
+                        'requestedOrigins': [server], 'appOrigin': app,
                         'auth': copy.deepcopy(auth), 'exec': copy.deepcopy(chosen_execution)}, 'paths': paths}
+        review = None
+        if values:
+            used = {}
+            for name in values:
+                where = (['host'] if name in hosts.values() else []) + sorted({
+                    location for methods in paths.values() for op in methods.values()
+                    for location in [p['in'] for p in op.get('parameters', []) if p.get('x-blink-variable') == name]
+                    + (['body'] if f'"x-blink-variable": "{name}"' in json.dumps(op.get('requestBody', {})) else [])})
+                used[name] = {'description': f'Your own {name} on this service (from the private Blink)', 'in': where or ['body']}
+            document['x-blink-service']['variables'] = used
+        if parameterize:
+            from . import specifics as specific
+            known = dict(values)
+            hints, _ = self.specifics(capture, service, extra=specifics)
+            for lower, kind, original in hints.items():
+                if lower not in {v.lower() for v in known.values()}:
+                    known[specific.variable_name(kind, set(known))] = original
+            meta = document['x-blink-service']
+            fresh = meta['history'][-1]
+            if not previous:  # a first version's history is new; later versions keep earlier entries unchanged
+                meta['history'] = []
+            else:
+                meta['history'] = meta['history'][:-1]
+            document, remaining = specific.review(document, known, skip=('history',))
+            fresh, _ = specific.review(fresh, known)
+            document['x-blink-service']['history'].append(fresh)
+            name_hits = [v for v in known.values() if v.lower() in service.lower()]
+            review = {'variables': values and {name: {'value': value, 'in': document['x-blink-service']['variables'][name]['in']}
+                                               for name, value in values.items()},
+                      'remaining': remaining, 'clean': not remaining,
+                      **({'serviceName': {'contains': name_hits, 'suggested': self._neutral_name(service, name_hits),
+                                          'note': 'The Blink name holds a specific value; propose again under the suggested '
+                                                  'name unless the user chose this name'}} if name_hits else {}),
+                      'findings': [f for f in findings if not f['exact']][:50]}
+            if values:  # the user's own values go to the private Blink, never into the shared Blink
+                from . import private
+                private.set_private(private.blink_name(service), {'variables': values})
         result = self.runtime.install_manifest(document, source, service,
                                                provenance={'capture': session, 'verified': False})
-        return {'proposal': result, 'manifest': document, 'verified': False}
+        out = {'proposal': result, 'manifest': document, 'verified': False}
+        if review is not None:
+            out['specifics'] = review
+        return out
+
+    @staticmethod
+    def _neutral_name(service, values):
+        name = service
+        for value in values:
+            name = re.sub(re.escape(value), '', name, flags=re.I)
+        name = re.sub(r'[.-]{2,}', '-', name).strip('.-')
+        return name or 'blink'
+
+    @staticmethod
+    def _host_template(origin, hosts):
+        """The origin with each specific host label (not the registrable domain) replaced by its {variable}."""
+        if not hosts:
+            return origin
+        scheme, _, rest = origin.partition('://')
+        host, sep, port = rest.partition(':')
+        labels = host.split('.')
+        for position, label in enumerate(labels[:-2]):
+            if label.lower() in hosts:
+                labels[position] = '{' + hosts[label.lower()] + '}'
+        return scheme + '://' + '.'.join(labels) + sep + port
 
     # Capture sessions never expire: only forget_capture or a full purge removes them.

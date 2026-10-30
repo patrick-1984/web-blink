@@ -85,7 +85,11 @@ class Runtime:
     def install_manifest(self,document,source_id,integration_id,*,provenance=None,connection=None):
         if not isinstance(source_id,str) or not ID.fullmatch(source_id) or not isinstance(integration_id,str) or not ID.fullmatch(integration_id):
             raise BlinkError('invalid_source','Source/integration IDs are invalid')
-        compiled=compile_manifest(document,allow_http=self.allow_http)
+        declares=isinstance(document,dict) and isinstance(document.get('x-blink-service'),dict) and document['x-blink-service'].get('variables')
+        if declares:
+            from .private import variables as private_variables
+            compiled=compile_manifest(document,allow_http=self.allow_http,variables=private_variables(integration_id))
+        else:compiled=compile_manifest(document,allow_http=self.allow_http)
         if compiled['id']!=integration_id:raise BlinkError('invalid_manifest','Integration ID disagrees with the manifest')
         service=source_id+':'+integration_id
         with (contextlib.nullcontext(connection) if connection is not None else self.store.transaction()) as db:
@@ -179,6 +183,9 @@ class Runtime:
         if op.get('fieldNotes'):extra['fieldNotes']=op['fieldNotes']
         compiled=record.get('compiled',{})
         if compiled.get('blinkVersion'):extra['blinkVersion']=compiled['blinkVersion']
+        filled={**op.get('variables',{}),**{'body.'+k:v for k,v in op.get('bodyVariables',{}).items()}}
+        if filled:
+            extra['filledFromPrivate']={'fields':filled,'usage':'Leave these out: they are filled from this user\'s private Blink variables (an explicit value wins).'}
         private=for_operation(record['service'].rsplit(':',1)[-1],op['operationId'])
         if private:
             extra['private']=dict(private,usage='This user\'s own preferences for this Blink: fill fields from defaults and follow the process notes unless the user says otherwise.')
@@ -608,12 +615,42 @@ class Runtime:
         record,op=self._operation(p)
         if op['effect']!='read':raise BlinkError('effect_denied','Read dispatcher rejects operations with effects')
         binding=self._binding(p,record,op)
-        args=p.get('arguments',{})
+        args=self._with_variables(record,op,p.get('arguments',{}))
         self._validate_argument_values(args,binding)
         family=binding['id'] if binding else 'anonymous:'+record['service']
         with self.store.family_lock(family):
             if binding:binding=self._binding(p,record,op)
             return envelope('ok','Read completed',self._send(record,op,args,binding))
+
+    def _with_variables(self,record,op,args):
+        """Fill arguments backed by a Blink variable (tenant, workspace, login, user ID) from this user's private Blink
+        when the caller left them out; an explicit argument always wins. The filled values are part of the exact plan."""
+        if not (op.get('variables') or op.get('bodyVariables')) or not isinstance(args,dict):return args
+        from .private import variables as private_variables
+        values=private_variables(record['service'].rsplit(':',1)[-1]);args=copy.deepcopy(args);missing=set()
+        properties=op['inputSchema'].get('properties',{})
+        def typed(value,shape):
+            kinds=shape.get('type') if isinstance(shape,dict) else None
+            kinds={kinds} if isinstance(kinds,str) else set(kinds or [])
+            if 'string' not in kinds and kinds&{'integer','number'} and re.fullmatch(r'-?[0-9]{1,15}',value):return int(value)
+            return value
+        for name,variable in op.get('variables',{}).items():
+            if name in args:continue
+            if variable in values:args[name]=typed(values[variable],properties.get(name))
+            elif name in op['inputSchema'].get('required',[]):missing.add(variable)
+        if op.get('bodyVariables'):
+            body=args.get('body',{})
+            if isinstance(body,dict):
+                shapes=(properties.get('body') or {}).get('properties',{}) if isinstance(properties.get('body'),dict) else {}
+                for field,variable in op['bodyVariables'].items():
+                    if field in body:continue
+                    if variable in values:body[field]=typed(values[variable],shapes.get(field))
+                    elif field in ((properties.get('body') or {}).get('required') or []):missing.add(variable)
+                if body or 'body' in args:args['body']=body
+        if missing:
+            names=', '.join(sorted(missing))
+            raise BlinkError('private_values_required',f'Save your own value for {names} in the private Blink (private_set with variables), or pass it as an argument')
+        return args
 
     def _validate_argument_values(self,args,binding=None):
         def walk(value):
@@ -685,7 +722,7 @@ class Runtime:
     def _prepare(self,p):
         record,op=self._operation(p)
         if op['effect'] in ('read','maintenance'):raise BlinkError('effect_denied','Prepare accepts only business mutations')
-        args=p.get('arguments',{})
+        args=self._with_variables(record,op,p.get('arguments',{}))
         try:Draft202012Validator(op['inputSchema']).validate(args)
         except Exception:raise BlinkError('invalid_arguments','Arguments do not match the reviewed schema') from None
         binding=self._binding(p,record,op,write=True);grant=self._current_grant(binding,op)

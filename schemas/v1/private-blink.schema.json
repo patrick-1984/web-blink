@@ -3,7 +3,7 @@
   "$id": "urn:web-blink:schema:private-blink:1",
   "title": "Web Blink private Blink v1: one user's own data for one Blink, never shared",
   "x-blink-schema": {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "released": "2026-10-30"
   },
   "type": "object",
@@ -92,6 +92,19 @@
           "minLength": 1,
           "maxLength": 200
         }
+      }
+    },
+    "variables": {
+      "description": "Values for the Blink's declared variables (tenant, workspace, login, user ID): filled into the host, path, query and body when an operation runs.",
+      "type": "object",
+      "maxProperties": 20,
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
       }
     },
     "preferences": {
