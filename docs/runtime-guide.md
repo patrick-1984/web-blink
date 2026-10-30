@@ -25,7 +25,7 @@ hosts; Windows has diagnostics only. Git and OpenSSL are needed only for their r
 and signature features.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.2.1-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.2.2-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -74,7 +74,10 @@ Use the existing shared Playwright MCP. The workspace adapter defaults to the wo
 proxy when present; on another host set `BLINK_PLAYWRIGHT_COMMAND` to a JSON argument array for an existing
 Playwright MCP provider. Blink does not launch a replacement or headless browser.
 
-Live capture is held by the singleton daemon so separate CLI invocations share the same recording:
+Live capture is held by the singleton daemon so separate CLI invocations share the same recording.
+In Claude Code, ask Claude to learn a site: it requests `learn_start` and `learn_stop` through an
+Approve / Decline dialog (see [Approvals in Claude Code](#approvals-in-claude-code)), so no commands are
+needed. From a terminal or script:
 
 ```sh
 blink human learn_start --input start-capture.json --yes
@@ -91,6 +94,20 @@ Values, dynamic path segments, query values and dynamic body keys are removed. T
 captures are incomplete. Use `learn_propose` with `session`, `service`, explicitly selected `operations`
 and an explicit `auth` recipe. An authenticated capture cannot silently become anonymous. Proposals are
 untested and quarantined until reviewed and verified through the normal runtime path.
+
+## Approvals in Claude Code
+
+Every human-only action (approve a prepared write, approve or classify an integration, bind an account,
+grant operations, start or stop a capture, create or run jobs, revoke, forget) can be approved inside
+Claude Code. Claude calls `blink_request_approval`; the plugin's MCP server shows you a dialog with the
+exact action, its parameters (secret-looking fields hidden), their SHA-256 and, for a write, the local
+runtime's own review of what will run. Claude's stated reason is labelled as unverified. Only **Approve**
+runs the action, once, with exactly the parameters shown; Decline, Esc or no answer within 10 minutes
+changes nothing.
+
+Credential entry (`custody_authorize`) and staging a manifest from a file (`blink install`) stay CLI steps,
+so account secrets never pass through Claude. Clients without dialog support (for example `claude -p`)
+get `approval_unavailable` with the equivalent CLI command below.
 
 ## Approve and bind an account
 

@@ -22,8 +22,8 @@ def run(command, *, cwd, env, timeout=60):
 
 
 def main():
-    archive = ROOT / 'dist/web-blink-0.2.1.zip'
-    wheel = ROOT / 'dist/web_blink-0.2.1-py3-none-any.whl'
+    archive = ROOT / 'dist/web-blink-0.2.2.zip'
+    wheel = ROOT / 'dist/web_blink-0.2.2-py3-none-any.whl'
     with tempfile.TemporaryDirectory(prefix='blink-clean-artifacts-') as temp:
         work = Path(temp)
         extracted = work / 'plugin with spaces'
@@ -62,7 +62,7 @@ def main():
         run(['uv', 'pip', 'install', '--offline', '--python', str(python), '-r', str(ROOT / 'requirements.lock')],
             cwd=work, env=clean_env)
         run(['uv', 'pip', 'install', '--offline', '--no-deps', '--python', str(python), str(wheel)], cwd=work, env=clean_env)
-        if run([str(executable), '--version'], cwd=work, env=clean_env).strip() != 'blink 0.2.1':
+        if run([str(executable), '--version'], cwd=work, env=clean_env).strip() != 'blink 0.2.2':
             raise RuntimeError('Installed CLI version failed')
         index = json.loads(run([str(executable), 'schemas', '--json'], cwd=work, env=clean_env))
         if index.get('status') != 'ok':

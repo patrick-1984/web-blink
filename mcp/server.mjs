@@ -19,6 +19,7 @@ const definitions = [
  ['blink_execute','Execute one already-approved intent. This tool cannot issue approval.',{intentId:textSchema},['intentId'],'execute',false],
  ['blink_admin','Read runtime status or a redacted review; cannot authorize or configure account access.',{action:{type:'string',enum:['status','review','capabilities','sessions','jobs','job','binding','intent','workflow','canary']},id:textSchema,session:textSchema,job:textSchema,binding:textSchema,intentId:textSchema,runId:textSchema,candidate:textSchema},['action'],'admin',true],
  ['blink_doctor','Report host capabilities without needing Python, a daemon or browser.',{},[],'doctor',true],
+ ['blink_request_approval','Ask the human to approve one host-confirmed action (start or stop a capture, approve a write intent or an integration, bind or grant an account, schedule jobs, revoke). Claude Code shows the human an Approve/Decline dialog with the exact parameters; the action runs only if the human approves it. This tool cannot approve anything by itself.',{method:{type:'string',minLength:1,maxLength:100},params:{type:'object'},reason:{type:'string',maxLength:500}},['method','params'],'approval',false],
 ];
 const tools = definitions.map(([name,description,properties,required,method,readOnly]) => ({
  name,description,inputSchema:{type:'object',properties,required,additionalProperties:false},
@@ -26,7 +27,9 @@ const tools = definitions.map(([name,description,properties,required,method,read
  ...(name==='blink_services'||name==='blink_search'||name==='blink_describe'?{_meta:{'anthropic/alwaysLoad':true}}:{}),
 }));
 const methods = new Map(definitions.map(d => [d[0], d[4]]));
-let initialized = false;
+let initialized = false, canElicit = false, nextRequest = 0;
+const awaiting = new Map();
+const APPROVAL_WAIT = 600000;
 
 function binaryAvailable(command) {
  const result=spawnSync(command,['--version'],{stdio:'ignore',cwd:root,timeout:2000,windowsHide:true});
@@ -54,10 +57,10 @@ function doctor() {
   dependencyPolicy:'Doctor probes cached dependencies offline. Prepare pinned dependencies with the documented native setup command before runtime use; the MCP launcher stays offline.'},
   warnings:unix?[]:['Windows supports diagnostics; the current local runtime requires POSIX Unix sockets.']};
 }
-function backend(method,params) {
+function backend(method,params,module=['blink.client'],timeout=45000) {
  return new Promise(resolve=>{
   const launch=launcher();
-  const args=[...launch.args,'-m','blink.client','--plugin-root',root];
+  const args=[...launch.args,'-m',...module,'--plugin-root',root];
   if(process.env.BLINK_STATE_DIR) args.push('--state-dir',process.env.BLINK_STATE_DIR);
   const env={...process.env,PYTHONPATH:path.join(root,'src')};
   let child;
@@ -65,7 +68,7 @@ function backend(method,params) {
   try {child=spawn(launch.command,args,{env,cwd:root,stdio:['pipe','pipe','ignore'],windowsHide:true});}catch {failed();return;}
   let output=[],outputBytes=0,done=false;
   const finish=value=>{if(!done){done=true;clearTimeout(timer);resolve(value);}};
-  const timer=setTimeout(()=>{child.kill();finish({status:'env_unavailable',summary:'Runtime request timed out; an already dispatched intent must be reconciled.',warnings:[]});},45000);
+  const timer=setTimeout(()=>{child.kill();finish({status:'env_unavailable',summary:'Runtime request timed out; an already dispatched intent must be reconciled.',warnings:[]});},timeout);
   child.on('error',()=>finish({status:'env_unavailable',summary:'Python runtime launcher is unavailable.',warnings:[]}));
   child.stdout.on('data',data=>{
    output.push(data);outputBytes+=data.length;
@@ -83,6 +86,33 @@ function backend(method,params) {
   child.stdin.on('error',()=>{});
   child.stdin.end(JSON.stringify({method,params})+'\n');
  });
+}
+function elicit(message,requestedSchema){
+ return new Promise(resolve=>{
+  const id=`blink-approval-${++nextRequest}`;
+  const timer=setTimeout(()=>{awaiting.delete(id);resolve({action:'cancel'});},APPROVAL_WAIT);
+  awaiting.set(id,reply=>{clearTimeout(timer);resolve(reply);});
+  send({jsonrpc:'2.0',id,method:'elicitation/create',params:{message,requestedSchema}});
+ });
+}
+function approvalText(d,reason){
+ const lines=[`Web Blink asks for your approval: ${d.title}`,'',`Action: ${d.method}`,'Exact parameters:',JSON.stringify(d.parameters,null,2)];
+ if(d.context!==undefined)lines.push('','What it will do (from the local runtime):',JSON.stringify(d.context,null,2));
+ lines.push('',`Parameters SHA-256: ${d.exactParametersSha256}`);
+ if(reason)lines.push('',`Claude's stated reason (not verified): ${reason}`);
+ lines.push('','Only approve if this is what you want. Claude cannot approve this for you.');
+ return lines.join('\n');
+}
+async function approval(args){
+ const request={method:args.method,params:args.params};
+ const fallback={method:args.method,command:`blink human ${args.method} --input <file with the parameters JSON>`};
+ if(!canElicit)return {status:'approval_unavailable',summary:'This client cannot show an approval dialog; the human must run the CLI command',data:fallback,warnings:[]};
+ const described=await backend('describe',request,['blink.approval','describe']);
+ if(described.status!=='ok')return described;
+ const answer=await elicit(approvalText(described.data,args.reason),{type:'object',properties:{decision:{type:'string',title:'Decision',enum:['approve','decline'],enumNames:['Approve','Decline']}},required:['decision']});
+ if(answer?.action!=='accept'||answer?.content?.decision!=='approve')
+  return {status:'declined',summary:'The human did not approve this action; nothing was changed',data:{method:args.method},warnings:[]};
+ return backend('apply',{...request,digest:described.data.exactParametersSha256},['blink.approval','apply'],APPROVAL_WAIT);
 }
 function rpcError(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
 function validArguments(tool,args){
@@ -110,7 +140,8 @@ async function handle(message){
   const p=message.params;
   if(!p||typeof p!=='object'||typeof p.protocolVersion!=='string'||!p.capabilities||typeof p.capabilities!=='object'||Array.isArray(p.capabilities)||!p.clientInfo||typeof p.clientInfo!=='object'||typeof p.clientInfo.name!=='string'||typeof p.clientInfo.version!=='string')return rpcError(id,-32602,'Invalid initialize parameters');
   initialized=true;
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.2.1'},instructions:'Human grants, custody and intent approvals are issued by the local CLI, never MCP admin.'}};
+  canElicit=!!p.capabilities.elicitation&&typeof p.capabilities.elicitation==='object'&&!Array.isArray(p.capabilities.elicitation);
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.2.2'},instructions:'Human grants, custody and intent approvals are never issued by the model. To get one, call blink_request_approval: the human approves or declines it in a Claude Code dialog. Do not ask the human to type shell commands unless that tool reports approval_unavailable.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');
@@ -125,8 +156,8 @@ async function handle(message){
   if(!tool)return rpcError(id,-32602,'Unknown tool');
   const args=p.arguments??{};
   if(!validArguments(tool,args))return rpcError(id,-32602,'Invalid tool arguments');
-  const result=p.name==='blink_doctor'?doctor():await backend(methods.get(p.name),args);
-  return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done'].includes(result.status)}};
+  const result=p.name==='blink_doctor'?doctor():p.name==='blink_request_approval'?await approval(args):await backend(methods.get(p.name),args);
+  return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable'].includes(result.status)}};
  }
  return rpcError(id,-32601,'Method not found');
 }
@@ -142,9 +173,13 @@ process.stdin.on('data',chunk=>{
   const line=pending.slice(0,end);pending=pending.slice(end+1);
   if(dropping){dropping=false;continue;}
   if(Buffer.byteLength(line)>LIMIT){send(rpcError(null,-32700,'Message exceeds transport limit'));continue;}
+  let message;
+  try{message=JSON.parse(line);}catch{queue=queue.then(()=>send(rpcError(null,-32700,'Parse error')));continue;}
+  if(message&&typeof message==='object'&&!Array.isArray(message)&&!Object.hasOwn(message,'method')&&awaiting.has(message.id)){
+   // A client answer to our own approval dialog: never queued behind the tool call that waits for it.
+   const done=awaiting.get(message.id);awaiting.delete(message.id);done(message.error?{action:'cancel'}:message.result);continue;
+  }
   queue=queue.then(async()=>{
-   let message;
-   try{message=JSON.parse(line);}catch{send(rpcError(null,-32700,'Parse error'));return;}
    try{send(await handle(message));}catch{send(rpcError(message?.id??null,-32603,'Internal error'));}
   });
  }
