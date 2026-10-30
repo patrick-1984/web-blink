@@ -37,10 +37,36 @@ def _norm(value):
     return value.strip().lower() if isinstance(value, str) else None
 
 
-def _usable(value):
+def _usable(value, explicit=False):
+    """Explicit evidence (a value the user named, an identity read, the private Blink) counts from two characters;
+    values only guessed from field names need three and must not be common words."""
     value = _norm(value)
-    return bool(value) and len(value) >= MIN_LENGTH and len(value) <= 200 and value not in COMMON_VALUES \
-        and not value.startswith('<secret:')
+    if not value or len(value) > 200 or value.startswith('<secret:'):
+        return False
+    return len(value) >= 2 if explicit else len(value) >= MIN_LENGTH and value not in COMMON_VALUES
+
+
+def words(text):
+    """Lowercase words of a name or line: camelCase, digits and separators split ('getHpTasks' -> get, hp, tasks)."""
+    return {w.lower() for w in re.findall(r'[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+', text or '')} | \
+        {w.lower() for w in re.split(r'[^A-Za-z0-9]+', text or '') if w}
+
+
+def contains(text, value):
+    """Whether a specific value occurs in text: anywhere for values of four or more characters, as a whole word for
+    shorter ones (so 'hp' is found in /api/hp/tasks and getHpTasks, not in 'php')."""
+    value = value.lower()
+    return value in (text or '').lower() if len(value) >= 4 else value in words(text)
+
+
+def replace(text, value, label):
+    """Replace a specific value inside a name: anywhere for long values, whole words only for short ones
+    ('getHpTasks', 'hp' -> 'getCompanyTasks')."""
+    if len(value) >= 4:
+        return re.sub(re.escape(value), label, text, flags=re.I)
+    tokens = re.findall(r'[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+|[^A-Za-z0-9]+', text)
+    return ''.join((label if token[:1].isupper() else label[:1].lower() + label[1:]) if token.lower() == value.lower()
+                   else token for token in tokens)
 
 
 class Hints:
@@ -49,10 +75,10 @@ class Hints:
     def __init__(self):
         self.values = {}
 
-    def add(self, value, kind):
+    def add(self, value, kind, explicit=False):
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             value = str(value)
-        if not isinstance(value, str) or not _usable(value):
+        if not isinstance(value, str) or not _usable(value, explicit):
             return
         value = value.strip()
         self.values.setdefault(value.lower(), (kind, value))
@@ -67,7 +93,7 @@ class Hints:
                 if _usable(part) and len(part) >= 4:
                     self.values.setdefault(part.lower(), ('userName', part))
 
-    def add_fields(self, value, depth=0):
+    def add_fields(self, value, depth=0, explicit=True):
         """Collect identity fields (email, login, company, tenant, ...) from a parsed JSON object or form."""
         if depth > 6:
             return
@@ -75,12 +101,12 @@ class Hints:
             for key, item in list(value.items())[:200]:
                 kind = HINT_FIELDS.get(re.sub(r'[^a-z]', '', str(key).lower()))
                 if kind and isinstance(item, (str, int)) and not isinstance(item, bool):
-                    self.add(item, kind)
+                    self.add(item, kind, explicit)
                 elif isinstance(item, (dict, list)):
-                    self.add_fields(item, depth + 1)
+                    self.add_fields(item, depth + 1, explicit)
         elif isinstance(value, list):
             for item in value[:50]:
-                self.add_fields(item, depth + 1)
+                self.add_fields(item, depth + 1, explicit)
 
     def kind(self, value):
         found = self.values.get(_norm(value) or '')
@@ -112,22 +138,22 @@ def collect_hints(raw_records, *, private=None, extra=None):
     """Specific values from the private Blink identity, values the user named, login forms and identity reads."""
     hints = Hints()
     for key, value in ((private or {}).get('identity') or {}).items():
-        hints.add(value, HINT_FIELDS.get(re.sub(r'[^a-z]', '', str(key).lower()), 'login'))
+        hints.add(value, HINT_FIELDS.get(re.sub(r'[^a-z]', '', str(key).lower()), 'login'), True)
     for key, value in ((private or {}).get('variables') or {}).items():
-        hints.add(value, key)
+        hints.add(value, key, True)
     if isinstance(extra, dict):
         for key, value in extra.items():
-            hints.add(value, key if re.fullmatch(r'[a-z][A-Za-z0-9_]{0,49}', str(key)) else 'specific')
+            hints.add(value, key if re.fullmatch(r'[a-z][A-Za-z0-9_]{0,49}', str(key)) else 'specific', True)
     elif isinstance(extra, list):
         for value in extra:
             if isinstance(value, dict):
-                hints.add(value.get('value'), value.get('kind') or 'specific')
+                hints.add(value.get('value'), value.get('kind') or 'specific', True)
             else:
-                hints.add(value, 'specific')
+                hints.add(value, 'specific', True)
     for record in raw_records:
         path = urlsplit(record.get('url') or '').path
         if record.get('method', 'GET').upper() != 'GET' and LOGIN_PATH.search(path):
-            hints.add_fields(_parsed_body(record.get('requestBody'), _media(record)))
+            hints.add_fields(_parsed_body(record.get('requestBody'), _media(record)), explicit=False)
         if IDENTITY_PATH.search(path) and int(record.get('status') or 0) < 400:
             hints.add_fields(_parsed_body(record.get('responseBody')))
     return hints
@@ -170,7 +196,7 @@ def scan(raw_records, hints):
                 found('path', text, record, segment=position)
             else:
                 for lower, kind, original in hints.items():
-                    if len(lower) >= 4 and lower in text.lower():
+                    if lower != text.lower() and contains(text, lower):
                         findings.append({'where': 'path', 'kind': kind, 'value': original, 'exact': False, 'segment': position,
                                          'endpoint': f"{record.get('method', 'GET').upper()} {parts.path}",
                                          'note': 'Part of a path segment; name it in the operation path as a {variable}'})
@@ -185,7 +211,7 @@ def scan(raw_records, hints):
                 elif isinstance(value, (dict, list)):
                     text = json.dumps(value, ensure_ascii=False).lower()
                     for lower, kind, original in hints.items():
-                        if len(lower) >= 4 and lower in text:
+                        if contains(text, lower):
                             findings.append({'where': 'body', 'kind': kind, 'value': original, 'exact': False, 'field': name,
                                              'endpoint': f"{record.get('method', 'GET').upper()} {parts.path}",
                                              'note': 'Inside a nested body field; fill it from the private Blink defaults'})
@@ -205,7 +231,7 @@ FREE_TEXT = {'summary', 'description', 'title', 'note', 'x-blink-notes', 'x-blin
 def review(document, values, skip=()):
     """Second pass over the finished Blink: read it line by line; in free text (titles, summaries, notes) a specific
     value is replaced by {variable}; anything still found elsewhere is returned as remaining."""
-    replacements = sorted(((v.lower(), name) for name, v in values.items() if isinstance(v, str) and len(v) >= MIN_LENGTH),
+    replacements = sorted(((v.lower(), name) for name, v in values.items() if isinstance(v, str) and len(v) >= 2),
                           key=lambda item: -len(item[0]))
 
     def rewrite(value, key=None):
@@ -215,7 +241,8 @@ def review(document, values, skip=()):
             return [rewrite(v, key) for v in value]
         if isinstance(value, str) and key in FREE_TEXT:
             for lower, name in replacements:
-                value = re.sub(re.escape(lower), '{' + name + '}', value, flags=re.I)
+                pattern = re.escape(lower) if len(lower) >= 4 else r'(?<![A-Za-z0-9])' + re.escape(lower) + r'(?![a-z0-9])'
+                value = re.sub(pattern, '{' + name + '}', value, flags=re.I)
         return value
 
     document = rewrite(document)
@@ -227,8 +254,7 @@ def review(document, values, skip=()):
 
     shown = without(document)
     for number, line in enumerate(json.dumps(shown, indent=1, ensure_ascii=False).splitlines(), 1):
-        low = line.lower()
         for lower, name in replacements:
-            if lower in low:
+            if contains(line, lower):
                 remaining.append({'line': number, 'variable': name, 'text': line.strip()[:200]})
     return document, remaining
