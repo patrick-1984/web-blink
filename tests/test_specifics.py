@@ -213,6 +213,137 @@ class ReviewRegressionTests(ParameterizationTests):
         self.assertEqual(filled, {'userId': 1234567890123456789})
 
 
+class Learner083RegressionTests(ParameterizationTests):
+    def test_identity_ids_keep_their_field_names(self):
+        workspace = '11111111-1111-4111-8111-111111111111'
+        member = '22222222-2222-4222-8222-222222222222'
+        learner, summary = self.recorded([
+            record(1, 'GET', '/api/me', response={'workspace_id': workspace, 'memberId': member,
+                                                'account_id': 'account-acme', 'user_id': 'user-jdoe'}),
+            record(2, 'GET', f'/api/workspaces/{workspace}/items?memberId={member}&accountId=account-acme&userId=user-jdoe')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'})
+        self.assertEqual(private.variables('workspace-cloud-example'), {
+            'workspaceId': workspace, 'memberId': member, 'accountId': 'account-acme', 'userId': 'user-jdoe'})
+        operation = result['manifest']['paths']['/api/workspaces/{workspaceId}/items']['get']
+        self.assertEqual({p['name']: p['x-blink-variable'] for p in operation['parameters']},
+                         {name: name for name in ('workspaceId', 'memberId', 'accountId', 'userId')})
+
+    def test_explicit_names_override_private_and_derived_names(self):
+        private.set_private('workspace-cloud-example', {'identity': {'loginName': 'jdoe'},
+                                                       'variables': {'login': 'jdoe'}})
+        learner, summary = self.recorded([
+            record(1, 'GET', '/api/me', response={'email': 'jdoe@acme.com'}),
+            record(2, 'GET', '/api/items?user=jdoe&company=acme')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'},
+                                 specifics={'owner': 'jdoe', 'organization': 'acme'})
+        self.assertEqual(set(result['manifest']['x-blink-service']['variables']), {'owner', 'organization'})
+        operation = result['manifest']['paths']['/api/items']['get']
+        self.assertEqual({p['name']: p['x-blink-variable'] for p in operation['parameters']},
+                         {'user': 'owner', 'company': 'organization'})
+
+    def test_old_numbered_names_yield_to_request_context(self):
+        workspace = '11111111-1111-4111-8111-111111111111'
+        member = '22222222-2222-4222-8222-222222222222'
+        private.set_private('workspace-cloud-example', {'variables': {'login2': workspace, 'login3': member}})
+        learner, summary = self.recorded([
+            record(1, 'GET', f'/api/workspaces/{workspace}/items?memberId={member}')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'})
+        self.assertEqual(set(result['manifest']['x-blink-service']['variables']), {'workspaceId', 'memberId'})
+
+    def test_unnamed_host_value_gets_a_company_name(self):
+        learner, summary = self.recorded([record(1, 'GET', '/api/items')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'}, specifics=['acme'])
+        self.assertEqual(result['manifest']['servers'][0]['url'], 'https://{company}.workspace-cloud.example')
+
+    def test_a_valid_long_explicit_name_is_preserved(self):
+        name = 'workspace' + 'x' * 41
+        learner, summary = self.recorded([record(1, 'GET', '/api/items?workspace=acme')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'}, specifics={name: 'acme'})
+        self.assertEqual(set(result['manifest']['x-blink-service']['variables']), {name})
+
+    def test_unnamed_values_use_path_query_and_body_context(self):
+        workspace = '11111111-1111-4111-8111-111111111111'
+        learner, summary = self.recorded([
+            record(1, 'POST', f'/api/workspaces/{workspace}/items?member_id=member-jdoe', 201,
+                   {'account_id': 'account-acme', 'caseId': 'CASE-1042', 'display_name': 'Jane Doe'})])
+        expected = {'workspaceId': workspace, 'memberId': 'member-jdoe', 'accountId': 'account-acme',
+                    'caseId': 'CASE-1042', 'userName': 'Jane Doe'}
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'},
+                                 specifics=list(expected.values()))
+        self.assertEqual(private.variables('workspace-cloud-example'), expected)
+        operation = result['manifest']['paths']['/api/workspaces/{workspaceId}/items']['post']
+        schema = operation['requestBody']['content']['application/json']['schema']
+        self.assertEqual({key: value['x-blink-variable'] for key, value in schema['properties'].items()},
+                         {'account_id': 'accountId', 'caseId': 'caseId', 'display_name': 'userName'})
+
+    def test_only_different_values_sharing_a_name_are_numbered(self):
+        first = '11111111-1111-4111-8111-111111111111'
+        second = '22222222-2222-4222-8222-222222222222'
+        learner, summary = self.recorded([
+            record(1, 'GET', f'/api/workspaces/{first}/items?workspaceId={first}'),
+            record(2, 'GET', f'/api/workspaces/{second}/members')])
+        learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'}, specifics=[first, second])
+        self.assertEqual(private.variables('workspace-cloud-example'), {'workspaceId': first, 'workspaceId2': second})
+
+    def test_explicit_names_are_reserved_before_inferred_names(self):
+        learner, summary = self.recorded([
+            record(1, 'GET', '/api/me', response={'email': 'jdoe@acme.com', 'login': 'asmith'}),
+            record(2, 'GET', '/api/items?user=jdoe&owner=asmith')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'},
+                                 specifics={'login': 'asmith'})
+        operation = result['manifest']['paths']['/api/items']['get']
+        self.assertEqual({p['name']: p['x-blink-variable'] for p in operation['parameters']},
+                         {'user': 'login2', 'owner': 'login'})
+
+    def test_query_requiredness_uses_every_request_in_the_endpoint_group(self):
+        learner, summary = self.recorded([
+            record(1, 'GET', '/api/items/123?page=1&filter=open&blank='),
+            record(2, 'GET', '/api/items/456?page=2&later=yes&blank='),
+            record(3, 'GET', '/api/other?filter=open'),
+            record(4, 'POST', '/api/items/789?filter=open', 201, {})])
+        selections = [None, [{'index': 0, 'operationId': 'getItem', 'effect': 'read',
+                              'queryNames': ['page', 'filter', 'blank', 'later']}]]
+        for selection in selections:
+            with self.subTest(selection=selection):
+                result = learner.propose(summary['id'], 'workspace-cloud-example', selection, auth={'kind': 'none'},
+                                         parameterize=False)
+                operation = result['manifest']['paths']['/api/items/{id}']['get']
+                self.assertEqual({p['name']: p['required'] for p in operation['parameters']},
+                                 {'id': True, 'page': True, 'filter': False, 'blank': True, 'later': False})
+
+    def test_private_query_is_required_even_when_only_sometimes_captured(self):
+        learner, summary = self.recorded([
+            record(1, 'GET', '/api/me', response={'login': 'jdoe'}),
+            record(2, 'GET', '/api/items?page=1'),
+            record(3, 'GET', '/api/items?user=jdoe&page=2&filter=open')])
+        result = learner.propose(summary['id'], 'workspace-cloud-example', None, auth={'kind': 'none'})
+        operation = result['manifest']['paths']['/api/items']['get']
+        self.assertEqual({p['name']: p['required'] for p in operation['parameters']},
+                         {'user': True, 'page': True, 'filter': False})
+        compiled = compile_manifest(result['manifest'], variables=private.variables('workspace-cloud-example'))
+        operation = next(op for op in compiled['operations'].values() if op['path'] == '/api/items')
+        self.assertEqual(set(operation['inputSchema']['required']), {'user', 'page'})
+        self.assertEqual(self.runtime._with_variables({'service': 'local:workspace-cloud-example'}, operation,
+                                                     {'page': '3'}), {'user': 'jdoe', 'page': '3'})
+        private.set_private('workspace-cloud-example', {'variables': {'login': None}})
+        with self.assertRaisesRegex(BlinkError, 'login'):
+            self.runtime._with_variables({'service': 'local:workspace-cloud-example'}, operation, {'page': '3'})
+
+    def test_explicit_parameters_override_inferred_requiredness(self):
+        learner, summary = self.recorded([
+            record(1, 'GET', '/api/me', response={'login': 'jdoe'}),
+            record(2, 'GET', '/api/items/123?user=jdoe&page=1&filter=open'),
+            record(3, 'GET', '/api/items/456?page=2')])
+        parameters = [{'name': name, 'in': 'query', 'required': required, 'schema': {'type': 'string'}}
+                      for name, required in [('user', False), ('page', False), ('filter', True)]]
+        selection = {'endpoint': summary['endpoints'][1]['endpoint'], 'parameters': parameters}
+        result = learner.propose(summary['id'], 'workspace-cloud-example', [selection], auth={'kind': 'none'})
+        operation = result['manifest']['paths']['/api/items/{id}']['get']
+        self.assertEqual({p['name']: p['required'] for p in operation['parameters']},
+                         {'id': True, 'user': False, 'page': False, 'filter': True})
+        self.assertEqual(operation['parameters'][0]['x-blink-variable'], 'login')
+
+
 class ScanTests(unittest.TestCase):
     def test_line_by_line_scan_finds_exact_and_partial_values(self):
         hints = specifics.collect_hints([], extra={'company': 'Acme', 'caseId': 'CASE-1042'})

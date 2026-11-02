@@ -608,7 +608,7 @@ class ProposeEverythingTests(unittest.TestCase):
             manifest = learner.propose(session['id'], 'app-example', None, auth={'kind': 'none'})['manifest']
             self.assertEqual(set(manifest['paths']), {'/weeks', '/entries', '/entries/{id}'})
             weeks = manifest['paths']['/weeks']['get']['parameters']
-            self.assertIn({'name': 'date', 'in': 'query', 'required': False, 'schema': {'type': 'string'}}, weeks)
+            self.assertIn({'name': 'date', 'in': 'query', 'required': True, 'schema': {'type': 'string'}}, weeks)
             delete = {p['name'] for p in manifest['paths']['/entries/{id}']['delete']['parameters']}
             self.assertEqual(delete, {'id', 'date', 'typeId'})
             notes = manifest['paths']['/entries']['post']['requestBody']['content']['application/json']['schema']['properties']['notes']
