@@ -74,3 +74,13 @@ data in `~/.web-blink` (`BLINK_HOME`), outside the plugin tree; the SessionStart
 The build script includes only selected runtime, schema, Blink, MCP, skill, hook and documentation files.
 Its fixed ZIP metadata makes unchanged builds reproducible; `_build.json` records every packaged file's
 raw SHA-256. Tests, research, review logs, caches, state and the rescue archive are excluded.
+
+## Codex compatibility
+
+Codex reads the same marketplace and `skills/` tree. It does not expand `${CLAUDE_PLUGIN_ROOT}` in
+`.mcp.json` (nor its own `${PLUGIN_ROOT}` there), so `.codex-plugin/plugin.json`, which only Codex reads,
+declares the MCP server itself: `node mcp/server.mjs` with `cwd: "."`, which Codex resolves to the
+installed plugin's directory. `BLINK_PLUGIN_ROOT` is not set; `mcp/server.mjs` falls back to its own
+location. Claude Code ignores `.codex-plugin/`; `claude plugin validate --strict` still passes. The build
+packages both manifests and refuses a name or version mismatch between them. The SessionStart status hook
+is Claude-only.

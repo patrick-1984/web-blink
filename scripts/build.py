@@ -9,7 +9,7 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-TREES = ('.claude-plugin', 'mcp', 'src/blink', 'schemas', 'blinks', 'skills', 'hooks')
+TREES = ('.claude-plugin', '.codex-plugin', 'mcp', 'src/blink', 'schemas', 'blinks', 'skills', 'hooks')
 FILES = ('.mcp.json', 'LICENSE', 'blink-catalog.json', 'pyproject.toml', 'README.md',
          'scripts/blink.py', 'scripts/demo.py', 'requirements.lock', 'docs/cli-reference.md', 'docs/claude-compatibility.md', 'docs/execution-profile.md',
          'docs/source-commands.md', 'docs/runtime-guide.md', 'docs/custody-provider.md', 'docs/state-lifecycle.md')
@@ -38,10 +38,14 @@ def selected_files(root):
                 if not path.resolve().is_relative_to(root.resolve()):
                     raise ValueError('package source escapes plugin root')
                 files.add(path)
-    required = ('.claude-plugin/plugin.json', '.mcp.json', 'mcp/server.mjs',
+    required = ('.claude-plugin/plugin.json', '.codex-plugin/plugin.json', '.mcp.json', 'mcp/server.mjs',
                 'src/blink/runtime.py', 'src/blink/daemon.py', 'src/blink/cli.py', 'src/blink/client.py')
     if any(root / name not in files for name in required):
         raise ValueError('runtime/package components are incomplete')
+    claude = json.loads((root / '.claude-plugin/plugin.json').read_text())
+    codex = json.loads((root / '.codex-plugin/plugin.json').read_text())
+    if (codex.get('name'), codex.get('version')) != (claude.get('name'), claude.get('version')):
+        raise ValueError('Codex and Claude plugin manifests disagree on name or version')
     return sorted(files, key=lambda path: str(path.relative_to(root)))
 
 

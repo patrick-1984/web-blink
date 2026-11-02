@@ -13,6 +13,15 @@ From the [patrick-1984 plugin marketplace](https://github.com/patrick-1984/marke
 /plugin install web-blink@patrick-1984
 ```
 
+## Install in Codex
+
+The same marketplace works in the Codex CLI:
+
+```text
+codex plugin marketplace add patrick-1984/marketplace
+codex plugin add web-blink@patrick-1984
+```
+
 Your order is the authorization: when you tell Claude to record, propose, switch a Blink on or submit something,
 it is done, with no approval dialogs and no confirmation questions. Exact plans, budgets and reconciliation of
 unknown outcomes still apply. If you want a dialog for every action, opt in yourself: `blink configure set

@@ -217,6 +217,11 @@ class PublicTransportTests(unittest.TestCase):
             with zipfile.ZipFile(first) as archive:
                 names = archive.namelist()
                 self.assertIn('.claude-plugin/plugin.json', names)
+                self.assertIn('.codex-plugin/plugin.json', names)
+                codex = json.loads(archive.read('.codex-plugin/plugin.json'))
+                claude = json.loads(archive.read('.claude-plugin/plugin.json'))
+                self.assertEqual((codex['name'], codex['version']), (claude['name'], claude['version']))
+                self.assertEqual(codex['mcpServers']['blink'], {'command': 'node', 'args': ['mcp/server.mjs'], 'cwd': '.'})
                 self.assertIn('src/blink/runtime.py', names)
                 self.assertFalse(any(any(bad in Path(n).parts for bad in ('tests', 'rescued', 'research', 'reviews', 'state', 'secrets', '__pycache__')) for n in names))
 
