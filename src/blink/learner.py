@@ -105,6 +105,7 @@ def endpoint_groups(records, limit=300):
                                    'pathTemplate': record.get('pathTemplate', record['path']), 'examplePath': record['path'],
                                    'index': index, 'count': 0, 'statuses': [], 'inScope': record.get('inScope', True),
                                    'resourceType': record.get('resourceType'), 'queryNames': [],
+                                   'requiredQueryNames': list(record.get('queryNames') or []),
                                    'requestMediaType': record.get('requestMediaType'), 'requestSchema': {},
                                    'authenticated': False, 'suggestedEffect': EFFECTS.get(record['method'], 'write')}
             order.append(key)
@@ -112,6 +113,8 @@ def endpoint_groups(records, limit=300):
         if record.get('status') and record['status'] not in group['statuses']:
             group['statuses'].append(record['status'])
         group['queryNames'] = list(dict.fromkeys(group['queryNames'] + list(record.get('queryNames') or [])))[:100]
+        group['requiredQueryNames'] = [name for name in group['requiredQueryNames']
+                                       if name in (record.get('queryNames') or [])]
         group['requestSchema'] = _merge_shapes(group['requestSchema'], record.get('requestSchema'))
         group['authenticated'] |= bool({'cookie', 'authorization'} & set(record.get('headerNames') or []))
     used, result = set(), []
@@ -1029,10 +1032,15 @@ class Learner:
                     raise ValueError(f"Unknown endpoint: {selection['endpoint']}")
                 base = {'index': group['index'], 'operationId': group['suggestedOperationId'],
                         'effect': group['suggestedEffect'], 'path': group['pathTemplate'], 'statuses': group['statuses'],
-                        'queryNames': group['queryNames']}
+                        'queryNames': group['queryNames'], 'requiredQueryNames': group['requiredQueryNames']}
                 if group['requestSchema']:
                     base['requestSchema'] = group['requestSchema']
                 selection = {**base, **{k: v for k, v in selection.items() if k != 'endpoint'}}
+            if isinstance(selection, dict) and isinstance(selection.get('index'), int) and 0 <= selection['index'] < len(records):
+                record = records[selection['index']]
+                group = groups.get(f"{record['method']} {record['origin']}{record.get('pathTemplate', record['path'])}")
+                if group:
+                    selection = {'queryNames': group['queryNames'], 'requiredQueryNames': group['requiredQueryNames'], **selection}
             if isinstance(selection, dict) and isinstance(selection.get('requestBody'), dict) and 'requestSchema' not in selection:
                 body = selection.pop('requestBody')  # accept an OpenAPI-style requestBody as well
                 content = body.get('content') if isinstance(body.get('content'), dict) else None
@@ -1052,7 +1060,8 @@ class Learner:
                        and 0 <= x['index'] < len(records)}
             if not origins or origins == {group['origin']}:
                 expanded.append({'index': group['index'], 'operationId': probe, 'effect': 'read',
-                                 'path': group['pathTemplate'], 'statuses': group['statuses']})
+                                 'path': group['pathTemplate'], 'statuses': group['statuses'],
+                                 'queryNames': group['queryNames'], 'requiredQueryNames': group['requiredQueryNames']})
         return expanded, auth
 
     def _previous_version(self, service_key):
@@ -1130,15 +1139,25 @@ class Learner:
         from . import specifics
         hints, raw = self.specifics(capture, service, extra=extra)
         records = capture.get('records') or []
-        chosen = [raw[records[x['index']]['seq']] for x in operations if isinstance(x, dict) and isinstance(x.get('index'), int)
-                  and 0 <= x['index'] < len(records) and records[x['index']].get('seq') in raw]
+        samples = {}
+        def group_key(record):
+            return record['method'], record['origin'], record.get('pathTemplate', record['path'])
+        for record in records:
+            if record.get('seq') in raw:
+                samples.setdefault(group_key(record), []).append(raw[record['seq']])
+        chosen = [item for x in operations if isinstance(x, dict) and isinstance(x.get('index'), int)
+                  and 0 <= x['index'] < len(records) for item in samples.get(group_key(records[x['index']]), [])]
         findings = specifics.scan(chosen, hints)
         names, values = {}, {}
+        found_values = {item['value'].lower() for item in findings if item['exact']}
+        reserved = {kind: lower for lower, kind, _ in sorted(hints.items(), key=lambda h: hints.priorities[h[0]])
+                    if hints.priorities[lower] >= 4 and lower in found_values}
 
         def variable(value, kind):
             lower = value.lower()
             if lower not in names:
-                names[lower] = specifics.variable_name(kind or 'specific', set(values))
+                taken = set(values) | {name for name, owner in reserved.items() if owner != lower}
+                names[lower] = specifics.variable_name(kind or 'specific', taken)
                 values[names[lower]] = value
             return names[lower]
 
@@ -1189,10 +1208,11 @@ class Learner:
                             marks[('path', parameter_name)] = name
                     template = '/'.join(shape)
                     selection['path'] = template
-            for name, value in parse_qsl(parts.query, keep_blank_values=True):
-                kind = hints.kind(value)
-                if kind:
-                    marks[('query', name)] = variable(value, kind)
+            for sample in samples.get(group_key(records[selection['index']]), []):
+                for name, value in parse_qsl(urlsplit(sample.get('url') or '').query, keep_blank_values=True):
+                    kind = hints.kind(value)
+                    if kind and ('query', name) not in marks:
+                        marks[('query', name)] = variable(value, kind)
             body = specifics._parsed_body(item.get('requestBody'), specifics._media(item))
             recorded = records[selection['index']].get('requestSchema')
             if 'requestSchema' not in selection and isinstance(recorded, dict) and recorded \
@@ -1252,13 +1272,15 @@ class Learner:
             parameters = [{'name': key, 'in': 'path', 'required': True, 'schema': {'type': 'string'}}
                           for key in re.findall(r'\{([A-Za-z0-9_]+)\}', path)]
             path_names = {p['name'] for p in parameters}
-            parameters += [{'name': q, 'in': 'query', 'required': False, 'schema': {'type': 'string'}}
+            marks = selection.get('_variables') or {}
+            parameters += [{'name': q, 'in': 'query',
+                            'required': q in (selection.get('requiredQueryNames') or []) or ('query', q) in marks,
+                            'schema': {'type': 'string'}}
                            for q in selection.get('queryNames') or [] if isinstance(q, str) and q not in path_names]
             if isinstance(selection.get('parameters'), list):  # explicit parameters: path placeholders are added if missing
                 given = {(x.get('in'), x.get('name')) for x in selection['parameters'] if isinstance(x, dict)}
                 selection = dict(selection, parameters=[clean_schema(x) for x in selection['parameters']] + [
                     x for x in parameters if x['in'] == 'path' and ('path', x['name']) not in given])
-            marks = selection.get('_variables') or {}
             for parameter in selection.get('parameters', parameters):
                 if isinstance(parameter, dict) and (parameter.get('in'), parameter.get('name')) in marks:
                     parameter['x-blink-variable'] = marks[(parameter['in'], parameter['name'])]

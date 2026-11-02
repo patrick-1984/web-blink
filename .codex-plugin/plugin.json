@@ -1,0 +1,24 @@
+{
+  "name": "web-blink",
+  "version": "0.8.3",
+  "description": "Learn and use reviewed Web Link integrations with local account custody and durable execution policy.",
+  "author": {
+    "name": "Web Blink project"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/patrick-1984/web-blink",
+  "repository": "https://github.com/patrick-1984/web-blink",
+  "skills": "./skills/",
+  "mcpServers": {
+    "blink": {
+      "command": "node",
+      "args": [
+        "mcp/server.mjs"
+      ],
+      "cwd": "."
+    }
+  },
+  "interface": {
+    "displayName": "Web Blink"
+  }
+}

@@ -12,11 +12,12 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 HINT_FIELDS = {
     'email': 'email', 'mail': 'email', 'emailaddress': 'email', 'useremail': 'email', 'upn': 'email',
     'userprincipalname': 'email', 'preferredusername': 'login', 'login': 'login', 'loginname': 'login',
-    'username': 'login', 'user': 'login', 'userid': 'userId', 'accountid': 'userId', 'employeeid': 'userId',
+    'username': 'login', 'user': 'login', 'userid': 'userId', 'accountid': 'accountId', 'employeeid': 'employeeId',
+    'memberid': 'memberId', 'teamid': 'teamId',
     'name': 'userName', 'displayname': 'userName', 'fullname': 'userName', 'firstname': 'userName', 'lastname': 'userName',
     'company': 'company', 'companyname': 'company', 'organization': 'company', 'organisation': 'company', 'org': 'company',
     'orgname': 'company', 'organizationname': 'company', 'tenant': 'tenant', 'tenantname': 'tenant', 'tenantid': 'tenant',
-    'workspace': 'workspace', 'workspacename': 'workspace', 'workspaceid': 'workspace', 'team': 'workspace',
+    'workspace': 'workspace', 'workspacename': 'workspace', 'workspaceid': 'workspaceId', 'team': 'workspace',
     'teamname': 'workspace', 'account': 'company', 'accountname': 'company', 'domain': 'company', 'subdomain': 'tenant',
     'case': 'caseId', 'caseid': 'caseId', 'casenumber': 'caseId',
 }
@@ -31,6 +32,22 @@ GENERIC_LABELS = {'www', 'api', 'apis', 'app', 'apps', 'web', 'portal', 'login',
 COMMON_VALUES = {'true', 'false', 'null', 'none', 'admin', 'user', 'users', 'test', 'default', 'home', 'index', 'api',
                  'www', 'com', 'net', 'org', 'app', 'login', 'name', 'email', 'value', 'data', 'json', 'html'}
 MIN_LENGTH = 3
+
+
+def field_name(field, *, path=False):
+    """A standard placeholder from an identity/request field or the resource before a path value."""
+    key = re.sub(r'[^a-z0-9]', '', str(field).lower())
+    if path:
+        resources = {'users': 'userId', 'workspaces': 'workspaceId', 'members': 'memberId',
+                     'accounts': 'accountId', 'cases': 'caseId', 'employees': 'employeeId',
+                     'teams': 'teamId', 'companies': 'company', 'tenants': 'tenant', 'organizations': 'company'}
+        if key in resources:
+            return resources[key]
+    if key in HINT_FIELDS:
+        return HINT_FIELDS[key]
+    parts = re.findall(r'[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+', str(field))
+    name = ''.join(part.lower() if i == 0 else part.title() for i, part in enumerate(parts))
+    return name if re.fullmatch(r'[a-z][A-Za-z0-9_]{0,49}', name) else 'specific'
 
 
 def _norm(value):
@@ -70,28 +87,35 @@ def replace(text, value, label):
 
 
 class Hints:
-    """Known specific values: value (lowercase) -> kind; the first kind seen wins."""
+    """Known values: user names > identity fields > request context > saved/derived fallback names."""
 
     def __init__(self):
         self.values = {}
+        self.priorities = {}
 
-    def add(self, value, kind, explicit=False):
+    def _remember(self, value, kind, priority):
+        lower = value.lower()
+        if priority > self.priorities.get(lower, -1):
+            self.values[lower] = (kind, value)
+            self.priorities[lower] = priority
+
+    def add(self, value, kind, explicit=False, *, priority=0):
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             value = str(value)
         if not isinstance(value, str) or not _usable(value, explicit):
             return
         value = value.strip()
-        self.values.setdefault(value.lower(), (kind, value))
+        self._remember(value, kind, priority)
         for match in EMAIL.finditer(value):  # an email also gives its login part and the company domain label
             local = value[match.start():match.start(1) - 1]
             if _usable(local):
-                self.values.setdefault(local.lower(), ('login', local))
+                self._remember(local, 'login', 0)
             if _usable(match.group(1)):
-                self.values.setdefault(match.group(1).lower(), ('company', match.group(1)))
+                self._remember(match.group(1), 'company', 0)
         if kind == 'userName' and ' ' in value:  # first and last names on their own
             for part in value.split():
                 if _usable(part) and len(part) >= 4:
-                    self.values.setdefault(part.lower(), ('userName', part))
+                    self._remember(part, 'userName', 0)
 
     def add_fields(self, value, depth=0, explicit=True):
         """Collect identity fields (email, login, company, tenant, ...) from a parsed JSON object or form."""
@@ -101,7 +125,7 @@ class Hints:
             for key, item in list(value.items())[:200]:
                 kind = HINT_FIELDS.get(re.sub(r'[^a-z]', '', str(key).lower()))
                 if kind and isinstance(item, (str, int)) and not isinstance(item, bool):
-                    self.add(item, kind, explicit)
+                    self.add(item, kind, explicit, priority=2)
                 elif isinstance(item, (dict, list)):
                     self.add_fields(item, depth + 1, explicit)
         elif isinstance(value, list):
@@ -138,12 +162,12 @@ def collect_hints(raw_records, *, private=None, extra=None):
     """Specific values from the private Blink identity, values the user named, login forms and identity reads."""
     hints = Hints()
     for key, value in ((private or {}).get('identity') or {}).items():
-        hints.add(value, HINT_FIELDS.get(re.sub(r'[^a-z]', '', str(key).lower()), 'login'), True)
+        hints.add(value, field_name(key), True, priority=2)
     for key, value in ((private or {}).get('variables') or {}).items():
         hints.add(value, key, True)
     if isinstance(extra, dict):
         for key, value in extra.items():
-            hints.add(value, key if re.fullmatch(r'[a-z][A-Za-z0-9_]{0,49}', str(key)) else 'specific', True)
+            hints.add(value, key if re.fullmatch(r'[a-z][A-Za-z0-9_]{0,49}', str(key)) else 'specific', True, priority=4)
     elif isinstance(extra, list):
         for value in extra:
             if isinstance(value, dict):
@@ -156,11 +180,29 @@ def collect_hints(raw_records, *, private=None, extra=None):
             hints.add_fields(_parsed_body(record.get('requestBody'), _media(record)), explicit=False)
         if IDENTITY_PATH.search(path) and int(record.get('status') or 0) < 400:
             hints.add_fields(_parsed_body(record.get('responseBody')))
+    # Context names values already known to be specific; it does not classify every ID or query value as private.
+    for record in raw_records:
+        parts = urlsplit(record.get('url') or '')
+        for label in (parts.hostname or '').split('.')[:-2]:
+            if hints.kind(label):
+                kind = hints.kind(label)
+                hints.add(label, kind if kind in {'company', 'tenant'} else 'company', True, priority=2)
+        segments = parts.path.split('/')
+        contexts = [(field_name(segments[i - 1], path=True), unquote(value))
+                    for i, value in enumerate(segments) if i and value]
+        contexts += [(field_name(key), value) for key, value in parse_qsl(parts.query, keep_blank_values=True)]
+        body = _parsed_body(record.get('requestBody'), _media(record))
+        if isinstance(body, dict):
+            contexts += [(field_name(key), str(value)) for key, value in body.items()
+                         if isinstance(value, (str, int)) and not isinstance(value, bool)]
+        for name, value in contexts:
+            if hints.kind(value) and name != 'specific':
+                hints.add(value, name, True, priority=1)
     return hints
 
 
 def variable_name(kind, taken):
-    base = kind if re.fullmatch(r'[a-z][A-Za-z0-9_]{0,40}', kind or '') else 'specific'
+    base = kind if re.fullmatch(r'[a-z][A-Za-z0-9_]{0,49}', kind or '') else field_name(kind or '')
     name, count = base, 1
     while name in taken:
         count += 1
