@@ -17,7 +17,7 @@ Stdout contains protocol messages only. Eight tools are listed: seven runtime to
 Unknown tool names, invalid argument shapes and public attempts to issue human authorization are rejected.
 
 The Node entry initializes and provides diagnostics even when Python is missing. Runtime calls use the
-configured `BLINK_PYTHON` executable, or uv with the pinned JSON Schema dependency, then Python's private
+prepared private runtime, configured `BLINK_PYTHON` executable, or uv with pinned dependencies, then Python's private
 local transport client (Unix sockets on macOS/Linux, authenticated named pipes on Windows).
 `BLINK_DISABLE_UV=1` selects the plain Python fallback. A custom `BLINK_PYTHON` must be
 one executable path; it is not parsed as a shell command.
@@ -58,7 +58,8 @@ necessary. Losing a native command response produces an unknown-control outcome,
   permissions and scheduling still require the AD-21 T1–T8 host experiments. They have not been certified.
 
 Missing optional dependencies do not trigger installation or an unsolicited browser launch on session start.
-`blink_doctor` supplies the explicit pinned dependency setup command when it is needed for a requested task.
+`blink_doctor` supplies the native `runtime_setup` tool action; requested browser operations prepare missing
+components themselves. Host sandbox/permission settings are never changed.
 
 ## Local commands
 

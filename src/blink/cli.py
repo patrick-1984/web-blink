@@ -159,11 +159,12 @@ def build_parser():
     actions = browser.add_subparsers(dest='browser_action', required=True)
     listing = actions.add_parser('list', help='Read local profile metadata without starting a browser')
     listing.add_argument('--browser', choices=('chrome', 'edge', 'brave', 'firefox'))
+    listing.add_argument('--refresh', action='store_true', help='Refresh saved profile names and aliases now')
     actions.add_parser('status', help='Show the remembered connection and setup instructions')
     selection = actions.add_parser('select', help='Remember a browser connection for future recordings')
-    selection.add_argument('--mode', choices=('shared', 'extension', 'cdp', 'managed', 'credentials'), default='extension')
-    selection.add_argument('--browser', choices=('chrome', 'edge', 'brave', 'firefox'))
-    selection.add_argument('--profile', help='Exact discovered profile ID, directory or unique display name')
+    selection.add_argument('--mode', choices=('shared', 'native', 'profile', 'playwright', 'extension', 'cdp', 'managed', 'credentials'), default='native')
+    selection.add_argument('--browser', choices=('chrome', 'edge', 'brave', 'chromium', 'firefox', 'webkit'))
+    selection.add_argument('--profile', help='Table number such as #6, exact profile ID, directory or display-name alias')
     selection.add_argument('--endpoint', help='Chrome/Edge channel name or explicit loopback CDP URL')
     selection.add_argument('--name', help='Name of a separate persistent Blink session')
     selection.add_argument('--yes', action='store_true')
@@ -243,7 +244,7 @@ def run(args):
         from .config import ConfigStore
         store = ConfigStore(getattr(args, '_config_directory', None))
         if args.browser_action == 'list':
-            data = discover(args.browser)
+            data = discover(args.browser, refresh=args.refresh)
         elif args.browser_action == 'status':
             from .doctor import default_state_dir
             data = connection_status(store.load().get('browser', {'mode': 'shared'}), args.state_dir or default_state_dir())
@@ -258,7 +259,7 @@ def run(args):
             from .browsers import resolve_selection
             params = resolve_selection(params)
             confirm('browser_select', params, args.yes, mode=selected_approval_mode(args))
-            data = connection_plan(store.set_browser(params), args.state_dir or default_state_dir())
+            data = connection_status(store.set_browser(params), args.state_dir or default_state_dir())
         return {'status': 'ok', 'summary': 'Local browser connection', 'data': data, 'warnings': []}
     if args.command == 'doctor':
         result = report(args.state_dir)
