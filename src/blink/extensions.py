@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+import re
 
 from .browser import BrowserBridge
 from .errors import BlinkError
@@ -60,7 +61,7 @@ class LazyBrowser:
                 else:
                     plan = connection_plan(selection, self.state_dir)
                     if not plan['available']:
-                        raise BlinkError(plan['reason'].replace('-', '_'), plan['instructions'] + ' Setup: blink browser setup.')
+                        raise BlinkError(plan['reason'].replace('-', '_'), plan['instructions'])
                     # Explicit selectors must not inherit an unrelated profile/token/proxy from another MCP.
                     environment = {k: v for k, v in os.environ.items() if not k.startswith('PLAYWRIGHT_MCP_')}
                     from .browsers import prepare_directories
@@ -78,6 +79,10 @@ class LazyBrowser:
                     if output.is_symlink():
                         raise BlinkError('invalid_arguments', 'Browser output cannot be a symlink')
                     command = plan['command'] + ['--output-dir', str(output)]
+                    if selection['mode'] == 'cdp':
+                        from .browsers import resolve_cdp_endpoint
+                        endpoint = resolve_cdp_endpoint(selection['endpoint'])
+                        command = [endpoint if item == selection['endpoint'] else item for item in command]
                     if selection['mode'] == 'profile':
                         from .browser_process import profile_host
                         endpoint = profile_host(plan, state, environment)
@@ -177,6 +182,161 @@ class Extensions:
         self.started = False
         self.last_maintenance = 0
         self.permission_pages = set()
+        self.flows = {}
+
+    def flow(self, params=None, *, create=True):
+        key = (params or {}).get('_flowId', 'local-cli')
+        if key != 'local-cli' and (not isinstance(key, str) or not re.fullmatch('[a-f0-9]{32}', key)):
+            raise BlinkError('invalid_arguments', 'Invalid browser workflow identity')
+        state = self.flows.get(key)
+        if state is None:
+            state = {'last_connection': None, 'pending_recording': None, 'bindings': set(), 'sessions': set()}
+            if create:
+                self.flows[key] = state
+        return state
+
+    @property
+    def last_connection(self):
+        return self.flow()['last_connection']
+
+    @last_connection.setter
+    def last_connection(self, value):
+        self.flow()['last_connection'] = value
+
+    @property
+    def pending_recording(self):
+        return self.flow()['pending_recording']
+
+    @pending_recording.setter
+    def pending_recording(self, value):
+        self.flow()['pending_recording'] = value
+
+    @staticmethod
+    def same_browser(first, second):
+        if first.get('profile') and second.get('profile'):
+            return (first.get('browser'), first['profile']) == (second.get('browser'), second['profile'])
+        return first == second
+
+    def connection_ready(self, selected, binding, params=None):
+        from .onboarding import guide
+        state = self.flow(params)
+        state['last_connection'] = {'browser': selected, 'binding': binding, 'verifiedAt': time.time()}
+        active = next((key for key, run in self.learner.running.items()
+                       if (not (params or {}).get('_flowId') or key in state['bindings'])
+                       and self.same_browser(run['meta'].get('browser', {}), selected)), None)
+        data = {'connected': True, 'readyToRecord': True, 'browser': selected, 'binding': binding,
+                'recording': active is not None,
+                'guidance': guide('recording' if active else 'connected', browser=selected, binding=active)}
+        data['message'] = data['guidance']['message']
+        if state['pending_recording'] and not active:
+            resume = {**state['pending_recording'], 'browser': selected, 'waitSeconds': 0}
+            data['recordingRequested'] = True
+            data['nextActions'] = [{'tool': 'blink_start_recording', 'params': resume,
+                                    'label': 'Continue the requested recording in this browser'}]
+        return data
+
+    def browser_status(self, params):
+        """Read-only: never open a browser/tab, reconnect a transport or inspect OS port owners."""
+        from .browsers import resolve_selection
+        from .onboarding import guide
+        state = self.flow(params, create=False)
+        previous = state['last_connection']
+        selected = resolve_selection(params['browser']) if 'browser' in params else (
+            previous['browser'] if previous else None)
+        if 'browser' not in params and params.get('binding') in self.learner.running:
+            selected = self.learner.running[params['binding']]['meta'].get('browser')
+        report = self.learner.status()
+        active = [row for row in report['recording'] if (
+                  row['blink'] == params['binding'] if params.get('binding') else
+                  not params.get('_flowId') or row['blink'] in state['bindings'])
+                  and (selected is None or self.same_browser(
+                      self.learner.running.get(row['blink'], {}).get('meta', {}).get('browser', {}), selected))]
+        last = previous if previous and selected and self.same_browser(previous['browser'], selected) else None
+        recent = [row for row in report['recentSessions'] if not params.get('_flowId') or row['session'] in state['sessions']]
+        result = {'browser': selected, 'recording': bool(active), 'recordings': active, 'recentSessions': recent,
+                  'healthy': all(row.get('healthy') is True for row in active) if active else None,
+                  'connectionChecked': False, 'lastConnectedAt': last['verifiedAt'] if last else None,
+                  'connectionState': 'last_verified' if last else 'not_verified',
+                  'guidance': guide('recording' if active else 'connected' if last else 'choose_browser',
+                                    browser=selected, binding=active[0]['blink'] if active else None),
+                  'diagnostics': {'httpDiscoveryRequired': False,
+                      'note': 'A native browser bridge can return HTTP 404 for /json/version or /json/list. '
+                              'That alone does not prove failure. Use Blink connection tools, not shell port/process diagnostics.'}}
+        if active and result['healthy'] is False:
+            result['guidance'] = guide('recording_problem', browser=selected, binding=active[0]['blink'])
+        if not active and last:
+            result['guidance']['message'] = 'Recording is OFF. The browser connected at the last check; it has not been checked again.'
+        others = [row for row in report['recording'] if row not in active]
+        if others:
+            result['otherRecordings'] = [{'binding': row['blink'], 'session': row['session']} for row in others]
+            if not active:
+                result['guidance'] = guide('other_recordings')
+        if state['pending_recording'] and not active:
+            result.update(recordingRequested=True, phase='recording_setup_pending', nextActions=[{
+                'tool': 'blink_start_recording', 'params': state['pending_recording'],
+                'label': 'Continue the requested recording'}])
+        return result
+
+    def start_recording(self, params):
+        """One authorized action connects the chosen browser and starts its recorder; retries preserve intent."""
+        from urllib.parse import urlsplit
+        from .browsers import resolve_selection
+        from .learner import blink_name, canonical_origin
+        from .onboarding import guide
+        state = self.flow(params)
+        url = params.get('url')
+        try:
+            parsed = urlsplit(url) if isinstance(url, str) else None
+        except ValueError:
+            parsed = None
+        if not parsed or parsed.username or parsed.password or parsed.scheme not in ('http', 'https'):
+            raise BlinkError('invalid_arguments', 'Which app would you like to record? Provide its web address.')
+        try:
+            canonical_origin(f'{parsed.scheme}://{parsed.netloc}', allow_http=True)
+        except ValueError:
+            raise BlinkError('invalid_arguments', 'Which app would you like to record? Provide its complete web address.') from None
+        selected = resolve_selection(params['browser'])
+        target = params.get('binding') or blink_name(url)
+        if not isinstance(target, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', target):
+            raise BlinkError('invalid_arguments', 'Choose a short recording name without spaces or slashes.')
+        for binding, run in self.learner.running.items():
+            if ((not params.get('_flowId') or binding in state['bindings'])
+                    and run['meta'].get('startUrl') == url and self.same_browser(run['meta'].get('browser', {}), selected)
+                    and ('binding' not in params or binding == target)):
+                state['pending_recording'] = None
+                return {'recording': True, 'alreadyRecording': True, 'binding': binding, 'session': run['session'],
+                        'browser': run['meta']['browser'], 'screenshots': run['screenshots'],
+                        'guidance': guide('recording', browser=selected, binding=binding)}
+        if target in self.learner.running:
+            raise BlinkError('recording_in_progress', 'A recording with this name is already running. Finish it before starting another.')
+        state['pending_recording'] = {key: value for key, value in params.items() if key in ('url', 'browser', 'binding', 'waitSeconds')}
+        # Reuse the connection tab opened for sign-in when it belongs to this exact browser and is not recording.
+        previous = state['last_connection']
+        if isinstance(self.browser, LazyBrowser) and previous and self.same_browser(previous['browser'], selected):
+            old = previous['binding']
+            if old != target and old not in self.learner.running and target not in self.browser.routes:
+                self.browser.rename_owner(old, target)
+        connection = self.connect_browser({'browser': selected, 'binding': target, 'automatic': True,
+                                           'waitSeconds': params.get('waitSeconds', 0),
+                                           **({'_flowId': params['_flowId']} if params.get('_flowId') else {})})
+        if not connection.get('connected'):
+            continuation = {**state['pending_recording'], 'browser': connection.get('browser', selected), 'waitSeconds': 25}
+            return {**connection, 'recording': False, 'recordingRequested': True,
+                    'nextActions': [{'tool': 'blink_start_recording', 'params': continuation,
+                                     'label': 'Finish connecting and start the requested recording'}]}
+        selected = connection['browser']
+        # Keep the requested app's identity when its first navigation redirects to a sign-in provider.
+        state['bindings'].add(target)  # Status must find an owned recorder even if acknowledgement fails after start.
+        try:
+            data = self.learner.start(target, url, browser=selected)
+        except Exception:
+            if target in self.learner.running:
+                state['pending_recording'] = None  # The recorder exists; do not offer to restart it after stop.
+            raise
+        state['pending_recording'] = None
+        state['bindings'].add(data['binding'])
+        state['sessions'].add(data['session'])
+        return {**data, 'connected': True, 'guidance': guide('recording', browser=selected, binding=data['binding'])}
 
     def browser_permission_step(self, params, *, open_page):
         from .browsers import selected_profile, permission_step
@@ -250,12 +410,14 @@ class Extensions:
             if selected['mode'] == 'native' and exc.code == 'browser_unavailable':
                 raise BlinkError('browser_permission_required', 'The selected browser has not exposed its live connection. Blink can open its permission page in this exact profile; allow the connection there.') from None
             raise
-        return {'connected': True, 'readyToRecord': True, 'browser': selected, 'binding': binding,
-                'message': 'The selected browser connection is ready. Blink can now record in its own work tab.'}
+        return self.connection_ready(selected, binding, params)
 
     def dispatch(self, method, params, *, human=False):
         if method == 'admin':
             action = params.get('action')
+            if action == 'browser_connection':
+                data = self.browser_status(params)
+                return reply(data, data['guidance']['message'])
             if action == 'browsers':
                 from .browsers import discover, connection_status
                 from .config import ConfigStore
@@ -300,7 +462,7 @@ class Extensions:
             if action == 'capabilities':
                 return self.runtime.dispatch('doctor', {})
             return None
-        methods = {'learn_import_har', 'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
+        methods = {'learn_import_har', 'learn_start', 'learn_start_guided', 'learn_stop', 'learn_propose', 'learn_accept_partial',
                    'jobs_create', 'jobs_pause', 'jobs_resume', 'jobs_run', 'jobs_list',
                    'workflow_validate', 'workflow_run', 'browser_open', 'browser_close',
                    'notifications', 'forget_capture', 'tools_add', 'tools_remove', 'tools_list', 'preflight'}
@@ -317,11 +479,23 @@ class Extensions:
         try:
             if method == 'learn_import_har':
                 data = self.learner.import_har(params['path'], params['origins'])
+            elif method == 'learn_start_guided':
+                data = self.start_recording(params)
+                if not data.get('recording'):
+                    return reply(data, data.get('message', 'Waiting for the browser choice. Recording is OFF.'), 'waiting_for_browser')
+                return reply(data, 'Recording is ON. Demonstrate your workflow, then say “finished”.')
             elif method == 'learn_start':
                 from .browsers import ensure_tools, default_selection
                 ensure_tools(params.get('browser') or default_selection(), self.store.path)
                 data = self.learner.start(params.get('binding'), params['url'], params.get('origins'),
                                           **({'browser': params['browser']} if 'browser' in params else {}))
+                from .onboarding import guide
+                data['guidance'] = guide('recording', browser=data.get('browser'), binding=data['binding'])
+                state = self.flow(params)
+                state['bindings'].add(data['binding'])
+                state['sessions'].add(data['session'])
+                state['last_connection'] = {'browser': data['browser'], 'binding': data['binding'], 'verifiedAt': time.time()}
+                return reply(data, 'Recording is ON. Demonstrate your workflow, then say “finished”.')
             elif method == 'browser_select':
                 from .config import ConfigStore
                 from .browsers import connection_status
@@ -336,6 +510,7 @@ class Extensions:
                 data = self.connect_browser(params)
                 if data.get('phase') == 'awaiting_browser_permission':
                     return reply(data, data['message'], 'waiting_for_browser')
+                return reply(data, data.get('message', 'The browser connection is ready.'))
             elif method in ('browser_permission_open', 'browser_extension_open'):
                 if method == 'browser_permission_open':
                     data = self.browser_permission_step(params, open_page=True)
@@ -367,6 +542,10 @@ class Extensions:
                                    'Blink closed no windows. The browser decides which tabs can be recovered; the restored tabs have not been verified.'}
             elif method == 'learn_stop':
                 data = self.learner.stop(params['binding'])
+                self.flow(params)['sessions'].add(data['id'])
+                from .onboarding import guide
+                data['guidance'] = guide('stopped')
+                return reply(data, data['guidance']['message'])
             elif method == 'learn_accept_partial':
                 data = self.learner.accept_partial(params['session'], params['reason'])
             elif method == 'learn_propose':
@@ -487,8 +666,25 @@ class Extensions:
             return reply(data)
         except BlinkError as exc:
             from .browsers import failure_guidance
-            return reply(failure_guidance(exc.code, params), exc.message, exc.code)
+            data = failure_guidance(exc.code, params)
+            if method == 'learn_start_guided':
+                data.update(recording=False, recordingRequested=True,
+                            guidance={'stage': 'recording_blocked', 'recording': False,
+                                'message': 'Recording has not started. Your original recording request is still pending.',
+                                'question': 'Try this browser again, or use a separate Blink browser?',
+                                'choices': ['Retry this browser', 'Use a separate Blink browser', 'Use the optional extension'],
+                                'agentInstruction': 'Explain the blocker briefly in plain language, then ask one next-step question. '
+                                    'Do not use shell port/process commands or require setup instructions. Keep the app URL and '
+                                    'resume blink_start_recording after the browser choice; do not stop at connection only.'})
+            return reply(data, exc.message, exc.code)
         except Exception:
+            if method == 'learn_start_guided':
+                return reply({'recording': None, 'recordingRequested': True,
+                    'nextActions': [{'tool': 'blink_browser_status', 'params': {}, 'label': 'Check what actually started'}],
+                    'guidance': {'stage': 'check_recording_state',
+                        'agentInstruction': 'Check blink_browser_status before retrying or claiming recording is off/on. '
+                                            'Explain the result and guide one next step; never use shell diagnostics.'}},
+                    'Blink could not finish this step. Check recording status before retrying.', 'recording_state_unknown')
             return reply({}, 'Action parameters, prerequisite or capability is unavailable', 'invalid_request')
 
     def notify(self, binding, reason):

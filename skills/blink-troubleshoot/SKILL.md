@@ -19,6 +19,22 @@ permission; do not change its policy or call a mutating operation read-only to a
 When Web Blink misbehaves, or the user complains that something does not work, first find the cause here and
 now; do not just apologise or retry blindly.
 
+For browser onboarding, use `blink_browser_status` first: it reads recording state without opening a browser
+or reconnecting. It distinguishes last-verified connection from a fresh check. For actual connection use
+`blink_connect_browser`; for an existing learn/record goal use `blink_start_recording`, which completes both
+connection and recording. Keep that original goal when the user switches browsers.
+
+Do not use shell commands for local ports, HTTP endpoints or process owners during ordinary browser setup.
+In particular, do not ask for elevated Get-NetTCPConnection/Get-Process access. A native browser bridge can
+return 404 for /json/version or /json/list while using its WebSocket consent route. That observation alone
+does not identify another process or prove Edge is unavailable. Blink handles the route selection internally.
+After bounded retries, ask a simple next-step choice (this browser / separate Blink browser / optional extension)
+and complete the original recording request after the choice. Do not strand the user at “browser ready”.
+
+Use a supportive factual handoff: “Recording is off; I’m starting it now” when already requested, or
+“Recording is off. Start now, or sign in first?” when the next step is genuinely unknown. Never stop at
+“No, I only connected the browser” or make the user reissue an already authorized request.
+
 1. Collect facts:
    - `blink_doctor`: plugin (`client`) and daemon versions, `daemonMatchesClient`, capabilities, `homeDir`
      (all user data lives in `~/.web-blink`; a warning says when it still waits to move from an old folder), warnings. A
@@ -36,8 +52,8 @@ now; do not just apologise or retry blindly.
    - Browser/profile choice: show the returned `profileTable`, accept #numbers, refresh on a missing name,
      and use aliases. Follow `nextActions`; say precisely what to approve in the browser. Do not say simply
      “requires configuration”, “profile unavailable” or “run these setup commands”.
-   - Host facts that matter: OS, Claude Code version (`claude --version`), Node and Python versions, browser
-     and Playwright MCP version when the browser is involved.
+   - Use the versions and capabilities already returned by Blink's diagnostics. Missing host-version details
+     do not block normal browser setup and are not a reason to send the user terminal commands.
 2. Write a short root cause analysis: what happened, what was expected, the evidence (versions, statuses,
    error texts), the most likely cause, and how sure you are. Tell the user the cause and a workaround.
 3. Do not offer or ask about a problem report. Submit one only when the user orders it (for example "report

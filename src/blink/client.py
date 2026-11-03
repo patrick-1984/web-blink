@@ -361,7 +361,7 @@ def control_request(method, params=None, *, state_dir=None, plugin_root=None, au
     sock = None
     try:
         sock = connect(state / 'control.sock')
-        if method in ('browser_setup', 'browser_connect', 'browser_restart', 'learn_start'):
+        if method in ('browser_setup', 'browser_connect', 'browser_restart', 'learn_start', 'learn_start_guided'):
             sock.settimeout(540)
     except (OSError, ValueError):
         return {'status': 'env_unavailable', 'summary': 'Private native control socket is unavailable; restart the local daemon', 'warnings': []}
