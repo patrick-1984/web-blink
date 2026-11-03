@@ -333,6 +333,11 @@ def control_request(method, params=None, *, state_dir=None, plugin_root=None, au
         params = {}
     if not isinstance(method, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,99}', method) or not isinstance(params, dict):
         raise ValueError('invalid native command')
+    if method == 'browser_restart':
+        from .browser_process import RESTART_BLOCKED
+        from .browsers import failure_guidance
+        return {'status': 'restart_not_isolated', 'summary': RESTART_BLOCKED,
+                'data': failure_guidance('restart_not_isolated', params), 'warnings': []}
     params = strict_json(encoded(params))  # Freeze the object used for both digest and wire bytes.
     if len(encoded(params).encode()) > MAX_MESSAGE - 500:
         raise ValueError('native command exceeds transport limit')

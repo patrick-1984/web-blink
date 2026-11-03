@@ -21,10 +21,13 @@ const definitions = [
  ['blink_execute','Execute one already-approved intent. This tool cannot issue approval.',{intentId:textSchema},['intentId'],'execute',false],
  ['blink_admin','Read runtime status, local profile names and aliases from the automatically refreshed metadata index (action browsers; optional browser filter and refresh), recording status, sessions, a review, or the user\'s private Blink. No credential databases are indexed.',{action:{type:'string',enum:['status','browsers','recording','review','capabilities','sessions','jobs','job','binding','intent','workflow','canary','private']},browser:{type:'string',enum:['chrome','edge','brave','firefox']},refresh:{type:'boolean'},id:textSchema,service:textSchema,blink:textSchema,session:textSchema,job:textSchema,binding:textSchema,intentId:textSchema,runId:textSchema,candidate:textSchema,offset:{type:'integer',minimum:0,maximum:1000000},limit:{type:'integer',minimum:1,maximum:200}},['action'],'admin',true],
  ['blink_doctor','Report host capabilities without needing Python, a daemon or browser.',{},[],'doctor',true],
+ ['blink_connect_browser','Connect the chosen browser profile, preparing missing Blink components and opening its own work tab. Tries safe connection paths; never restarts or closes existing browser windows, grants account permissions or submits service operations.',{browser:{type:'object'},binding:textSchema},['browser'],'connect_browser',false],
+ ['blink_restore_browser','Ask the browser to reopen one selected profile and restore its saved session. Closes no windows, terminates no processes and does not claim restored tabs were verified.',{browser:{type:'object'}},['browser'],'restore_browser',false],
  ['blink_request_approval','Carry out the exact action the user ordered. The user\'s order is the authorization: the action runs at once (recording, activation, bind, grants, approve_intent for a prepared write, jobs, forget, restart). Call it directly in the same turn; never ask for confirmation in chat and never announce a dialog. Only when the user set approvals to dialog in the CLI does the client show one Accept/Decline dialog.',{method:{type:'string',minLength:1,maxLength:100},params:{type:'object'},reason:{type:'string',maxLength:500}},['method','params'],'approval',false],
 ];
 const tools = definitions.map(([name,description,properties,required,method,readOnly]) => ({
  name,description,inputSchema:{type:'object',properties,required,additionalProperties:false},
+ ...(name==='blink_connect_browser'?{title:'Connect a browser profile'}:name==='blink_restore_browser'?{title:'Reopen a browser profile'}:{}),
  annotations:{readOnlyHint:readOnly,destructiveHint:name==='blink_execute',idempotentHint:readOnly,openWorldHint:true},
  ...(name==='blink_services'||name==='blink_search'||name==='blink_describe'?{_meta:{'anthropic/alwaysLoad':true}}:{}),
 }));
@@ -151,7 +154,10 @@ function approvalText(d,reason){
 async function approval(args,callId){
  if(!/^[a-z][a-z0-9_]{0,99}$/.test(args.method))return {status:'forbidden',summary:'This action is not supported by the Web Blink control bridge',warnings:[]};
  if(args.method==='runtime_setup')return prepareRuntime(args.params,callId);
- if(['learn_start','browser_connect','browser_select','browser_restart','browser_permission_open','browser_extension_open','browser_setup'].includes(args.method)
+ if(args.method==='browser_restart')return {status:'restart_not_isolated',summary:'Blink cannot restart just this profile without risking other profiles in the shared browser instance. No windows were closed. Use live connection or the optional PW extension; use safe reopen for recovery.',data:{closedWindows:false,nextActions:[
+  {tool:'blink_connect_browser',params:{browser:args.params?.browser},label:'Connect without closing any windows'},
+  {tool:'blink_restore_browser',params:{browser:args.params?.browser},label:'For recovery: reopen the selected profile and request saved-session restore; close nothing'}]},warnings:[]};
+ if(['learn_start','browser_connect','browser_restore','browser_select','browser_permission_open','browser_extension_open','browser_setup'].includes(args.method)
     && !doctor().data.capabilities.runtime){
   const ready=await prepareRuntime({},callId);if(ready.status!=='ok')return ready;
  }
@@ -218,6 +224,16 @@ async function prepareRuntime(params,callId){
  });
 }
 function rpcError(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
+function toolFailure(message,error){
+ const tool=tools.find(t=>t.name===message.params?.name);
+ if(message.method!=='tools/call'||!tool)return rpcError(message.id??null,-32603,'Internal error');
+ const kinds=['TypeError','RangeError','SyntaxError','ReferenceError','Error'];
+ const operation=message.params?.arguments?.method??message.params?.arguments?.action??methods.get(tool.name);
+ return {jsonrpc:'2.0',id:message.id,result:{isError:true,content:[{type:'text',text:JSON.stringify({
+  status:'internal_error',summary:'Blink could not finish this tool action. Inspect its current state before retrying an action that may have changed anything.',
+  data:{tool:tool.name,operation:typeof operation==='string'&&/^[a-z_]{1,100}$/.test(operation)?operation:'tool_action',
+        errorType:kinds.includes(error?.name)?error.name:'Error'},warnings:[]})}]}};
+}
 function validArguments(tool,args){
  if(!args||typeof args!=='object'||Array.isArray(args))return false;
  const schema=tool.inputSchema;
@@ -246,7 +262,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.10.0'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask. For browser choice, show data.profileTable and accept #numbers. Prepare local components through the native tool action; never hand the user setup commands or copied profile paths. Follow nextActions and explain the exact browser confirmation. Discovery alone is not connection. Browser restart always requires its native confirmation.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.10.1'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask. For browser choice, show data.profileTable and accept #numbers. Prepare local components through the native tool action; never hand the user setup commands or copied profile paths. Follow nextActions and explain the exact browser confirmation. Discovery alone is not connection. Shared-profile browser restart is blocked. Use the narrow blink_connect_browser tool for ordinary connection; proactively offer safe alternatives if native access fails. For recovery use blink_restore_browser, which closes nothing and reports restore requests honestly.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');
@@ -262,6 +278,8 @@ async function handle(message){
   const args=p.arguments??{};
   if(!validArguments(tool,args))return rpcError(id,-32602,'Invalid tool arguments');
   const result=p.name==='blink_doctor'?await doctorWithDaemon():p.name==='blink_request_approval'?await approval(args,id)
+   :p.name==='blink_connect_browser'?await approval({method:'browser_connect',params:{...args,automatic:true}},id)
+   :p.name==='blink_restore_browser'?await approval({method:'browser_restore',params:args},id)
    :process.platform==='win32'&&p.name==='blink_admin'&&args.action==='browsers'
     ?{status:'ok',summary:'Local profile names and aliases (no Python or daemon required)',data:(await import('./browsers.mjs')).discoverWindows(args.browser,{refresh:args.refresh===true}),warnings:[]}
     :await backend(methods.get(p.name),args);
@@ -295,7 +313,7 @@ process.stdin.on('data',chunk=>{
    const dialog=dialogs.get(call);const done=awaiting.get(dialog);awaiting.delete(dialog);done?.({action:'cancel'});continue;
   }
   queue=queue.then(async()=>{
-   try{send(await handle(message));}catch{send(rpcError(message?.id??null,-32603,'Internal error'));}
+   try{send(await handle(message));}catch(error){send(toolFailure(message,error));}
   });
  }
  if(Buffer.byteLength(pending)>LIMIT){pending='';dropping=true;send(rpcError(null,-32700,'Message exceeds transport limit'));}

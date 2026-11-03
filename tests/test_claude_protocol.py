@@ -48,12 +48,16 @@ class ClaudeProtocolTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in messages], [1, 2, 3])
         self.assertEqual(messages[0]['result']['protocolVersion'], '2025-11-25')
         tools = messages[1]['result']['tools']
-        self.assertEqual(len(tools), 9)
+        self.assertEqual(len(tools), 11)
         self.assertEqual({t['name'] for t in tools}, {'blink_services', 'blink_search', 'blink_describe',
-            'blink_call_read', 'blink_prepare', 'blink_execute', 'blink_admin', 'blink_doctor', 'blink_request_approval'})
+            'blink_call_read', 'blink_prepare', 'blink_execute', 'blink_admin', 'blink_doctor', 'blink_request_approval',
+            'blink_connect_browser', 'blink_restore_browser'})
         report = json.loads(messages[2]['result']['content'][0]['text'])
         self.assertTrue(report['data']['capabilities']['diagnostics'])
         self.assertFalse(report['data']['capabilities']['runtime'])
+        connect = next(t for t in tools if t['name'] == 'blink_connect_browser')
+        self.assertFalse(connect['annotations']['readOnlyHint'])
+        self.assertEqual(connect['title'], 'Connect a browser profile')
 
     def test_invalid_methods_arguments_and_parse_errors_are_protocol_responses(self):
         messages = node_messages([INIT,

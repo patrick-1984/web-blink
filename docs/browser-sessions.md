@@ -36,7 +36,7 @@ scan before Blink asks you to choose by number. It does not repeatedly ask you f
 | Choice | Behavior |
 |---|---|
 | Existing live profile (`native`) | PW connects to the existing browser through its native interface. Blink verifies the selected profile before visiting the service. It can open that profile's native permission page; you approve access in the browser. |
-| Launch this existing profile through PW (`profile`) | Uses the selected real data root, directory and installed binary. It retains that profile's logins. It creates no substitute profile and copies no credentials. A busy profile needs live attachment or an explicitly confirmed restart. |
+| Launch this existing profile through PW (`profile`) | Uses the selected real data root, directory and installed binary. It retains that profile's logins. It creates no substitute profile and copies no credentials. A busy shared profile needs live attachment or the optional extension; Blink does not restart its shared main process. |
 | Optional PW extension (`extension`) | Uses the extension in that exact browser profile. Blink opens its installation page when chosen; you confirm Add/Enable. This is optional, not a mandatory default. |
 | A new browser launched by PW (`playwright`) | Blink obtains Chromium, Firefox or WebKit and keeps a separate persistent profile named e.g. work/admin. This genuinely new profile needs its initial login, which subsequent uses retain. |
 | Shared browser (`shared`) | Uses the already configured shared Playwright provider. |
@@ -63,11 +63,19 @@ The host's tool permissions and the browser's own consent remain in force. A pre
 “download components for Blink on this computer”; it does not grant access to browser logins. Blink never
 changes Codex's sandbox or permission settings. Its approval preference is still controlled by the user.
 
-A restart always gets a native confirmation describing the browser/profile and warning that all windows
-of that instance can be affected, including other profiles. Blink matches the current user's exact browser
-process/data root, rechecks it before signalling and permits browser save/cancel prompts on Windows. A
-changed process plan or a window that stays open stops the restart. If PW cannot reconnect after a confirmed
-restart, Blink reopens the normal browser session. No other browser instance is terminated.
+Shared-profile restart is blocked. Chromium can host windows from multiple profiles in one main process,
+so matching its user-data root or PID does not prove it is safe to close just one profile. Blink refuses
+before any close/signal action. It does not retry a stale restart. This fixes the unsafe 0.10.0 path, which
+could close other profiles and then stop before reopening when the browser changed its background process.
+
+The narrow `blink_connect_browser` tool tries safe live connection and, where possible, cold PW launch of
+the same profile without closing anything. `blink_restore_browser` is a recovery action: it asks the normal
+browser to reopen the selected profile and restore its saved session, closes nothing and reports that the
+restored tabs have not been verified. It cannot promise recovery of every previously closed tab.
+
+The host may separately request permission to run an MCP tool. This belongs to Codex/Claude and cannot be
+disabled by the plugin. A user-controlled Always allow choice can be scoped to the connection-only tool,
+without authorizing the broader account/write action tool. Mutating tools remain truthfully annotated.
 
 An existing profile launched through PW has a dedicated PW host; the MCP client attaches to it. Disconnecting
 Blink's own work tabs does not deliberately close that profile's other windows. Closing the browser itself
@@ -103,8 +111,9 @@ blink browser select --mode playwright --browser firefox --name work
 blink browser status
 ```
 
-The local `browser_connect`, `browser_permission_open`, `browser_extension_open` and confirmed
-`browser_restart` actions are exposed through `blink_request_approval`. `runtime_setup` performs explicit
+Prefer `blink_connect_browser` for ordinary connection and `blink_restore_browser` for recovery. The legacy
+`browser_restart` action is refused before it can close windows. Local permission/extension-page actions
+remain available through `blink_request_approval`. `runtime_setup` performs explicit
 native preparation when needed. Tool results provide the actual state and next actions. They do not claim
 an authenticated account merely because a profile exists.
 
