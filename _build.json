@@ -3,12 +3,12 @@
     {
       "bytes": 392,
       "path": ".claude-plugin/plugin.json",
-      "sha256": "de649a0335cc04a000176d589cc4452de9029f4c4d653a7536611ded583e7157"
+      "sha256": "db8fc84d62de46938c485f4b82348c2088769bad2ffaa90f176a0d1aae8d2bc7"
     },
     {
       "bytes": 576,
       "path": ".codex-plugin/plugin.json",
-      "sha256": "de4986aeaceabcba41ada31acfdf03f9517073128c2382e88ede3f3504159e3b"
+      "sha256": "c1f2375617e2c90d11bc72811f9ebc16ea9e0e634168aa77610687f2f13bb25f"
     },
     {
       "bytes": 94,
@@ -26,9 +26,9 @@
       "sha256": "b645385b4fd24278a3688f278f3191d943140859723ef4e9a6ec6db9497ec0c5"
     },
     {
-      "bytes": 6432,
+      "bytes": 6541,
       "path": "README.md",
-      "sha256": "c49dee5ee256d27d566ad4ce803168691edcb5ffa855b87753a1c354fb528a6e"
+      "sha256": "2e5b0949de9ebea456e38239e8e4d9cca1e51199e68c99c645f4b87cf05fe3a6"
     },
     {
       "bytes": 336,
@@ -78,7 +78,7 @@
     {
       "bytes": 16274,
       "path": "docs/runtime-guide.md",
-      "sha256": "b49af0e468d59bde9972bcad8aac28e41bc46d5d7fa7a7025b67c867ab64180a"
+      "sha256": "17cc2c15b95aa5506569a3884461c4175a8145386dd83f29ea98edb5cde76869"
     },
     {
       "bytes": 7133,
@@ -111,9 +111,9 @@
       "sha256": "f90ba9a56f2471029389c6a1ca2a37d4c1cf7387ce311ba2e3ae9fb2e0d3f506"
     },
     {
-      "bytes": 27913,
+      "bytes": 27668,
       "path": "mcp/server.mjs",
-      "sha256": "9b28e355ee95f15b25c134121e36c850263bb0c8b88b4ba0a7a0d86ccbe83a58"
+      "sha256": "eea28abf7f3fcd786de8609159da7dbe57b46be4528dce35b80555b5c8273249"
     },
     {
       "bytes": 3000,
@@ -128,7 +128,7 @@
     {
       "bytes": 633,
       "path": "pyproject.toml",
-      "sha256": "19d29bdd55136a8505e7eae14afcfdf529c2830546fb64d8e5e806b97247462a"
+      "sha256": "33777fb30a6aebaac0e346d7235e8d87f98c5aa8d74c1289ce4dc20e18941925"
     },
     {
       "bytes": 12305,
@@ -218,7 +218,7 @@
     {
       "bytes": 70,
       "path": "src/blink/__init__.py",
-      "sha256": "e78d3da96be1f0a8c9dac7575a5e97011ef0edb490f7f980fa0f9dc64f6f7311"
+      "sha256": "43831cd07a365617fd207ed4c5e9d6a11b31f5b76267c0011e95080b6ab5fafb"
     },
     {
       "bytes": 48,
@@ -226,9 +226,9 @@
       "sha256": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d"
     },
     {
-      "bytes": 18897,
+      "bytes": 18878,
       "path": "src/blink/approval.py",
-      "sha256": "c6214223976bde7f815806962b008fbe69f38149daa6f1b765898c042e10a3f9"
+      "sha256": "5f48e8d67699bfd5538fca6a17c8363098c365a4e88102c5ea53963fb6979383"
     },
     {
       "bytes": 19918,
@@ -236,19 +236,19 @@
       "sha256": "971182cba7a5286b7115ef3d11bc5c77d66cf5f6c5df50c7f8c509744ecee839"
     },
     {
-      "bytes": 45450,
+      "bytes": 45442,
       "path": "src/blink/browser.py",
-      "sha256": "c2a0e77a5dfe888bd73a5a9def00e3d63c3c529aab84b2f0ad43199848f15fab"
+      "sha256": "8145e3f8b369c438292ad491a76464268e3db5cc78f2b216ff73eff64d37baaa"
     },
     {
-      "bytes": 10857,
+      "bytes": 10794,
       "path": "src/blink/browser_process.py",
-      "sha256": "1a1bc9c7e6aa4c798db91d962b0cd39fd4357015faf8a627ad676ebe61df4560"
+      "sha256": "1d4c62bda8657f41c29bb9f9109096f7fccb2693949ee7bf56f44c7b38915030"
     },
     {
-      "bytes": 33286,
+      "bytes": 33434,
       "path": "src/blink/browsers.py",
-      "sha256": "45fafe859f84eacb3b1ac90b7ba185d845cd30b73e699630734c64e84ad96d44"
+      "sha256": "418160775d080e5c1813bd25d06a8472e756a175b1244c1aa8094946dc130394"
     },
     {
       "bytes": 25502,
@@ -371,9 +371,9 @@
       "sha256": "556e9de12f9a1f61043fdd6109abc7ddf63969fd78cd425f781be380a2aa6e95"
     },
     {
-      "bytes": 33046,
+      "bytes": 33075,
       "path": "src/blink/extensions.py",
-      "sha256": "e2afecc9940a4ba25766971cd406f2bd348986dde1559f5dbc28b7645ebd263f"
+      "sha256": "56ea65155ed215ecede6c7ed2b8d7f018fa3e42142f2f54f288262f6a788b5ef"
     },
     {
       "bytes": 798,
@@ -472,6 +472,6 @@
     "license": "MIT",
     "name": "web-blink",
     "repository": "https://github.com/patrick-1984/web-blink",
-    "version": "0.10.1"
+    "version": "0.10.2"
   }
 }

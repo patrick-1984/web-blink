@@ -186,11 +186,11 @@ class Extensions:
             raise BlinkError(plan['reason'].replace('-', '_'), plan['instructions'])
         if selected['mode'] == 'profile':
             from .browser_process import processes, has_profile_host
-            # An already connected PW host is reusable; an unrelated live browser needs native attach/restart.
+            # An already connected PW host is reusable; an unrelated live browser needs live attachment.
             existing = has_profile_host(self.store.path, selected['profile']) or (isinstance(self.browser, LazyBrowser) and any(
                 json_key.find(selected['profile']) >= 0 for json_key in self.browser.bridges))
             if not existing and processes(selected['browser'], plan['profile']['userDataDir'], plan['launchConfig']['document']['browser']['launchOptions']['executablePath']):
-                raise BlinkError('profile_in_use', 'This profile is already open. Blink can connect to the live session, or restart this browser instance only after your confirmation.')
+                raise BlinkError('profile_in_use', 'The selected profile shares an open browser instance. Blink can connect to its live session or use the optional PW extension. No existing browser windows were closed.')
         ensure_tools(selected, self.store.path)
         binding = params.get('binding') or 'connection-' + selected.get('profile', selected.get('name', selected['mode']))
         if not isinstance(self.browser, LazyBrowser):

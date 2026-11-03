@@ -51,7 +51,8 @@ offline. A requested connection can prepare missing components in Blink's own fo
 authorize that tool action. Browser consent remains required, and shared-profile browser restart is blocked because it can affect other profiles.
 
 Your order is the authorization: when you tell Claude to record, propose, switch a Blink on or submit something,
-it is done, with no approval dialogs and no confirmation questions. Exact plans, budgets and reconciliation of
+Blink adds no separate confirmation dialog by default. Codex or Claude can still ask permission to run a tool;
+that permission belongs to the host and Blink cannot suppress it. Exact plans, budgets and reconciliation of
 unknown outcomes still apply. If you want a dialog for every action, opt in yourself: `blink configure set
 approvals dialog` (undo with `blink configure unset approvals`).
 
