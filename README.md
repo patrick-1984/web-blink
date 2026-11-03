@@ -46,6 +46,10 @@ components itself. You do not need to paste paths, run setup commands or edit co
 sessions, launching the selected existing profile through PW, an optional PW extension and a new persistent
 PW browser are separate choices. See [browser connections](docs/browser-sessions.md).
 
+When you ask to learn or record an app, Blink connects **and starts recording**, then guides you through
+demonstrating the workflow. Opening a browser alone explicitly leaves recording off and offers the next step.
+Switching browsers during setup keeps your original recording request. See the [guided recording flow](docs/recording-flow.md).
+
 Native Windows uses authenticated local named pipes; macOS/Linux use Unix sockets. Normal startup is
 offline. A requested connection can prepare missing components in Blink's own folder; the host may ask to
 authorize that tool action. Browser consent remains required, and shared-profile browser restart is blocked because it can affect other profiles.

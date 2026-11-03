@@ -33,6 +33,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_browser_consent.py -v
       - name: Existing browser and work-tab reuse
         run: python -m unittest discover -s tests -p test_browser_reuse.py -v
+      - name: Guided recording and browser diagnostics
+        run: python -m unittest discover -s tests -p test_guided_recording.py -v
       - name: Automatic runtime preparation and offline reuse
         env:
           BLINK_TEST_RUNTIME_SETUP: '1'

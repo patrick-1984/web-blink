@@ -22,8 +22,8 @@ def run(command, *, cwd, env, timeout=60):
 
 
 def main():
-    archive = ROOT / 'dist/web-blink-0.10.4.zip'
-    wheel = ROOT / 'dist/web_blink-0.10.4-py3-none-any.whl'
+    archive = ROOT / 'dist/web-blink-0.11.0.zip'
+    wheel = ROOT / 'dist/web_blink-0.11.0-py3-none-any.whl'
     with tempfile.TemporaryDirectory(prefix='blink-clean-artifacts-') as temp:
         work = Path(temp)
         extracted = work / 'plugin with spaces'
@@ -62,7 +62,7 @@ def main():
         run(['uv', 'pip', 'install', '--offline', '--python', str(python), '-r', str(ROOT / 'requirements.lock')],
             cwd=work, env=clean_env)
         run(['uv', 'pip', 'install', '--offline', '--no-deps', '--python', str(python), str(wheel)], cwd=work, env=clean_env)
-        if run([str(executable), '--version'], cwd=work, env=clean_env).strip() != 'blink 0.10.4':
+        if run([str(executable), '--version'], cwd=work, env=clean_env).strip() != 'blink 0.11.0':
             raise RuntimeError('Installed CLI version failed')
         index = json.loads(run([str(executable), 'schemas', '--json'], cwd=work, env=clean_env))
         if index.get('status') != 'ok':
@@ -70,10 +70,12 @@ def main():
         code = '''
 import json,tempfile
 from blink.paths import plugin_root
+from blink.onboarding import guide
 from blink.profile import compile_manifest
 from blink.runtime import Runtime
 from blink.workflows import compile_workflow
 root=plugin_root()
+assert guide('connected')['recording'] is False
 document=json.loads((root/'blinks/com.banana/1.0.0/openapi.json').read_text())
 assert compile_manifest(document)['id']=='com.banana'
 with tempfile.TemporaryDirectory() as state:

@@ -262,6 +262,7 @@ class RoutingTests(unittest.TestCase):
             with self.assertRaises(BlinkError) as caught:
                 router.get('account')
             self.assertEqual(caught.exception.code, 'setup_required')
+            self.assertNotIn('blink browser setup', caught.exception.message)
             bridge.assert_not_called()
             setup.assert_not_called()
         self.assertFalse(router.bridges)

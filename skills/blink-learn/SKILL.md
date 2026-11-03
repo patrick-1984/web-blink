@@ -12,6 +12,51 @@ When the user asks to learn a site or service, use their selected browser, start
 user and follow their lead. Never rush ahead of them. The plugin does all checking and file handling; never
 inspect processes, folders or files with shell commands to find out what Web Blink is doing.
 
+## Guide the whole task
+
+Keep the original goal through browser changes and troubleshooting. “Open a separate browser; I will log in
+there” during an existing learn/record request changes the browser, not the goal. Once it connects, finish
+starting the requested recording in the same turn. Do not leave the user to discover that recording is off.
+
+- **Learn/record requested, app known:** call `blink_start_recording` with the app URL and chosen browser.
+  This connects AND starts recording. Use the requested app URL; do not silently replace it with a login host.
+  If consent is pending, explain the clicks and follow its `nextActions`, which resume recording, not just
+  connection. Never announce recording until the result says `recording: true`.
+- **App unknown:** ask one plain question: “Which app would you like me to record?” No technical setup questions.
+- **Browser opened only:** state “Recording is off” and ask “Start recording now, or would you like to sign in
+  first?” Use the client's ask-user tool when available, with these two choices. If an earlier recording request
+  is already authorized, carry it out instead of asking the user to repeat it.
+  If the user chooses to sign in before recording, keep the app/browser and leave a short “Start recording” /
+  “Keep signing in” choice as their next step. Do not make them work out how to resume the original task.
+- **“Did you start recording?” / “Does it work?”:** use `blink_browser_status`. If off and recording was already
+  requested, say “Recording is off; I’m starting it now”, and call `blink_start_recording`. If the app is unknown,
+  ask which app. Never answer only “No, I only opened the browser”. Do not imply the user failed to ask correctly.
+  Pass the known recording `binding` when checking a session from earlier in the conversation, including after
+  a host restart. If another conversation has an active recording, explain that and ask whether to check it;
+  never claim all recording is off or silently adopt someone else's workflow.
+- **Recording on:** say “Recording is on. Sign in if needed, then show the steps you want me to learn. Say
+  ‘finished’ when done.” Then wait. Do not drive or navigate the recording tab unless the user asks you to.
+- **Finished:** stop the recording, summarize what was saved, then continue the previously requested Blink
+  creation/activation. If the user requested recording only, ask “Build a Blink from this, or review it first?”
+
+At every handoff follow `guidance`: actual recording state, one next action or a short choice. Translate it
+into the user's language. Do not end with “you can log in now”, a bare status, raw session paths or a list
+of developer tasks. User uncertainty is a reason to guide, not to lecture about what they did not request.
+
+## Connection problems stay inside Blink
+
+Use `blink_browser_status`, `blink_doctor` and the connection/recording tools. Never escalate to curl,
+Invoke-RestMethod, Get-NetTCPConnection, Get-Process, port-owner/process lookups or manual profile-file
+inspection for ordinary onboarding. Do not request administrator access to diagnose a browser connection.
+The native consent bridge can return HTTP 404 for `/json/version` and `/json/list`; that does not establish
+failure. Blink handles the native WebSocket route. A supplied port is data for an explicit local CDP selector,
+not an instruction to start shell diagnostics. Do not ask the user to distinguish developer configuration modes.
+
+After one supported connection attempt and at most two bounded consent waits, offer one simple choice:
+“Continue with this browser, or open a separate Blink browser?” Mention the optional extension as another
+choice when relevant. Preserve the app URL and record intent, and resume `blink_start_recording` after the
+choice. Never spin on ports or claim an automation banner proves a connection or recording.
+
 Browser/profile choice is an application flow, not a setup tutorial. When a choice is needed, call
 `blink_admin` with `action: browsers` (optional `browser`, `refresh: true` to refresh). **Always show
 `profileTable` as a Markdown table**: ID, browser, display name. Accept “use #6” directly: map that row to
@@ -51,7 +96,8 @@ components, not access to browser logins). Do not make the user install uv, run 
 configuration. `browser_select` remembers the choice; a one-off `learn_start.browser` does not change it.
 
 Use the actual tool result, and finish every step that Blink can do:
-- `connected: true` / `readyToRecord: true`: say the connection is ready, then record when requested.
+- `connected: true` / `readyToRecord: true`: this is not recording. Follow `guidance`: finish an already
+  requested recording in this turn, or explicitly show recording is off and ask the next-step question.
 - `waiting_for_browser` / `phase: awaiting_browser_permission`: this is a pending browser choice, not a
   completed connection or a technical failure. Explain `userSteps` in the user's language, with their visible
   profile name. For Edge: “In the Edge window, tick ‘Allow remote debugging for this browser instance’
@@ -92,8 +138,8 @@ stock Firefox profile is not implemented here. Its human names are indexed, and 
 browser or the existing HAR import is available. Native Windows uses authenticated named pipes; missing
 Python libraries are a preparation step, not a reason to tell the user Windows is unsupported.
 
-1. Call `blink_request_approval` with `learn_start` and `{"url": ...}` (plus the chosen `browser` selector when
-   needed). The plugin names the Blink after the
+1. Call `blink_start_recording` with `url` and the chosen `browser` selector. The older `learn_start` bridge
+   remains available for advanced clients. The plugin names the Blink after the
    host reached after redirects (`www.msn.com` -> `msn-com`), sets the origins, opens its own work tab and
    creates the session folder `~/.web-blink/state/captures/<blink>-<UTC start time>` (`meta.json`, `requests.jsonl`, `screenshots/`,
    `screenshots.jsonl`, `index.json`). Pass `binding` only when the user names the Blink, and `origins` only
@@ -101,7 +147,8 @@ Python libraries are a preparation step, not a reason to tell the user Windows i
    session's tabs. Every other host the site talks to is recorded too (`inScope: false`).
 2. Read the `learn_start` result: only `screenshots: enabled` means screenshots work. Otherwise (or with a
    `daemonOutdated` warning) tell the user at once with `screenshotError` and offer to stop and start again.
-   Then tell the user the recording is on, the folder name, and that the tab is theirs.
+   Then give the recording state and the next demonstration step. The tab is theirs. Do not clutter this
+   handoff with folder paths or session IDs unless the user asks where the files are kept.
 3. While the user demonstrates, wait for their actions: do not click, type or navigate in the tab unless the user
    tells you to drive (an instruction to drive needs no further permission). Never enter data for the user on
    your own initiative. When the user asks whether it works, make one call, `blink_admin` with action

@@ -341,6 +341,29 @@ def wait_for_endpoint(root, seconds):
         time.sleep(min(.25, remaining))
 
 
+def resolve_cdp_endpoint(endpoint):
+    """A consent bridge may answer HTTP discovery with 404 but accept its native WebSocket route.
+
+    Called only for an explicit connection, never discovery/status. No proxy, redirects or port scanning.
+    """
+    import http.client
+    endpoint = validate_selection({'mode': 'cdp', 'endpoint': endpoint})['endpoint']
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != 'http':
+        return endpoint
+    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+    try:
+        connection.request('GET', '/json/version/')  # Match PW's HTTP discovery path exactly.
+        response = connection.getresponse()
+        if response.status == 404:
+            return 'ws://' + parsed.netloc + '/devtools/browser'
+    except (OSError, http.client.HTTPException):
+        pass  # Let PW report the actual connection failure; a failed HTTP probe is not a diagnosis.
+    finally:
+        connection.close()
+    return endpoint
+
+
 def permission_step(selected, browser, profile, *, binding=None, page_requested=False):
     """A browser-owned choice, followed by a bounded tool wait; no technical setup homework."""
     retry = {'browser': {**selected, 'mode': 'native'}, 'waitSeconds': 25}
@@ -499,7 +522,7 @@ def connection_status(value, state_dir):
         return {key: item for key, item in connection_plan(value, state_dir).items() if key not in ('command', 'launchConfig')}
     except BlinkError as exc:
         return {'selection': value, 'available': False, 'reason': exc.code,
-                'instructions': exc.message + '. Run blink browser list and select a profile again.'}
+                'instructions': exc.message + '. Refresh the numbered browser/profile table and choose the intended profile.'}
 
 
 def failure_guidance(code, params):
@@ -526,10 +549,11 @@ def failure_guidance(code, params):
             if code in ('restart_not_isolated', 'restart_stale', 'restart_cancelled', 'browser_reopened'):
                 add('Reopen this profile and ask the browser to restore its saved session; close nothing', 'browser_restore')
     elif code == 'browser_permission_required':
-        add('Show the browser’s connection permission page', 'browser_permission_open')
-        if selector.get('browser') in ('edge', 'brave'):
-            add('Try PW launch of this exact profile if it is free; never close a running instance', 'browser_connect', {**selector, 'mode': 'profile'})
-        add('Use the optional PW extension with the current live profile', 'browser_extension_open', {**selector, 'mode': 'extension'})
+        if selector.get('profile'):
+            add('Show the browser’s connection permission page', 'browser_permission_open')
+            if selector.get('browser') in ('edge', 'brave'):
+                add('Try PW launch of this exact profile if it is free; never close a running instance', 'browser_connect', {**selector, 'mode': 'profile'})
+            add('Use the optional PW extension with the current live profile', 'browser_extension_open', {**selector, 'mode': 'extension'})
         add('Retry after the browser permission was confirmed', 'browser_connect')
     elif code == 'extension_required':
         add('Use native connection without installing an extension', 'browser_connect', {**selector, 'mode': 'native'})
@@ -544,7 +568,14 @@ def failure_guidance(code, params):
              'label': 'Prepare and retry this selected browser automatically'}]}
     if not actions:
         return {}
-    return {'connected': False, 'closedWindows': False, 'nextActions': actions, 'userInstruction':
+    return {'connected': False, 'closedWindows': False, 'nextActions': actions,
+            'guidance': {'stage': 'connection_blocked', 'message': 'The browser is not connected yet.',
+                'question': 'Continue with this browser, or open a separate Blink browser?',
+                'choices': ['Continue with this browser', 'Open a separate Blink browser'],
+                'agentInstruction': 'After bounded retries ask this one next-step choice in the user’s language. '
+                    'Keep the original app/recording goal, and use blink_start_recording after the choice. '
+                    'Do not run shell HTTP/port/process diagnostics or treat HTTP 404 as proof of failure.'},
+            'userInstruction':
             'Explain the exact available action. Do not say “requires configuration”, ask for profile paths, or print setup commands.'}
 
 
