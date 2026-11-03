@@ -28,6 +28,10 @@ recording state and the next action. Internal IDs, storage paths and protocol de
 authorized operation. It keeps the original app name through sign-in redirects, resumes after browser consent,
 and returns an existing recording when the same start is repeated. It never equates connection with recording.
 
+Pending intent, last connection and recording-status ownership are scoped to the invoking MCP client instance.
+A different client does not silently inherit a pending app or adopt its running recording. This routing
+identity is internal; it is not a user setup field or an authorization credential.
+
 `blink_connect_browser` opens/connects only. Its result explicitly reports recording off/on and supplies
 guidance. With a pending recording goal it supplies the continuation for the newly chosen browser.
 

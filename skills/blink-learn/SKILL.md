@@ -31,6 +31,9 @@ starting the requested recording in the same turn. Do not leave the user to disc
 - **“Did you start recording?” / “Does it work?”:** use `blink_browser_status`. If off and recording was already
   requested, say “Recording is off; I’m starting it now”, and call `blink_start_recording`. If the app is unknown,
   ask which app. Never answer only “No, I only opened the browser”. Do not imply the user failed to ask correctly.
+  Pass the known recording `binding` when checking a session from earlier in the conversation, including after
+  a host restart. If another conversation has an active recording, explain that and ask whether to check it;
+  never claim all recording is off or silently adopt someone else's workflow.
 - **Recording on:** say “Recording is on. Sign in if needed, then show the steps you want me to learn. Say
   ‘finished’ when done.” Then wait. Do not drive or navigate the recording tab unless the user asks you to.
 - **Finished:** stop the recording, summarize what was saved, then continue the previously requested Blink

@@ -43,7 +43,7 @@ class GuidedRecordingTests(unittest.TestCase):
         self.addCleanup(self.ext.learner.close)
 
     def connect(self, params):
-        return self.ext.connection_ready(params['browser'], params['binding'])
+        return self.ext.connection_ready(params['browser'], params['binding'], params)
 
     def test_start_connects_and_really_starts_recording_in_one_call(self):
         with mock.patch.object(self.ext, 'connect_browser', side_effect=self.connect) as connect, \
@@ -193,6 +193,33 @@ class GuidedRecordingTests(unittest.TestCase):
         for value in (-1, 31, True, '25'):
             self.assertIsNotNone(approval.validate('learn_start_guided', {'url': URL, 'browser': PW, 'waitSeconds': value}))
         self.assertIsNone(approval.validate('learn_start_guided', {'url': URL, 'browser': PW, 'waitSeconds': 25}))
+
+    def test_pending_intent_and_last_connection_are_scoped_to_the_conversation(self):
+        first, second = {'_flowId': '1' * 32}, {'_flowId': '2' * 32}
+        self.ext.flow(first)['pending_recording'] = {'url': URL, 'browser': NATIVE}
+        unrelated = self.ext.connection_ready(PW, 'second-work', second)
+        self.assertNotIn('recordingRequested', unrelated)
+        own = self.ext.connection_ready(PW, 'first-work', first)
+        self.assertEqual(own['nextActions'][0]['params']['url'], URL)
+        self.assertEqual(self.ext.browser_status(first)['lastConnectedAt'], self.ext.flow(first)['last_connection']['verifiedAt'])
+        self.assertEqual(self.ext.browser_status(second)['lastConnectedAt'], self.ext.flow(second)['last_connection']['verifiedAt'])
+
+    def test_another_conversation_cannot_silently_adopt_an_active_recording(self):
+        first = {'url': URL, 'browser': PW, '_flowId': '1' * 32}
+        second = {**first, '_flowId': '2' * 32}
+        with mock.patch.object(self.ext, 'connect_browser', side_effect=self.connect), \
+                mock.patch.object(self.ext.learner, '_ensure_collector'):
+            own = self.ext.dispatch('learn_start_guided', first, human=True)
+            other = self.ext.dispatch('learn_start_guided', second, human=True)
+        self.assertTrue(own['data']['recording'])
+        self.assertEqual(other['status'], 'recording_in_progress')
+        self.assertFalse(self.ext.browser_status(second)['recording'])
+        self.assertFalse(self.ext.browser_status(second)['recentSessions'])
+        self.assertEqual(self.ext.browser_status(second)['guidance']['stage'], 'recording_in_another_conversation')
+        chosen = self.ext.browser_status({**second, 'binding': own['data']['binding']})
+        self.assertTrue(chosen['recording'])
+        self.assertTrue(self.ext.browser_status(first)['recording'])
+        self.assertEqual(len(self.runtime.browser.starts), 1)
 
 
 class NativeHTTPBridgeTests(unittest.TestCase):

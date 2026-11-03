@@ -6,6 +6,7 @@ import path from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import fs from 'node:fs';
 import os from 'node:os';
+import {randomBytes} from 'node:crypto';
 
 const root = process.env.BLINK_PLUGIN_ROOT || path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const LIMIT = 1048576;
@@ -23,7 +24,7 @@ const definitions = [
  ['blink_doctor','Report host capabilities without needing Python, a daemon or browser.',{},[],'doctor',true],
  ['blink_connect_browser','Open/connect a browser only; this does NOT start recording. For a learn/record request use blink_start_recording instead. After connection explain guidance and ask its next-step question, or continue an already-authorized recording in the same turn. Never stop at “you can log in now”.', {browser:{type:'object'},binding:textSchema,waitSeconds:{type:'integer',minimum:0,maximum:30}},['browser'],'connect_browser',false],
  ['blink_start_recording','Connect the chosen browser AND start recording the requested app in one guided action. Use for learn/record requests, including after switching to a new browser. Preserve the app URL through pending browser consent; follow nextActions to finish. Only recording:true means recording started.',{url:{type:'string',minLength:1,maxLength:2048},browser:{type:'object'},binding:{...textSchema,maxLength:100},waitSeconds:{type:'integer',minimum:0,maximum:30}},['url','browser'],'start_recording',false],
- ['blink_browser_status','Read actual recording state and the last verified browser connection without opening tabs, reconnecting or running OS commands. Use for “is it recording?” and browser diagnostics. HTTP /json/version returning 404 alone does not prove a native browser connection failed. Follow guidance; do not run PowerShell/curl/port-owner probes.',{browser:{type:'object'}},[],'browser_status',true],
+ ['blink_browser_status','Read actual recording state and the last verified browser connection without opening tabs, reconnecting or running OS commands. Use for “is it recording?”; pass binding for a previously known/chosen recording, including after host restart. HTTP 404 alone does not prove native connection failure. Follow guidance; never run shell port/process probes.',{browser:{type:'object'},binding:{...textSchema,maxLength:100}},[],'browser_status',true],
  ['blink_restore_browser','Ask the browser to reopen one selected profile and restore its saved session. Closes no windows, terminates no processes and does not claim restored tabs were verified.',{browser:{type:'object'}},['browser'],'restore_browser',false],
  ['blink_request_approval','Carry out the exact action the user ordered. The user\'s order is the authorization: the action runs at once (recording, activation, bind, grants, approve_intent for a prepared write, jobs, forget, restart). Call it directly in the same turn; never ask for confirmation in chat and never announce a dialog. Only when the user set approvals to dialog in the CLI does the client show one Accept/Decline dialog.',{method:{type:'string',minLength:1,maxLength:100},params:{type:'object'},reason:{type:'string',maxLength:500}},['method','params'],'approval',false],
 ];
@@ -34,6 +35,7 @@ const tools = definitions.map(([name,description,properties,required,method,read
  ...(name==='blink_services'||name==='blink_search'||name==='blink_describe'?{_meta:{'anthropic/alwaysLoad':true}}:{}),
 }));
 const methods = new Map(definitions.map(d => [d[0], d[4]]));
+const browserFlowId=randomBytes(16).toString('hex'); // Conversation routing, not an authorization credential.
 let initialized = false, canElicit = false, nextRequest = 0;
 const awaiting = new Map(), dialogs = new Map(), cancelled = new Set(); // dialog id -> resolver; tool call id -> dialog id
 const APPROVAL_WAIT = 600000, DIALOG_LIMIT = 6000;
@@ -156,6 +158,8 @@ function approvalText(d,reason){
 }
 async function approval(args,callId){
  if(!/^[a-z][a-z0-9_]{0,99}$/.test(args.method))return {status:'forbidden',summary:'This action is not supported by the Web Blink control bridge',warnings:[]};
+ if(['browser_connect','learn_start_guided','learn_start','learn_stop'].includes(args.method))
+  args={...args,params:{...args.params,_flowId:browserFlowId}};
  if(args.method==='runtime_setup')return prepareRuntime(args.params,callId);
  if(args.method==='browser_restart')return {status:'restart_not_isolated',summary:'Blink cannot restart just this profile without risking other profiles in the shared browser instance. No windows were closed. Use live connection or the optional PW extension; use safe reopen for recovery.',data:{closedWindows:false,nextActions:[
   {tool:'blink_connect_browser',params:{browser:args.params?.browser},label:'Connect without closing any windows'},
@@ -281,7 +285,7 @@ async function handle(message){
   const result=p.name==='blink_doctor'?await doctorWithDaemon():p.name==='blink_request_approval'?await approval(args,id)
    :p.name==='blink_connect_browser'?await approval({method:'browser_connect',params:{...args,automatic:true}},id)
    :p.name==='blink_start_recording'?await approval({method:'learn_start_guided',params:args},id)
-   :p.name==='blink_browser_status'?await backend('admin',{action:'browser_connection',...args})
+   :p.name==='blink_browser_status'?await backend('admin',{action:'browser_connection',...args,_flowId:browserFlowId})
    :p.name==='blink_restore_browser'?await approval({method:'browser_restore',params:args},id)
    :process.platform==='win32'&&p.name==='blink_admin'&&args.action==='browsers'
     ?{status:'ok',summary:'Local profile names and aliases (no Python or daemon required)',data:(await import('./browsers.mjs')).discoverWindows(args.browser,{refresh:args.refresh===true}),warnings:[]}

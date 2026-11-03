@@ -64,6 +64,11 @@ def validate(method, params):
         return _forbidden('This action is not supported by the Web Blink control bridge')
     if not isinstance(params, dict):
         return _forbidden('Parameters must be an object')
+    if '_flowId' in params:
+        import re
+        if (method not in ('browser_connect', 'learn_start_guided', 'learn_start', 'learn_stop')
+                or not isinstance(params['_flowId'], str) or not re.fullmatch('[a-f0-9]{32}', params['_flowId'])):
+            return _forbidden('Invalid browser workflow identity')
     if method == 'approve_intent':
         if set(params) != {'intentId'} or not isinstance(params['intentId'], str):
             return _forbidden('approve_intent takes exactly a string intentId')
@@ -82,14 +87,14 @@ def validate(method, params):
         if set(params) - {'browser', 'binding'} or not isinstance(params.get('browser'), dict):
             return _forbidden('browser_restart is blocked because Chromium may share its main process with other profiles')
     elif method == 'browser_connect':
-        if (set(params) - {'browser', 'binding', 'automatic', 'waitSeconds'}
+        if (set(params) - {'browser', 'binding', 'automatic', 'waitSeconds', '_flowId'}
                 or not isinstance(params.get('browser'), dict)
                 or ('binding' in params and not isinstance(params['binding'], str))
                 or ('automatic' in params and type(params['automatic']) is not bool)
                 or type(params.get('waitSeconds', 0)) is not int or not 0 <= params.get('waitSeconds', 0) <= 30):
             return _forbidden('browser_connect takes a browser selector, optional binding/automatic and a 0–30 second wait')
     elif method == 'learn_start_guided':
-        if (set(params) - {'url', 'browser', 'binding', 'waitSeconds'}
+        if (set(params) - {'url', 'browser', 'binding', 'waitSeconds', '_flowId'}
                 or not isinstance(params.get('url'), str) or not 1 <= len(params['url']) <= 2048
                 or not isinstance(params.get('browser'), dict)
                 or ('binding' in params and (not isinstance(params['binding'], str) or not 1 <= len(params['binding']) <= 100))
@@ -137,6 +142,7 @@ def _credential_names(credentials):
 
 def presented(method, params):
     """Parameters as a dialog may show them: exact, except secret values. Digests still bind the real values."""
+    params = {key: value for key, value in params.items() if key != '_flowId'}
     if method == 'private_secret_set' and isinstance(params.get('value'), str):
         return dict(params, value=f"[hidden: {len(params['value'])} characters]")
     if method == 'custody_authorize':

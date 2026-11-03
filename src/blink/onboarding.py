@@ -39,6 +39,13 @@ def guide(stage, *, browser=None, binding=None):
                 'choices': ['Recover the recording', 'Finish and keep the saved data'],
                 'agentInstruction': 'Explain the reported problem briefly. Do not claim healthy recording or start a duplicate. '
                     'Use Blink status/recovery tools; never ask for shell port diagnostics.'}
+    if stage == 'other_recordings':
+        return {'stage': 'recording_in_another_conversation', 'recording': False,
+                'message': 'This conversation has not started a recording. A recording is active in another Blink conversation.',
+                'question': 'Check the existing recording, or start a separate one?',
+                'choices': ['Check the existing recording', 'Start a separate recording'],
+                'agentInstruction': 'Do not claim all recording is off or silently take over the other session. '
+                    'For an explicitly chosen existing recording, call blink_browser_status with its binding.'}
     if stage == 'choose_browser':
         return {'stage': 'choose_browser', 'recording': False,
                 'message': 'Choose the browser session you want to use.',

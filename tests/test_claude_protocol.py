@@ -107,8 +107,11 @@ print(json.dumps(result))
             requests = [json.loads(line) for line in calls.read_text().splitlines()]
         self.assertEqual([row['method'] for row in requests], ['describe', 'apply', 'admin'])
         self.assertEqual(requests[0]['params']['method'], 'learn_start_guided')
-        self.assertEqual(requests[1]['params']['params'], params)
+        routed = requests[1]['params']['params']
+        self.assertEqual({key: value for key, value in routed.items() if key != '_flowId'}, params)
+        self.assertEqual(len(routed['_flowId']), 32)
         self.assertEqual(requests[2]['params']['action'], 'browser_connection')
+        self.assertEqual(requests[2]['params']['_flowId'], routed['_flowId'])
         self.assertTrue(json.loads(messages[1]['result']['content'][0]['text'])['data']['recording'])
         self.assertFalse(json.loads(messages[2]['result']['content'][0]['text'])['data']['recording'])
 

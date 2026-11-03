@@ -182,8 +182,34 @@ class Extensions:
         self.started = False
         self.last_maintenance = 0
         self.permission_pages = set()
-        self.last_connection = None
-        self.pending_recording = None
+        self.flows = {}
+
+    def flow(self, params=None, *, create=True):
+        key = (params or {}).get('_flowId', 'local-cli')
+        if key != 'local-cli' and (not isinstance(key, str) or not re.fullmatch('[a-f0-9]{32}', key)):
+            raise BlinkError('invalid_arguments', 'Invalid browser workflow identity')
+        state = self.flows.get(key)
+        if state is None:
+            state = {'last_connection': None, 'pending_recording': None, 'bindings': set(), 'sessions': set()}
+            if create:
+                self.flows[key] = state
+        return state
+
+    @property
+    def last_connection(self):
+        return self.flow()['last_connection']
+
+    @last_connection.setter
+    def last_connection(self, value):
+        self.flow()['last_connection'] = value
+
+    @property
+    def pending_recording(self):
+        return self.flow()['pending_recording']
+
+    @pending_recording.setter
+    def pending_recording(self, value):
+        self.flow()['pending_recording'] = value
 
     @staticmethod
     def same_browser(first, second):
@@ -191,17 +217,19 @@ class Extensions:
             return (first.get('browser'), first['profile']) == (second.get('browser'), second['profile'])
         return first == second
 
-    def connection_ready(self, selected, binding):
+    def connection_ready(self, selected, binding, params=None):
         from .onboarding import guide
-        self.last_connection = {'browser': selected, 'binding': binding, 'verifiedAt': time.time()}
+        state = self.flow(params)
+        state['last_connection'] = {'browser': selected, 'binding': binding, 'verifiedAt': time.time()}
         active = next((key for key, run in self.learner.running.items()
-                       if self.same_browser(run['meta'].get('browser', {}), selected)), None)
+                       if (not (params or {}).get('_flowId') or key in state['bindings'])
+                       and self.same_browser(run['meta'].get('browser', {}), selected)), None)
         data = {'connected': True, 'readyToRecord': True, 'browser': selected, 'binding': binding,
                 'recording': active is not None,
                 'guidance': guide('recording' if active else 'connected', browser=selected, binding=active)}
         data['message'] = data['guidance']['message']
-        if self.pending_recording and not active:
-            resume = {**self.pending_recording, 'browser': selected, 'waitSeconds': 0}
+        if state['pending_recording'] and not active:
+            resume = {**state['pending_recording'], 'browser': selected, 'waitSeconds': 0}
             data['recordingRequested'] = True
             data['nextActions'] = [{'tool': 'blink_start_recording', 'params': resume,
                                     'label': 'Continue the requested recording in this browser'}]
@@ -211,14 +239,21 @@ class Extensions:
         """Read-only: never open a browser/tab, reconnect a transport or inspect OS port owners."""
         from .browsers import resolve_selection
         from .onboarding import guide
+        state = self.flow(params, create=False)
+        previous = state['last_connection']
         selected = resolve_selection(params['browser']) if 'browser' in params else (
-            self.last_connection['browser'] if self.last_connection else None)
+            previous['browser'] if previous else None)
+        if 'browser' not in params and params.get('binding') in self.learner.running:
+            selected = self.learner.running[params['binding']]['meta'].get('browser')
         report = self.learner.status()
-        active = [row for row in report['recording'] if selected is None or self.same_browser(
-            self.learner.running.get(row['blink'], {}).get('meta', {}).get('browser', {}), selected)]
-        last = self.last_connection if self.last_connection and selected and self.same_browser(
-            self.last_connection['browser'], selected) else None
-        result = {'browser': selected, 'recording': bool(active), 'recordings': active, 'recentSessions': report['recentSessions'],
+        active = [row for row in report['recording'] if (
+                  row['blink'] == params['binding'] if params.get('binding') else
+                  not params.get('_flowId') or row['blink'] in state['bindings'])
+                  and (selected is None or self.same_browser(
+                      self.learner.running.get(row['blink'], {}).get('meta', {}).get('browser', {}), selected))]
+        last = previous if previous and selected and self.same_browser(previous['browser'], selected) else None
+        recent = [row for row in report['recentSessions'] if not params.get('_flowId') or row['session'] in state['sessions']]
+        result = {'browser': selected, 'recording': bool(active), 'recordings': active, 'recentSessions': recent,
                   'healthy': all(row.get('healthy') is True for row in active) if active else None,
                   'connectionChecked': False, 'lastConnectedAt': last['verifiedAt'] if last else None,
                   'connectionState': 'last_verified' if last else 'not_verified',
@@ -231,9 +266,14 @@ class Extensions:
             result['guidance'] = guide('recording_problem', browser=selected, binding=active[0]['blink'])
         if not active and last:
             result['guidance']['message'] = 'Recording is OFF. The browser connected at the last check; it has not been checked again.'
-        if self.pending_recording and not active:
+        others = [row for row in report['recording'] if row not in active]
+        if others:
+            result['otherRecordings'] = [{'binding': row['blink'], 'session': row['session']} for row in others]
+            if not active:
+                result['guidance'] = guide('other_recordings')
+        if state['pending_recording'] and not active:
             result.update(recordingRequested=True, phase='recording_setup_pending', nextActions=[{
-                'tool': 'blink_start_recording', 'params': self.pending_recording,
+                'tool': 'blink_start_recording', 'params': state['pending_recording'],
                 'label': 'Continue the requested recording'}])
         return result
 
@@ -243,6 +283,7 @@ class Extensions:
         from .browsers import resolve_selection
         from .learner import blink_name, canonical_origin
         from .onboarding import guide
+        state = self.flow(params)
         url = params.get('url')
         try:
             parsed = urlsplit(url) if isinstance(url, str) else None
@@ -259,31 +300,35 @@ class Extensions:
         if not isinstance(target, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', target):
             raise BlinkError('invalid_arguments', 'Choose a short recording name without spaces or slashes.')
         for binding, run in self.learner.running.items():
-            if (run['meta'].get('startUrl') == url and self.same_browser(run['meta'].get('browser', {}), selected)
+            if ((not params.get('_flowId') or binding in state['bindings'])
+                    and run['meta'].get('startUrl') == url and self.same_browser(run['meta'].get('browser', {}), selected)
                     and ('binding' not in params or binding == target)):
                 return {'recording': True, 'alreadyRecording': True, 'binding': binding, 'session': run['session'],
                         'browser': run['meta']['browser'], 'screenshots': run['screenshots'],
                         'guidance': guide('recording', browser=selected, binding=binding)}
         if target in self.learner.running:
             raise BlinkError('recording_in_progress', 'A recording with this name is already running. Finish it before starting another.')
-        self.pending_recording = {key: value for key, value in params.items() if key in ('url', 'browser', 'binding', 'waitSeconds')}
+        state['pending_recording'] = {key: value for key, value in params.items() if key in ('url', 'browser', 'binding', 'waitSeconds')}
         # Reuse the connection tab opened for sign-in when it belongs to this exact browser and is not recording.
-        if isinstance(self.browser, LazyBrowser) and self.last_connection and self.same_browser(
-                self.last_connection['browser'], selected):
-            old = self.last_connection['binding']
+        previous = state['last_connection']
+        if isinstance(self.browser, LazyBrowser) and previous and self.same_browser(previous['browser'], selected):
+            old = previous['binding']
             if old != target and old not in self.learner.running and target not in self.browser.routes:
                 self.browser.rename_owner(old, target)
         connection = self.connect_browser({'browser': selected, 'binding': target, 'automatic': True,
-                                           'waitSeconds': params.get('waitSeconds', 0)})
+                                           'waitSeconds': params.get('waitSeconds', 0),
+                                           **({'_flowId': params['_flowId']} if params.get('_flowId') else {})})
         if not connection.get('connected'):
-            continuation = {**self.pending_recording, 'browser': connection.get('browser', selected), 'waitSeconds': 25}
+            continuation = {**state['pending_recording'], 'browser': connection.get('browser', selected), 'waitSeconds': 25}
             return {**connection, 'recording': False, 'recordingRequested': True,
                     'nextActions': [{'tool': 'blink_start_recording', 'params': continuation,
                                      'label': 'Finish connecting and start the requested recording'}]}
         selected = connection['browser']
         # Keep the requested app's identity when its first navigation redirects to a sign-in provider.
         data = self.learner.start(target, url, browser=selected)
-        self.pending_recording = None
+        state['pending_recording'] = None
+        state['bindings'].add(data['binding'])
+        state['sessions'].add(data['session'])
         return {**data, 'connected': True, 'guidance': guide('recording', browser=selected, binding=data['binding'])}
 
     def browser_permission_step(self, params, *, open_page):
@@ -358,7 +403,7 @@ class Extensions:
             if selected['mode'] == 'native' and exc.code == 'browser_unavailable':
                 raise BlinkError('browser_permission_required', 'The selected browser has not exposed its live connection. Blink can open its permission page in this exact profile; allow the connection there.') from None
             raise
-        return self.connection_ready(selected, binding)
+        return self.connection_ready(selected, binding, params)
 
     def dispatch(self, method, params, *, human=False):
         if method == 'admin':
@@ -439,6 +484,10 @@ class Extensions:
                                           **({'browser': params['browser']} if 'browser' in params else {}))
                 from .onboarding import guide
                 data['guidance'] = guide('recording', browser=data.get('browser'), binding=data['binding'])
+                state = self.flow(params)
+                state['bindings'].add(data['binding'])
+                state['sessions'].add(data['session'])
+                state['last_connection'] = {'browser': data['browser'], 'binding': data['binding'], 'verifiedAt': time.time()}
                 return reply(data, 'Recording is ON. Demonstrate your workflow, then say “finished”.')
             elif method == 'browser_select':
                 from .config import ConfigStore
@@ -486,6 +535,7 @@ class Extensions:
                                    'Blink closed no windows. The browser decides which tabs can be recovered; the restored tabs have not been verified.'}
             elif method == 'learn_stop':
                 data = self.learner.stop(params['binding'])
+                self.flow(params)['sessions'].add(data['id'])
                 from .onboarding import guide
                 data['guidance'] = guide('stopped')
                 return reply(data, data['guidance']['message'])
