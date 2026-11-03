@@ -61,7 +61,7 @@ class LazyBrowser:
                 else:
                     plan = connection_plan(selection, self.state_dir)
                     if not plan['available']:
-                        raise BlinkError(plan['reason'].replace('-', '_'), plan['instructions'] + ' Setup: blink browser setup.')
+                        raise BlinkError(plan['reason'].replace('-', '_'), plan['instructions'])
                     # Explicit selectors must not inherit an unrelated profile/token/proxy from another MCP.
                     environment = {k: v for k, v in os.environ.items() if not k.startswith('PLAYWRIGHT_MCP_')}
                     from .browsers import prepare_directories

@@ -522,7 +522,7 @@ def connection_status(value, state_dir):
         return {key: item for key, item in connection_plan(value, state_dir).items() if key not in ('command', 'launchConfig')}
     except BlinkError as exc:
         return {'selection': value, 'available': False, 'reason': exc.code,
-                'instructions': exc.message + '. Run blink browser list and select a profile again.'}
+                'instructions': exc.message + '. Refresh the numbered browser/profile table and choose the intended profile.'}
 
 
 def failure_guidance(code, params):
