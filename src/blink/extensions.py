@@ -303,6 +303,7 @@ class Extensions:
             if ((not params.get('_flowId') or binding in state['bindings'])
                     and run['meta'].get('startUrl') == url and self.same_browser(run['meta'].get('browser', {}), selected)
                     and ('binding' not in params or binding == target)):
+                state['pending_recording'] = None
                 return {'recording': True, 'alreadyRecording': True, 'binding': binding, 'session': run['session'],
                         'browser': run['meta']['browser'], 'screenshots': run['screenshots'],
                         'guidance': guide('recording', browser=selected, binding=binding)}
@@ -326,7 +327,12 @@ class Extensions:
         selected = connection['browser']
         # Keep the requested app's identity when its first navigation redirects to a sign-in provider.
         state['bindings'].add(target)  # Status must find an owned recorder even if acknowledgement fails after start.
-        data = self.learner.start(target, url, browser=selected)
+        try:
+            data = self.learner.start(target, url, browser=selected)
+        except Exception:
+            if target in self.learner.running:
+                state['pending_recording'] = None  # The recorder exists; do not offer to restart it after stop.
+            raise
         state['pending_recording'] = None
         state['bindings'].add(data['binding'])
         state['sessions'].add(data['session'])

@@ -131,6 +131,7 @@ class GuidedRecordingTests(unittest.TestCase):
         status = self.ext.browser_status({'_flowId': params['_flowId']})
         self.assertTrue(status['recording'])
         self.assertEqual(status['guidance']['stage'], 'recording')
+        self.assertIsNone(self.ext.flow(params)['pending_recording'])
         self.assertEqual(len(self.runtime.browser.starts), 1)
 
     def test_invalid_app_url_cannot_open_a_browser(self):
