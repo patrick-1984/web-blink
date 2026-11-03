@@ -25,16 +25,41 @@ class NativeRuntimeTests(unittest.TestCase):
             'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8'})
         patch.start()
         self.addCleanup(patch.stop)
+        self.started = []
+        self.daemon_log = (self.home / 'daemon.log').open('wb')
+        original_popen = subprocess.Popen
+        def start(command, *args, **kwargs):
+            if '-m' in command and 'blink.daemon' in command:
+                # Exercise the real autostart flags and serve(), retaining a traceback on this synthetic fixture.
+                command = [sys.executable, '-c',
+                    'import sys; from blink.daemon import serve; serve(sys.argv[1], sys.argv[2])', str(self.state), str(ROOT)]
+                kwargs['stderr'] = self.daemon_log
+                process = original_popen(command, *args, **kwargs)
+                self.started.append(process)
+                return process
+            return original_popen(command, *args, **kwargs)
+        spawning = mock.patch('blink.client.subprocess.Popen', side_effect=start)
+        spawning.start()
+        self.addCleanup(spawning.stop)
         self.addCleanup(self.cleanup)
         result = request('doctor', state_dir=self.state, plugin_root=ROOT)
-        self.assertEqual(result['status'], 'ok', result)
+        self.daemon_log.flush()
+        self.assertEqual(result['status'], 'ok', (result, (self.home / 'daemon.log').read_text(errors='replace')))
         self.pid = result['data']['daemon']['pid']
 
     def cleanup(self):
         try:
-            control_request('shutdown_daemon', {}, state_dir=self.state, plugin_root=ROOT, autostart=False)
+            try:
+                control_request('shutdown_daemon', {}, state_dir=self.state, plugin_root=ROOT, autostart=False)
+            except (OSError, ValueError):
+                pass
             _wait_lock_free(self.state, 10)
         finally:
+            for process in self.started:
+                if process.poll() is None:
+                    process.terminate()
+                process.wait(timeout=10)
+            self.daemon_log.close()
             self.tmp.cleanup()
 
     def test_public_calls_and_permit_gated_control(self):
@@ -58,7 +83,7 @@ class NativeRuntimeTests(unittest.TestCase):
     def test_singleton_lock_and_exact_control_restart(self):
         second = subprocess.run([sys.executable, '-m', 'blink.daemon', '--state-dir', str(self.state),
                                  '--plugin-root', str(ROOT)], cwd=ROOT, capture_output=True, timeout=15)
-        self.assertEqual(second.returncode, 0, second.stderr.decode(errors='replace'))
+        self.assertEqual(second.returncode, 0, (second.stderr or b'').decode(errors='replace'))
         self.assertEqual(request('doctor', state_dir=self.state)['data']['daemon']['pid'], self.pid)
         result = restart_legacy_daemon(self.state, ROOT)
         self.assertEqual(result['status'], 'ok', result)

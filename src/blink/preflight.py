@@ -107,6 +107,7 @@ class Preflight:
         self._write('sentinel.json', {'stale': True})
 
     def fingerprint(self):
+        from . import __version__
         files = {}
         for name in ('git', 'node', 'uv', 'openssl'):
             found = shutil.which(name)
@@ -123,6 +124,7 @@ class Preflight:
             path = Path(spec.origin)
             files['jsonschema'] = [str(path), path.stat().st_mtime_ns, path.stat().st_size]
         definitions = json.dumps({'tools': files, 'user': self.definitions(), 'python': sys.version,
+                                  'runtimeVersion': __version__,
                                   'path': os.environ.get('PATH', ''),
                                   'browser': self._browser_status()}, sort_keys=True)
         return hashlib.sha256(definitions.encode()).hexdigest()
