@@ -51,6 +51,19 @@ live Chromium profile usually forwards to its existing instance; it does not cre
 to the same files or automatically enable debugging. Blink does not remove profile locks or copy active
 personal profiles to sidestep this restriction.
 
+When Blink actually launches an available profile through PW, Playwright supplies its control pipe itself;
+the user does not run a command or configure a port. Opening another window in an already running browser
+does not reconfigure its main process. Adding a debugging switch to that second invocation cannot enable
+control of the first process. Browser versions and managed policies can also reject debugging switches for
+the normal data root. A switch is therefore not a universal substitute for live-session browser consent.
+
+For a live Edge/Chrome session that needs permission, Blink requests the selected profile's connection
+page and returns `waiting_for_browser`, with `connected: false`. It supplies the exact checkbox label
+“Allow remote debugging for this browser instance” and the subsequent “Allow” choice. The agent explains
+these clicks, then calls the supplied bounded wait/retry action while the user acts; no “tell me when done”
+step is needed. Waits inspect only that selected root's bridge and stop after a bounded interval. The
+browser's final consent is still the user's choice. A page request alone is not verified connection.
+
 ## Preparation and confirmations
 
 On a user-ordered connection/recording, Blink prepares missing local components itself. It can obtain a
@@ -125,4 +138,6 @@ Primary references checked 2026-11-03:
 - [Chrome native connection consent](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session)
 - [Chrome default-profile debugging restriction](https://developer.chrome.com/blog/remote-debugging-port)
 - [Microsoft Edge DevTools Protocol](https://learn.microsoft.com/en-us/microsoft-edge/devtools/protocol/)
+- [Microsoft: attaching to browsers and forwarded launches](https://code.visualstudio.com/docs/nodejs/browser-debugging#_attaching-to-browsers)
+- [Microsoft: live Edge connection checkbox](https://learn.microsoft.com/en-us/microsoft-edge/web-platform/devtools-mcp-server#step-1-enable-remote-debugging-in-edge)
 - [Firefox BiDi](https://firefox-source-docs.mozilla.org/remote/Security.html)

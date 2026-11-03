@@ -31,7 +31,7 @@ INIT = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
 def node_messages(messages, env=None, script=None):
     proc = subprocess.run(['node', str(script or ROOT / 'mcp/server.mjs')],
         input=''.join((line if isinstance(line, str) else json.dumps(line)) + '\n' for line in messages),
-        text=True, capture_output=True, timeout=20, env=dict(os.environ, BLINK_HOME=HOME.name, **(env or {})))
+        text=True, capture_output=True, timeout=20, env={**os.environ, 'BLINK_HOME': HOME.name, **(env or {})})
     if proc.returncode:
         raise AssertionError(f'Node server exited {proc.returncode}')
     return [json.loads(line) for line in proc.stdout.splitlines()]
@@ -59,6 +59,7 @@ class ClaudeProtocolTests(unittest.TestCase):
         connect = next(t for t in tools if t['name'] == 'blink_connect_browser')
         self.assertFalse(connect['annotations']['readOnlyHint'])
         self.assertEqual(connect['title'], 'Connect a browser profile')
+        self.assertEqual(connect['inputSchema']['properties']['waitSeconds']['maximum'], 30)
 
     def test_invalid_methods_arguments_and_parse_errors_are_protocol_responses(self):
         messages = node_messages([INIT,
@@ -72,6 +73,35 @@ class ClaudeProtocolTests(unittest.TestCase):
     def test_tools_require_initialization(self):
         response = node_messages([{'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}])[0]
         self.assertEqual(response['error']['code'], -32002)
+
+    @unittest.skipIf(os.name == 'nt', 'Synthetic executable fixture uses a POSIX shebang')
+    def test_browser_choice_is_a_pending_tool_result_instead_of_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / 'synthetic-python'
+            executable.write_text('#!' + sys.executable + '\n' + '''
+import json,sys
+if '-m' not in sys.argv:
+    if '-c' in sys.argv:
+        print(json.dumps({'status':'ok','data':{'capabilities':{'runtime':True}}}))
+    raise SystemExit(0)
+request=json.loads(sys.stdin.readline())
+if request['method']=='describe':
+    result={'status':'ok','data':{'mode':'none','exactParametersSha256':'0'*64}}
+else:
+    result={'status':'waiting_for_browser','summary':'Tick the browser connection checkbox',
+            'data':{'connected':False,'readyToRecord':False}}
+print(json.dumps(result))
+''')
+            executable.chmod(0o700)
+            messages = node_messages([INIT, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                'params': {'name': 'blink_connect_browser', 'arguments': {
+                    'browser': {'mode': 'native', 'browser': 'edge', 'profile': 'synthetic'}, 'waitSeconds': 25}}}],
+                {'BLINK_PYTHON': str(executable), 'BLINK_HOME': str(Path(tmp) / 'blink')})
+        result = messages[-1]['result']
+        self.assertFalse(result['isError'])
+        data = json.loads(result['content'][0]['text'])
+        self.assertEqual(data['status'], 'waiting_for_browser')
+        self.assertFalse(data['data']['connected'])
 
     def test_tool_calls_without_id_do_not_execute(self):
         messages = node_messages([INIT, {'jsonrpc': '2.0', 'method': 'tools/call',

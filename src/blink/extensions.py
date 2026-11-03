@@ -161,9 +161,34 @@ class Extensions:
         runtime._custody_manager = self.custody
         self.started = False
         self.last_maintenance = 0
+        self.permission_pages = set()
+
+    def browser_permission_step(self, params, *, open_page):
+        from .browsers import selected_profile, permission_step
+        from .browser_process import open_profile
+        selected, browser, profile = selected_profile(params['browser'])
+        if selected['browser'] not in ('chrome', 'edge'):
+            raise BlinkError('unsupported', 'This browser does not provide Blink’s built-in connection permission flow. Use its optional PW extension.')
+        key = (selected['browser'], selected['profile'])
+        if open_page:
+            open_profile(selected['browser'], profile, browser['executable'], permission=True)
+            self.permission_pages.add(key)
+        return permission_step(selected, browser, profile, binding=params.get('binding'),
+                               page_requested=key in self.permission_pages)
 
     def connect_browser(self, params):
         from .browsers import resolve_selection, ensure_tools, connection_plan
+        wait = params.get('waitSeconds', 0)
+        if type(wait) is not int or not 0 <= wait <= 30:
+            raise BlinkError('invalid_arguments', 'Connection wait must be between 0 and 30 seconds.')
+        if wait:
+            from .browsers import selected_profile, wait_for_endpoint
+            selector, _, profile = selected_profile(params['browser'])
+            if selector['mode'] != 'native' or selector['browser'] not in ('chrome', 'edge'):
+                raise BlinkError('invalid_arguments', 'Waiting for a browser choice requires a Chrome or Edge live connection.')
+            if not wait_for_endpoint(profile['userDataDir'], wait):
+                return self.browser_permission_step(params, open_page=False)
+            params = {**params, 'waitSeconds': 0}
         if params.get('automatic') is True:
             selector = resolve_selection(params['browser'])
             attempts = [selector]
@@ -179,6 +204,8 @@ class Extensions:
                     if exc.code not in ('browser_permission_required', 'browser_unavailable', 'native_connection_not_exposed',
                                         'profile_in_use', 'profile_protected', 'profile_launch_failed'):
                         raise
+            if first_error.code == 'browser_permission_required' and selector.get('browser') in ('chrome', 'edge'):
+                return self.browser_permission_step(params, open_page=not wait)
             raise first_error
         selected = resolve_selection(params['browser'])
         plan = connection_plan(selected, self.store.path)
@@ -286,7 +313,12 @@ class Extensions:
                 data = setup(self.store.path)
             elif method == 'browser_connect':
                 data = self.connect_browser(params)
+                if data.get('phase') == 'awaiting_browser_permission':
+                    return reply(data, data['message'], 'waiting_for_browser')
             elif method in ('browser_permission_open', 'browser_extension_open'):
+                if method == 'browser_permission_open':
+                    data = self.browser_permission_step(params, open_page=True)
+                    return reply(data, data['message'], 'waiting_for_browser')
                 from .browsers import selected_profile
                 from .browser_process import open_profile
                 selected, browser, profile = selected_profile(params['browser'])
@@ -295,11 +327,9 @@ class Extensions:
                 open_profile(selected['browser'], profile, browser['executable'],
                              permission=method == 'browser_permission_open', extension=method == 'browser_extension_open')
                 data = {'browser': selected, 'profileName': profile['name'], 'opened': True,
-                        'waitingFor': 'browser_permission' if method == 'browser_permission_open' else 'extension_installation',
-                        'message': (f'Opened the browser permission page in {browser["name"]} → {profile["name"]}. '
-                                    'Allow remote debugging for this browser instance, then accept the connection request. Blink handles the rest.'
-                                    if method == 'browser_permission_open' else
-                                    f'Opened the PW extension page in {browser["name"]} → {profile["name"]}. Confirm Add in the browser, then Blink connects automatically.')}
+                        'waitingFor': 'extension_installation',
+                        'message': f'Asked {browser["name"]} to show the optional PW extension page for {profile["name"]}. '
+                                   'Choose Add in the browser, then Blink can retry the connection.'}
             elif method == 'browser_restart':
                 from .browser_process import RESTART_BLOCKED
                 raise BlinkError('restart_not_isolated', RESTART_BLOCKED)
