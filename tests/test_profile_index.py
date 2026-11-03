@@ -84,11 +84,12 @@ class ProfileIndexTests(unittest.TestCase):
         root = browsers.roots('firefox', home=self.home, platform='win32', environment=self.env)[0]
         (root / 'Profiles/abc.work').mkdir(parents=True)
         (root / 'Profile Groups').mkdir()
-        with sqlite3.connect(root / 'Profile Groups/group.sqlite') as db:
+        with contextlib.closing(sqlite3.connect(root / 'Profile Groups/group.sqlite')) as db:
             db.execute('CREATE TABLE Profiles(path TEXT,name TEXT)')
             db.execute('INSERT INTO Profiles VALUES (?,?)', ('Profiles/abc.work', 'Work Firefox'))
             db.execute('CREATE TABLE Secrets(token TEXT)')
             db.execute('INSERT INTO Secrets VALUES (?)', ('must-not-read-secret',))
+            db.commit()
         result = self.scan('firefox')
         self.assertEqual(result['browsers'][0]['profiles'][0]['name'], 'Work Firefox')
         self.assertNotIn('must-not-read', Path(result['index']['path']).read_text())
@@ -110,9 +111,10 @@ class ProfileIndexTests(unittest.TestCase):
         root = browsers.roots('firefox', home=self.home, platform='win32', environment=self.env)[0]
         (root / 'Profiles/abc.work').mkdir(parents=True)
         (root / 'Profile Groups').mkdir()
-        with sqlite3.connect(root / 'Profile Groups/group.sqlite') as db:
+        with contextlib.closing(sqlite3.connect(root / 'Profile Groups/group.sqlite')) as db:
             db.execute('CREATE TABLE Profiles(path TEXT,name TEXT)')
             db.execute('INSERT INTO Profiles VALUES (?,?)', ('Profiles/abc.work', 'Firefox visible name'))
+            db.commit()
         script = "const {discoverWindows}=await import(process.argv[1]);console.log(JSON.stringify(discoverWindows('firefox',{home:process.argv[2],env:{BLINK_HOME:process.argv[3]},refresh:true})));"
         proc = subprocess.run(['node', '--input-type=module', '-e', script, (ROOT / 'mcp/browsers.mjs').as_uri(),
                                str(self.home), self.env['BLINK_HOME']], text=True, encoding='utf-8', capture_output=True, timeout=15)
@@ -223,6 +225,8 @@ class ConnectionUXTests(unittest.TestCase):
             finally:
                 if process.poll() is None:
                     process.terminate(); process.wait(timeout=5)
+                process.stdout.close()
+                process.stderr.close()
 
 
 if __name__ == '__main__':

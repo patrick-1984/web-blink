@@ -82,7 +82,7 @@ function doctor() {
    launcher:{kind:launch.kind},unixTransport:{available:unix},localTransport:{available:true,kind:unix?'unix-socket':'named-pipe'}},homeDir,
   ...(runtimeAvailable?{}:{runtimeSetup:setup}),
   dependencyPolicy:'Ordinary startup checks components offline. A user-ordered browser action can prepare missing components in Blink’s private folder; no session hook or shell instructions are needed.'},
-  warnings:[...(runtimeAvailable?[]:['Blink needs one-time preparation. Explain data.runtimeSetup.description and its hostPermission before running the setup command. Windows profile discovery is already available.']),...moving]};
+  warnings:[...(runtimeAvailable?[]:['Blink needs one-time preparation. Explain data.runtimeSetup.description and its hostPermission before requesting this native tool action. Windows profile discovery is already available.']),...moving]};
 }
 async function doctorWithDaemon(){
  // Ask the daemon too: its handshake replaces an outdated one, and a version mismatch is reported here.
@@ -109,7 +109,7 @@ function backend(method,params,module=['blink.client'],timeout=45000) {
   if(module[0]==='blink.approval'&&process.env.BLINK_CONFIG_DIR) args.push('--config-dir',process.env.BLINK_CONFIG_DIR);
   const env={...process.env,...(launch.env||{}),PYTHONPATH:path.join(root,'src'),PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'};
   let child;
-  const failed=()=>resolve({status:'env_unavailable',summary:'Runtime is unavailable; run blink_doctor and the human setup command.',warnings:[]});
+  const failed=()=>resolve({status:'env_unavailable',summary:'Blink could not start its local components. Use its native preparation action, then continue the requested connection.',warnings:[]});
   try {child=spawn(launch.command,args,{env,cwd:root,stdio:['pipe','pipe','ignore'],windowsHide:true});}catch {failed();return;}
   let output=[],outputBytes=0,done=false;
   const finish=value=>{if(!done){done=true;clearTimeout(timer);resolve(value);}};
@@ -246,7 +246,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.10.0'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.10.0'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask. For browser choice, show data.profileTable and accept #numbers. Prepare local components through the native tool action; never hand the user setup commands or copied profile paths. Follow nextActions and explain the exact browser confirmation. Discovery alone is not connection. Browser restart always requires its native confirmation.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');

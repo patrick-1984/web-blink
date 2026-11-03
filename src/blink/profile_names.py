@@ -103,7 +103,7 @@ class ProfileIndex:
         try:
             if not self.path.is_symlink() and self.path.stat().st_size <= 4 * 1024 * 1024:
                 value = json.loads(self.path.read_text(encoding='utf-8'))
-                if value.get('schemaVersion') == 2 and value.get('platform') == platform and isinstance(value.get('entries'), dict):
+                if isinstance(value, dict) and value.get('schemaVersion') == 2 and value.get('platform') == platform and isinstance(value.get('entries'), dict):
                     self.document = value
         except (OSError, ValueError, TypeError):
             pass
@@ -136,7 +136,10 @@ class ProfileIndex:
             unchanged = False
         if not unchanged:
             return None
-        return self.number(entry['browser']) if isinstance(entry.get('browser'), dict) else None
+        browser = entry.get('browser')
+        if not isinstance(browser, dict) or not isinstance(browser.get('profiles'), list) or any(not isinstance(p, dict) or not isinstance(p.get('id'), str) for p in browser['profiles']):
+            return None
+        return self.number(browser)
 
     def put(self, kind, browser, paths):
         self.document['entries'][kind] = {'scannedAt': time.time(), 'fingerprint': stamps(paths), 'browser': self.number(browser)}
@@ -181,7 +184,7 @@ class ProfileIndex:
                     latest = json.loads(self.path.read_text(encoding='utf-8'))
             except (OSError, ValueError):
                 pass
-            if latest.get('schemaVersion') == 2 and latest.get('platform') == self.platform:
+            if isinstance(latest, dict) and latest.get('schemaVersion') == 2 and latest.get('platform') == self.platform:
                 numbers = latest.get('numbers', {})
                 if isinstance(numbers, dict) and all(type(v) is int and v > 0 for v in numbers.values()):
                     self.document['numbers'] = numbers
@@ -191,7 +194,7 @@ class ProfileIndex:
                     for kind, entry in self.document['entries'].items():
                         if kind in self.updated or kind not in merged:
                             merged[kind] = entry
-                        if isinstance(entry.get('browser'), dict):
+                        if isinstance(entry, dict) and isinstance(entry.get('browser'), dict):
                             self.number(entry['browser'])
                     self.document['entries'] = merged
                     for entry in merged.values():
