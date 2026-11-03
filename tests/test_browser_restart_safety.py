@@ -1,5 +1,7 @@
 """Regression: a profile request must never close a shared Chromium instance."""
 import tempfile
+import json
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -9,11 +11,54 @@ from blink.client import control_request
 from blink.errors import BlinkError
 from blink.extensions import Extensions
 from blink.runtime import Runtime
+from blink.browser import PlaywrightMCP
+from blink.browser_process import profile_host
 
 SELECTOR = {'mode': 'profile', 'browser': 'edge', 'profile': 'edge-profile'}
 
 
 class RestartSafetyTests(unittest.TestCase):
+    def test_profile_lock_error_offers_live_connection_without_a_restart(self):
+        with self.assertRaises(BlinkError) as caught:
+            PlaywrightMCP.result({'isError': True, 'content': [{'text': 'ProcessSingleton: profile is in use'}]})
+        self.assertEqual(caught.exception.code, 'profile_in_use')
+        self.assertNotIn('restart', caught.exception.message.lower())
+        self.assertIn('extension', caught.exception.message)
+
+    def test_busy_browser_precheck_never_starts_or_closes_a_browser(self):
+        plan = {'profile': {'userDataDir': '/synthetic/edge'}, 'launchConfig': {'document': {
+            'browser': {'launchOptions': {'executablePath': '/synthetic/edge.exe'}}}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            ext = Extensions(Runtime(tmp))
+            with mock.patch('blink.browsers.resolve_selection', return_value=SELECTOR), \
+                    mock.patch('blink.browsers.connection_plan', return_value=plan), \
+                    mock.patch('blink.browser_process.has_profile_host', return_value=False), \
+                    mock.patch('blink.browser_process.processes', return_value=[{'pid': 7}]), \
+                    mock.patch('blink.browsers.ensure_tools') as prepare, \
+                    mock.patch('blink.browser_process.subprocess.Popen') as spawn, \
+                    mock.patch('blink.browser_process.os.kill') as signal:
+                with self.assertRaises(BlinkError) as caught:
+                    ext.connect_browser({'browser': SELECTOR})
+        self.assertEqual(caught.exception.code, 'profile_in_use')
+        self.assertNotIn('restart', caught.exception.message.lower())
+        prepare.assert_not_called()
+        spawn.assert_not_called()
+        signal.assert_not_called()
+
+    def test_pw_host_launch_failure_does_not_suggest_restarting_a_personal_browser(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ready = Path(tmp) / 'browser-hosts' / (SELECTOR['profile'] + '.json')
+            def refuse_launch(*args, **kwargs):
+                ready.write_text(json.dumps({'status': 'error', 'code': 'profile_in_use'}))
+                return mock.Mock()
+            with mock.patch('blink.browser_process.subprocess.Popen', side_effect=refuse_launch), \
+                    mock.patch('blink.browser_process.os.kill') as signal:
+                with self.assertRaises(BlinkError) as caught:
+                    profile_host({'selection': SELECTOR, 'launchConfig': {'path': '/synthetic/config.json'}}, tmp, {})
+        self.assertEqual(caught.exception.code, 'profile_in_use')
+        self.assertNotIn('restart', caught.exception.message.lower())
+        signal.assert_not_called()
+
     def test_native_client_refuses_restart_before_contacting_even_an_old_daemon(self):
         with mock.patch('blink.client.request', side_effect=AssertionError('Must not contact daemon')), \
                 mock.patch('blink.browser_process.os.kill') as signal:
