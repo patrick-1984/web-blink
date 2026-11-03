@@ -434,7 +434,8 @@ class CLITests(unittest.TestCase):
             with self.subTest(group=group, action=action), patch('blink.cli.native_dispatch', return_value={'status': 'ok'}) as dispatch:
                 code, out, _ = self.invoke([group, action, '--cli-input-json', json.dumps(parameters), '--yes'])
                 self.assertEqual(code, 0, out)
-                self.assertEqual(dispatch.call_args.args[1:], (method, parameters))
+                expected = dict(parameters, browser={'mode': 'shared'}) if method == 'learn_start' else parameters
+                self.assertEqual(dispatch.call_args.args[1:], (method, expected))
         for command, method in [('forget', 'forget_service'), ('purge', 'purge_state')]:
             with self.subTest(command=command), patch('blink.cli.native_dispatch', return_value={'status': 'ok'}) as dispatch:
                 code, out, _ = self.invoke([command, '--input', '{"service":"test:hours"}', '--yes'])

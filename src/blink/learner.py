@@ -374,7 +374,7 @@ class Learner:
             records.append(item)
         return self._save(records, 'har', missing)
 
-    def start(self, binding, url, origins=None):
+    def start(self, binding, url, origins=None, *, browser=None):
         # Only the URL is needed: the name follows the host reached after redirects, the origins default to it.
         auto_name = not binding
         if origins is None:
@@ -392,8 +392,18 @@ class Learner:
         source = canonical_origin(f'{parsed.scheme}://{parsed.netloc}', allow_http=True)
         if source not in origins:
             raise ValueError('Application origin is outside capture scope')
+        from .browsers import default_selection, resolve_selection
+        selection = resolve_selection(browser if browser is not None else
+                                      default_selection() if hasattr(self.browser, 'select') else {'mode': 'shared'})
+        select = getattr(self.browser, 'select', None)
+        if callable(select):
+            select(binding, selection)
+        elif selection['mode'] != 'shared':
+            from .errors import BlinkError
+            raise BlinkError('unsupported', 'This configured browser provider cannot select a local profile')
         # The session folder comes first; if the browser part fails, the folder is marked failed and nothing runs.
         run = self._open_session(binding, url, origins, 'starting')
+        run['meta']['browser'] = selection
         try:
             try:  # record from the very first request: blank tab, recorder, then navigation
                 self.browser.open(binding, url, navigate=False)
@@ -429,6 +439,7 @@ class Learner:
         self._ensure_collector()
         _private_write(run['folder'] / 'meta.json', json.dumps(run['meta'], indent=2))
         result = {'binding': binding, 'blink': binding, 'recording': True, 'screenshots': state, 'session': run['session'],
+                  'browser': selection,
                   'folder': str(run['folder']), 'origins': run['origins'], 'reachedUrl': run['meta'].get('reachedUrl'),
                   'capabilities': run['meta'].get('capabilities'), 'coverageGaps': COVERAGE_GAPS}
         if state != 'enabled':
@@ -796,6 +807,7 @@ class Learner:
                     continue
         shots += list(legacy_shots)
         extra = {'otherHosts': sorted({r['origin'] for r in records if not r['inScope']}),
+                 'browser': run['meta'].get('browser', {'mode': 'shared'}),
                  'staticAssets': self._assets(counters.get('assets')), 'screenshots': shots,
                  'assetsTruncated': bool(counters.get('assetsTruncated')), 'folder': str(run['folder']),
                  'screenshotErrors': sum(counters[k] for k in ('shotErrors', 'shotsDropped', 'shotsAbandoned')
@@ -1387,6 +1399,8 @@ class Learner:
         if new_values:  # only after the Blink was staged: the user's own values go to the private Blink
             private.set_private(private.blink_name(service), {'variables': new_values})
         out = {'proposal': result, 'manifest': document, 'verified': False}
+        if capture.get('browser'):
+            out['browser'] = capture['browser']
         if review is not None:
             out['specifics'] = review
         return out

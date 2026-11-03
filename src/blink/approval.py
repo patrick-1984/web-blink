@@ -20,7 +20,7 @@ METHODS = frozenset({
     'reconcile', 'revoke', 'retry_intent',
     'learn_import_har', 'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
     'jobs_create', 'jobs_pause', 'jobs_resume', 'jobs_run', 'jobs_list',
-    'workflow_validate', 'workflow_run', 'browser_open', 'browser_close',
+    'workflow_validate', 'workflow_run', 'browser_open', 'browser_close', 'browser_select', 'browser_setup',
     'forget_capture', 'tools_add', 'tools_remove', 'tools_list', 'notifications', 'preflight',
     'trust_pin', 'trust_unpin', 'health_enable', 'health_disable', 'health_clear',
     'custody_authorize', 'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover',
@@ -136,10 +136,13 @@ def _review(manifest, state_dir, plugin_root):
     return review.get('data') if review.get('status') == 'ok' else None
 
 
-def complete(method, params, *, state_dir=None, plugin_root=None):
+def complete(method, params, *, state_dir=None, plugin_root=None, config_dir=None):
     """Fill in what the plugin can decide itself, identically when showing the dialog and when applying it:
     the POST requests that only read (from the candidate), so the model never has to name them."""
     params = strict_json(encoded(params))
+    if method in ('learn_start', 'browser_open'):
+        from .browsers import recording_params
+        params = recording_params(params, config_dir)
     grant = params if method == 'grant' else params.get('grant') if method == 'activate_blink' else None
     if isinstance(grant, dict):
         # Origins are never guessed: exactly the Blink's own requested origins (from the candidate being switched on,
@@ -170,7 +173,7 @@ def describe(method, params, *, state_dir=None, plugin_root=None, config_dir=Non
     except ConfigError as exc:
         # A broken policy runs nothing and opens no dialog.
         return {'status': 'configuration_error', 'summary': f'Approval setting is invalid: {exc}', 'warnings': []}
-    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root)
+    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root, config_dir=config_dir)
     if mode == 'none':
         # The user's order authorizes the action: a small descriptor, no review document.
         return {'status': 'ok', 'summary': 'Exact action described',
@@ -229,11 +232,11 @@ def _dialog(method, params, *, state_dir=None, plugin_root=None):
     return {'status': 'ok', 'summary': 'Approval dialog content', 'data': data, 'warnings': []}
 
 
-def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None):
+def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None, config_dir=None):
     invalid = validate(method, params)
     if invalid:
         return invalid
-    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root)
+    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root, config_dir=config_dir)
     if not isinstance(expected_digest, str) or digest(params) != expected_digest:
         return {'status': 'authorization_required', 'summary': 'Parameters differ from the described action', 'warnings': []}
     if method == 'restart_daemon':
@@ -275,7 +278,7 @@ def main(argv=None):
                               config_dir=args.config_dir)
         else:
             result = apply(payload['method'], payload['params'], payload.get('digest'),
-                           state_dir=args.state_dir, plugin_root=args.plugin_root)
+                           state_dir=args.state_dir, plugin_root=args.plugin_root, config_dir=args.config_dir)
     except Exception:
         result = {'status': 'invalid_request', 'summary': 'Control request failed; check diagnostics and parameters', 'warnings': []}
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))

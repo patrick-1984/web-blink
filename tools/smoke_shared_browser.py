@@ -89,17 +89,27 @@ def main():
             runtime.store.put('binding', binding['id'], binding)
             mismatch = runtime.dispatch('call_read', {'service': service, 'operation': 'items', 'binding': binding['id']})
             assert mismatch['status'] == 'account_mismatch', mismatch['status']
-            capture = browser.capture_stop('browser-fixture')
-            assert len(capture['records']) >= 3
-            browser._run_owned(browser.owners['browser-fixture'],
-                'await p.context().clearCookies({name:v.payload.name,domain:"127.0.0.1"});return {cleaned:true};',
-                {'name': cookie_name})
+            browser.capture_stop('browser-fixture')
+            records, ack = [], None
+            for _ in range(20):
+                batch = browser.capture_drain('browser-fixture', ack)
+                records.extend(batch.get('records') or [])
+                ack = batch.get('batch')
+                if not batch.get('more'):
+                    break
+            assert len(records) >= 3
             print(json.dumps({'sharedPlaywright': 'passed', 'read': True, 'writeExactlyOnce': True,
                               'identityMismatchBlocked': True, 'secretEchoRedacted': True,
-                              'captureRecords': len(capture['records'])}))
+                              'captureRecords': len(records)}))
     finally:
         if browser:
-            browser.close()
+            try:
+                if 'browser-fixture' in browser.owners:
+                    browser._run_owned(browser.owners['browser-fixture'],
+                        'await p.context().clearCookies({name:v.payload.name,domain:"127.0.0.1"});return {cleaned:true};',
+                        {'name': cookie_name})
+            finally:
+                browser.close()
         server.shutdown()
         server.server_close()
 

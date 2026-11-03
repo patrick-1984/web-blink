@@ -21,7 +21,7 @@ uv run --no-project --with-requirements /absolute/path/to/web-blink/requirements
 
 The MCP launcher then uses the dependency cache offline. It never starts a model session or installs tools
 from an unattended job. Python 3.11 or later is required. The current daemon transport supports POSIX
-hosts; Windows has diagnostics only. Git and OpenSSL are needed only for their respective optional source
+hosts; Windows supports diagnostics and browser/profile discovery, but not live recording. Git and OpenSSL are needed only for their respective optional source
 and signature features.
 
 ## Where your data lives
@@ -48,7 +48,7 @@ that run keeps using the old folder, `blink doctor` warns, and the move happens 
 daemon has stopped. An explicit `BLINK_HOME`, state or configuration folder never triggers the move.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.8.3-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.9.0-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -93,9 +93,13 @@ contract, never replayed with a new execution mode or freshly minted intent.
 
 ## Learn and review an integration
 
-Use the existing shared Playwright MCP. The workspace adapter defaults to the workspace's shared-browser
+Choose an existing signed-in Chrome, Edge or Brave profile with `blink browser list` and
+`blink browser select`, or use the normal shared Playwright MCP. See [browser sessions](browser-sessions.md)
+for personal/admin profiles, setup, remembered logins and Firefox/platform limits.
+The workspace adapter defaults to the workspace's shared-browser
 proxy when present; on another host set `BLINK_PLAYWRIGHT_COMMAND` to a JSON argument array for an existing
-Playwright MCP provider. Blink does not launch a replacement or headless browser.
+Playwright MCP provider. Shared and attached modes reuse that provider; managed mode starts only the
+explicitly selected persistent Blink profile. Blink does not silently replace a failed connection.
 
 Live capture is held by the singleton daemon so separate CLI invocations share the same recording.
 In Claude Code, ask Claude to learn a site: it requests `learn_start` and `learn_stop` through an
