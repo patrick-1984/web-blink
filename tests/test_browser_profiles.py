@@ -68,7 +68,7 @@ class DiscoveryTests(BrowserFixture):
                     self.assertTrue(all(p.is_absolute() and p.is_relative_to(self.home) for p in roots))
             listing = self.discover(platform=platform)
             self.assertEqual({b['browser'] for b in listing['browsers']}, set(browsers.BROWSERS))
-            self.assertEqual(listing['runtimeSupported'], platform != 'win32')
+            self.assertTrue(listing['runtimeSupported'])
 
     def test_chrome_and_edge_profile_metadata_on_windows_and_mac(self):
         for platform, browser in [('win32', 'chrome'), ('darwin', 'edge')]:

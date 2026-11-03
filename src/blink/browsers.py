@@ -173,7 +173,7 @@ def discover(browser=None, *, home=None, platform=None, environment=None):
                       'note': ('Stock Firefox needs a separate adapter; export a HAR from its Network panel and import it.'
                                if kind == 'firefox' else 'Install the Playwright extension in the chosen profile and approve its connection.')})
     return {'browsers': found, 'host': socket.gethostname(), 'platform': platform or sys.platform,
-            'runtimeSupported': (platform or sys.platform) != 'win32', 'extensionUrl': EXTENSION_URL,
+            'runtimeSupported': True, 'extensionUrl': EXTENSION_URL,
             'discovery': 'Local metadata only. Locks are hints; profile presence or an extension directory does not prove a live connection. '
                          'Custom profile locations need an explicit CDP endpoint. Run Blink on the machine containing your profiles.'}
 
@@ -319,7 +319,16 @@ def setup(state_dir):
     npm = shutil.which('npm')
     if not npm or not shutil.which('node'):
         raise BlinkError('env_unavailable', 'Install Node.js and npm, then run blink browser setup')
-    result = subprocess.run([npm, 'install', '--prefix', str(base), '--no-audit', '--no-fund', '--ignore-scripts',
+    launcher = [npm]
+    if os.name == 'nt':
+        node = shutil.which('node')
+        candidates = [Path(npm).parent / 'node_modules/npm/bin/npm-cli.js',
+                      Path(node).parent / 'node_modules/npm/bin/npm-cli.js']
+        cli = next((p for p in candidates if p.is_file()), None)
+        if cli is None:
+            raise BlinkError('env_unavailable', 'The Node.js installation is missing npm-cli.js; repair Node.js/npm and retry setup')
+        launcher = [node, str(cli)]
+    result = subprocess.run([*launcher, 'install', '--prefix', str(base), '--no-audit', '--no-fund', '--ignore-scripts',
                              '--save-exact', '@playwright/mcp@' + MCP_VERSION],
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             timeout=180, check=False)

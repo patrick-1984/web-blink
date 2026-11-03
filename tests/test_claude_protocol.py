@@ -86,16 +86,18 @@ class ClaudeProtocolTests(unittest.TestCase):
             self.assertEqual(json.loads(result['result']['content'][0]['text'])['status'], 'env_unavailable')
             self.assertFalse(marker.exists())
 
-    def test_official_metadata_and_exec_form_hook(self):
+    def test_official_metadata_has_no_session_hooks(self):
         manifest = json.loads((ROOT / '.claude-plugin/plugin.json').read_text())
         self.assertEqual(manifest['name'], 'web-blink')
         server = json.loads((ROOT / '.mcp.json').read_text())['mcpServers']['blink']
         self.assertEqual(server['command'], 'node')
         self.assertEqual(server['args'], ['${CLAUDE_PLUGIN_ROOT}/mcp/server.mjs'])
         self.assertFalse((ROOT / 'bin').exists())
-        hook = json.loads((ROOT / 'hooks/hooks.json').read_text())['hooks']['SessionStart'][0]['hooks'][0]
-        self.assertEqual(hook['command'], 'node')
-        self.assertIsInstance(hook['args'], list)
+        self.assertFalse((ROOT / 'hooks/hooks.json').exists())
+        self.assertFalse((ROOT / 'mcp/session-status.mjs').exists())
+        self.assertIn('eol=lf', (ROOT / '.gitattributes').read_text())
+        for name in ('.claude-plugin/plugin.json', '.codex-plugin/plugin.json'):
+            self.assertNotIn('hooks', json.loads((ROOT / name).read_text()))
 
 
 class PublicTransportTests(unittest.TestCase):

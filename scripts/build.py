@@ -9,8 +9,8 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-TREES = ('.claude-plugin', '.codex-plugin', 'mcp', 'src/blink', 'schemas', 'blinks', 'skills', 'hooks')
-FILES = ('.mcp.json', 'LICENSE', 'blink-catalog.json', 'pyproject.toml', 'README.md',
+TREES = ('.claude-plugin', '.codex-plugin', 'mcp', 'src/blink', 'schemas', 'blinks', 'skills')
+FILES = ('.mcp.json', '.gitattributes', 'LICENSE', 'blink-catalog.json', 'pyproject.toml', 'README.md',
          'scripts/blink.py', 'scripts/demo.py', 'requirements.lock', 'docs/cli-reference.md', 'docs/claude-compatibility.md', 'docs/execution-profile.md',
          'docs/source-commands.md', 'docs/runtime-guide.md', 'docs/custody-provider.md', 'docs/state-lifecycle.md', 'docs/browser-sessions.md')
 ALLOWED_SUFFIXES = {'.json', '.py', '.mjs', '.md', '.toml'}
@@ -76,7 +76,7 @@ def build(output, root=ROOT):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', default=str(ROOT / 'dist/web-blink-0.9.0.zip'))
+    parser.add_argument('--output', default=str(ROOT / 'dist/web-blink-0.9.1.zip'))
     args = parser.parse_args(argv)
     try:
         print(json.dumps(build(args.output), sort_keys=True))

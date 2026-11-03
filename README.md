@@ -13,6 +13,13 @@ From the [patrick-1984 plugin marketplace](https://github.com/patrick-1984/marke
 /plugin install web-blink@patrick-1984
 ```
 
+Update an existing installation, then restart Claude Code:
+
+```sh
+claude plugin marketplace update patrick-1984
+claude plugin update web-blink@patrick-1984
+```
+
 ## Install in Codex
 
 The same marketplace works in the Codex CLI:
@@ -21,6 +28,20 @@ The same marketplace works in the Codex CLI:
 codex plugin marketplace add patrick-1984/marketplace
 codex plugin add web-blink@patrick-1984
 ```
+
+Update the marketplace and its installed plugin, then restart Codex to reload the files:
+
+```sh
+codex plugin marketplace upgrade patrick-1984
+```
+
+See the [Codex marketplace update documentation](https://developers.openai.com/plugins/build/plugins#add-a-marketplace-from-the-cli).
+Web Blink registers no session or lifecycle hooks. Opening a Codex or Claude session does not run Blink
+status checks or inspect your browser profiles.
+
+Native Windows uses authenticated local named pipes; macOS and Linux use Unix sockets. Browser discovery
+in Codex on Windows needs Node only. For recording, run `blink_doctor`; if Python dependencies are missing,
+use the returned `data.runtimeSetup` command once, then retry. Normal runtime startup stays offline.
 
 Your order is the authorization: when you tell Claude to record, propose, switch a Blink on or submit something,
 it is done, with no approval dialogs and no confirmation questions. Exact plans, budgets and reconciliation of

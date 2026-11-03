@@ -21,7 +21,7 @@ uv run --no-project --with-requirements /absolute/path/to/web-blink/requirements
 
 The MCP launcher then uses the dependency cache offline. It never starts a model session or installs tools
 from an unattended job. Python 3.11 or later is required. The current daemon transport supports POSIX
-hosts; Windows supports diagnostics and browser/profile discovery, but not live recording. Git and OpenSSL are needed only for their respective optional source
+hosts and native Windows (authenticated named pipes). Git and OpenSSL are needed only for their respective optional source
 and signature features.
 
 ## Where your data lives
@@ -48,7 +48,7 @@ that run keeps using the old folder, `blink doctor` warns, and the move happens 
 daemon has stopped. An explicit `BLINK_HOME`, state or configuration folder never triggers the move.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.9.0-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.9.1-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -59,7 +59,8 @@ blink schemas export ./blink-schemas
 
 Claude tools expose catalog, search, describe, read, prepare, execute and read-only administration. They
 cannot issue grants, custody authorization or intent receipts. Host-confirmed CLI commands use a separate
-private control channel with one-time permits. SessionStart is advisory and never opens a browser.
+private control channel with one-time permits. Blink registers no host session/lifecycle hooks; status and
+profile checks run only when requested.
 
 ## Configure defaults and script operations
 

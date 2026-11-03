@@ -27,7 +27,7 @@ DYNAMIC_SEGMENT = re.compile(r'^(\d+|[0-9a-fA-F-]{8,}|[A-Za-z0-9_-]{24,}|[^/@]+@
 
 
 def _private_write(path, text, mode='w'):
-    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == 'a' else os.O_TRUNC), 0o600), mode) as handle:
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == 'a' else os.O_TRUNC), 0o600), mode, encoding='utf-8') as handle:
         handle.write(text)
 
 
