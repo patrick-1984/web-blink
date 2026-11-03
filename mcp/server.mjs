@@ -81,7 +81,7 @@ function doctor() {
   hostPermission:'The host may ask to authorize this preparation tool. Explain that it downloads local components, not access to browser logins. Do not change host permission or sandbox settings.'};
  return {status:runtimeAvailable?'ok':'degraded',summary:'Host bootstrap capabilities',data:{
   capabilities:{diagnostics:true,browserDiscovery:true,runtime:runtimeAvailable,windowsRuntime:!unix&&runtimeAvailable},
-  activeComponent:{version:'0.10.1',pluginRoot:root},
+  activeComponent:{version:'0.10.2',pluginRoot:root},
   checks:{node:{available:true,version:process.versions.node},runtimeDependencies:{available:runtimeAvailable},
    launcher:{kind:launch.kind},unixTransport:{available:unix},localTransport:{available:true,kind:unix?'unix-socket':'named-pipe'}},homeDir,
   ...(runtimeAvailable?{}:{runtimeSetup:setup}),
@@ -177,9 +177,7 @@ async function approval(args,callId){
  // Opt-in dialog policy (the user set approvals to dialog). Local, reversible actions still run at once.
  const fallback={method:args.method,command:`blink human ${args.method} --input <file with the parameters JSON>`};
  if(described.data.immediate===true)return apply();
- if(!canElicit)return args.method==='browser_restart'
-  ?{status:'approval_unavailable',summary:'Restart needs a native confirmation dialog that this host cannot display. No windows were closed. Choose native connection or the optional PW extension.',warnings:[]}
-  :{status:'approval_unavailable',summary:'Approval dialogs are switched on, but this client cannot show one; the human must run the CLI command',data:fallback,warnings:[]};
+ if(!canElicit)return {status:'approval_unavailable',summary:'Approval dialogs are switched on, but this client cannot show one; the human must run the CLI command',data:fallback,warnings:[]};
  const text=approvalText(described.data,args.reason);
  if(text.length>DIALOG_LIMIT)return {status:'approval_too_large',summary:'This action is too large to review in a dialog; the human must use the CLI command',data:fallback,warnings:[]};
  // One click: Accept approves, Decline or Esc does not (no form fields: a field made Accept count as decline).
@@ -263,7 +261,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.10.1'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask. For browser choice, show data.profileTable and accept #numbers. Prepare local components through the native tool action; never hand the user setup commands or copied profile paths. Follow nextActions and explain the exact browser confirmation. Discovery alone is not connection. Shared-profile browser restart is blocked. Use the narrow blink_connect_browser tool for ordinary connection; proactively offer safe alternatives if native access fails. For recovery use blink_restore_browser, which closes nothing and reports restore requests honestly.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.10.2'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask. For browser choice, show data.profileTable and accept #numbers. Prepare local components through the native tool action; never hand the user setup commands or copied profile paths. Follow nextActions and explain the exact browser confirmation. Discovery alone is not connection. Shared-profile browser restart is blocked. Use the narrow blink_connect_browser tool for ordinary connection; proactively offer safe alternatives if native access fails. For recovery use blink_restore_browser, which closes nothing and reports restore requests honestly.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');

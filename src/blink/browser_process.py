@@ -1,11 +1,9 @@
-"""Native browser entry points and explicitly confirmed profile restart; no profile copying."""
+"""Native browser entry points; shared-profile restart is prohibited."""
 import ctypes
 import json
 import os
 from pathlib import Path
 import re
-import shlex
-import signal
 import subprocess
 import sys
 import time
@@ -74,7 +72,7 @@ def profile_host(plan, state, environment):
             return value['endpoint']
         if value.get('status') == 'error':
             code = value.get('code', 'profile_launch_failed')
-            raise BlinkError(code, 'The browser did not allow PW to open this existing profile. Use its live native connection, the optional extension, or confirm restart if it is already open.')
+            raise BlinkError(code, 'PW could not open the selected profile. Blink can try its live connection or the optional PW extension. No existing browser windows were closed.')
         if process.poll() is not None:
             break
         time.sleep(.05)

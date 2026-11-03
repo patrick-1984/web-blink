@@ -448,7 +448,7 @@ def connection_plan(value, state_dir):
         detail['instructions'] = ('Use a separate persistent Blink profile. Sign in once here; future recordings reuse this login. '
                                   'This mode does not inherit a personal profile. Give your admin and personal sessions different names.')
     return {'selection': value, 'available': ready, 'reason': reason, 'command': command,
-            'automaticPreparation': {'tool': 'blink_request_approval', 'method': 'browser_connect', 'params': {'browser': value}},
+            'automaticPreparation': {'tool': 'blink_connect_browser', 'params': {'browser': value}},
             'package': '@playwright/mcp@' + MCP_VERSION, **detail}
 
 
@@ -467,8 +467,12 @@ def failure_guidance(code, params):
         return {}
     actions = []
     def add(label, method, selected=None):
-        actions.append({'label': label, 'tool': 'blink_request_approval', 'method': method,
-                        'params': {'browser': selected or selector}})
+        action = {'label': label, 'params': {'browser': selected or selector}}
+        if method in ('browser_connect', 'browser_restore'):
+            action['tool'] = 'blink_connect_browser' if method == 'browser_connect' else 'blink_restore_browser'
+        else:
+            action.update(tool='blink_request_approval', method=method)
+        actions.append(action)
     if code in ('profile_in_use', 'profile_protected', 'native_connection_not_exposed', 'browser_reopened', 'browser_unavailable', 'profile_mismatch', 'profile_launch_failed', 'restart_not_isolated', 'restart_stale', 'restart_cancelled'):
         if selector.get('profile'):
             native = {**selector, 'mode': 'native'}
@@ -494,7 +498,7 @@ def failure_guidance(code, params):
     elif code in ('browser_system_dependencies_missing', 'browser_component_missing'):
         return {'connected': False, 'nextActions': [
             {'tool': 'blink_admin', 'params': {'action': 'browsers'}, 'label': 'Show installed browser profiles in the numbered table'},
-            {'tool': 'blink_request_approval', 'method': 'browser_connect', 'params': {'browser': selector},
+            {'tool': 'blink_connect_browser', 'params': {'browser': selector},
              'label': 'Prepare and retry this selected browser automatically'}]}
     if not actions:
         return {}

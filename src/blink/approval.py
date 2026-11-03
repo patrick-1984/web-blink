@@ -80,7 +80,7 @@ def validate(method, params):
             return _forbidden('restart_daemon takes no parameters')
     elif method == 'browser_restart':
         if set(params) - {'browser', 'binding'} or not isinstance(params.get('browser'), dict):
-            return _forbidden('browser_restart takes an exact browser/profile selector and optional binding; confirmation is always required')
+            return _forbidden('browser_restart is blocked because Chromium may share its main process with other profiles')
     elif method in ('jobs_list', 'tools_list'):
         if params:
             return _forbidden(f'{method} takes no parameters')

@@ -205,8 +205,8 @@ class ConnectionUXTests(unittest.TestCase):
 
     def test_failure_guidance_contains_concrete_actions_instead_of_manual_commands(self):
         guide = browsers.failure_guidance('profile_in_use', {'browser': {'mode': 'profile', 'browser': 'edge', 'profile': 'id'}})
-        methods = {a['method'] for a in guide['nextActions']}
-        self.assertIn('browser_connect', methods)
+        methods = {a.get('method') for a in guide['nextActions']}
+        self.assertIn('blink_connect_browser', {a['tool'] for a in guide['nextActions']})
         self.assertNotIn('browser_restart', methods)
         self.assertIn('browser_extension_open', methods)
         self.assertFalse(any('command' in action for action in guide['nextActions']))
