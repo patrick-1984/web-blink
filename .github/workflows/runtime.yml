@@ -23,6 +23,8 @@ jobs:
         env:
           BLINK_TEST_BROWSER_SETUP: ${{ runner.os == 'Windows' && '1' || '0' }}
         run: python -m unittest discover -s tests -p test_windows_runtime.py -v
+      - name: Native CLI and MCP read/write demonstration
+        run: python scripts/demo.py
       - name: Full Linux regression suite
         if: runner.os == 'Linux'
         run: python -m unittest discover -s tests -q
