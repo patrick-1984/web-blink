@@ -46,7 +46,7 @@ function launcher() {
 function doctor() {
  const launch=launcher();
  const probeArgs=launch.args;
- const env={...process.env,PYTHONPATH:path.join(root,'src')};
+ const env={...process.env,PYTHONPATH:path.join(root,'src'),PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'};
  const probe=spawnSync(launch.command,[...probeArgs,'-c','import sys,json; import jsonschema; import blink.runtime; from blink.doctor import report; assert sys.version_info >= (3,11); print(json.dumps(report()))'],
   {env,cwd:root,encoding:'utf8',maxBuffer:65536,timeout:3500,windowsHide:true});
  let runtimeAvailable=false;
@@ -54,12 +54,14 @@ function doctor() {
  if(!probe.error&&probe.status===0){try{const report=JSON.parse(probe.stdout),data=report.data;runtimeAvailable=data.capabilities.runtime===true;homeDir=data.homeDir??null;
   moving=(report.warnings??[]).filter(w=>typeof w==='string'&&w.startsWith('Web Blink data stays'));}catch{}}
  const unix=process.platform!=='win32';
- return {status:runtimeAvailable && unix?'ok':'degraded',summary:'Host bootstrap capabilities',data:{
-  capabilities:{diagnostics:true,runtime:runtimeAvailable&&unix,windowsRuntime:false},
+ const setup={command:'uv',args:['run','--no-project','--with-requirements',path.join(root,'requirements.lock'),'python','-c','import jsonschema']};
+ return {status:runtimeAvailable?'ok':'degraded',summary:'Host bootstrap capabilities',data:{
+  capabilities:{diagnostics:true,browserDiscovery:true,runtime:runtimeAvailable,windowsRuntime:!unix&&runtimeAvailable},
   checks:{node:{available:true,version:process.versions.node},runtimeDependencies:{available:runtimeAvailable},
-   launcher:{kind:launch.kind},unixTransport:{available:unix}},homeDir,
+   launcher:{kind:launch.kind},unixTransport:{available:unix},localTransport:{available:true,kind:unix?'unix-socket':'named-pipe'}},homeDir,
+  ...(runtimeAvailable?{}:{runtimeSetup:setup}),
   dependencyPolicy:'Doctor probes cached dependencies offline. Prepare pinned dependencies with the documented native setup command before runtime use; the MCP launcher stays offline.'},
-  warnings:[...(unix?[]:['Windows supports diagnostics; the current local runtime requires POSIX Unix sockets.']),...moving]};
+  warnings:[...(runtimeAvailable?[]:['Runtime prerequisites are unavailable. Run data.runtimeSetup with uv to prepare the pinned dependencies, then retry. Browser discovery is available without them on Windows.']),...moving]};
 }
 async function doctorWithDaemon(){
  // Ask the daemon too: its handshake replaces an outdated one, and a version mismatch is reported here.
@@ -84,7 +86,7 @@ function backend(method,params,module=['blink.client'],timeout=45000) {
   if(process.env.BLINK_STATE_DIR) args.push('--state-dir',process.env.BLINK_STATE_DIR);
   // The approval policy is read where config.py reads it: BLINK_CONFIG_DIR, else the Web Blink home.
   if(module[0]==='blink.approval'&&process.env.BLINK_CONFIG_DIR) args.push('--config-dir',process.env.BLINK_CONFIG_DIR);
-  const env={...process.env,PYTHONPATH:path.join(root,'src')};
+  const env={...process.env,PYTHONPATH:path.join(root,'src'),PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'};
   let child;
   const failed=()=>resolve({status:'env_unavailable',summary:'Runtime is unavailable; run blink_doctor and the human setup command.',warnings:[]});
   try {child=spawn(launch.command,args,{env,cwd:root,stdio:['pipe','pipe','ignore'],windowsHide:true});}catch {failed();return;}
@@ -103,7 +105,7 @@ function backend(method,params,module=['blink.client'],timeout=45000) {
     const result=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(output)));
     if(!result || typeof result!=='object' || Array.isArray(result) || typeof result.status!=='string')throw new Error();
     finish(result);
-   }catch{finish({status:'env_unavailable',summary:'Runtime did not return a valid response.',warnings:[]});}
+   }catch{finish({status:'env_unavailable',summary:'The local Python runtime could not start. Run blink_doctor and its data.runtimeSetup command, then retry.',warnings:[]});}
   });
   child.stdin.on('error',()=>{});
   child.stdin.end(JSON.stringify({method,params})+'\n');
@@ -179,7 +181,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.9.0'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.9.1'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');
@@ -194,7 +196,10 @@ async function handle(message){
   if(!tool)return rpcError(id,-32602,'Unknown tool');
   const args=p.arguments??{};
   if(!validArguments(tool,args))return rpcError(id,-32602,'Invalid tool arguments');
-  const result=p.name==='blink_doctor'?await doctorWithDaemon():p.name==='blink_request_approval'?await approval(args,id):await backend(methods.get(p.name),args);
+  const result=p.name==='blink_doctor'?await doctorWithDaemon():p.name==='blink_request_approval'?await approval(args,id)
+   :process.platform==='win32'&&p.name==='blink_admin'&&args.action==='browsers'
+    ?{status:'ok',summary:'Local browsers and profiles (no Python or daemon required)',data:(await import('./browsers.mjs')).discoverWindows(args.browser),warnings:[]}
+    :await backend(methods.get(p.name),args);
   return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large'].includes(result.status)}};
  }
  return rpcError(id,-32601,'Method not found');
