@@ -31,7 +31,7 @@ INIT = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
 def node_messages(messages, env=None, script=None):
     proc = subprocess.run(['node', str(script or ROOT / 'mcp/server.mjs')],
         input=''.join((line if isinstance(line, str) else json.dumps(line)) + '\n' for line in messages),
-        text=True, capture_output=True, timeout=20, env=dict(os.environ, BLINK_HOME=HOME.name, **(env or {})))
+        text=True, capture_output=True, timeout=20, env={**os.environ, 'BLINK_HOME': HOME.name, **(env or {})})
     if proc.returncode:
         raise AssertionError(f'Node server exited {proc.returncode}')
     return [json.loads(line) for line in proc.stdout.splitlines()]
@@ -81,6 +81,8 @@ class ClaudeProtocolTests(unittest.TestCase):
             executable.write_text('#!' + sys.executable + '\n' + '''
 import json,sys
 if '-m' not in sys.argv:
+    if '-c' in sys.argv:
+        print(json.dumps({'status':'ok','data':{'capabilities':{'runtime':True}}}))
     raise SystemExit(0)
 request=json.loads(sys.stdin.readline())
 if request['method']=='describe':
@@ -94,7 +96,7 @@ print(json.dumps(result))
             messages = node_messages([INIT, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
                 'params': {'name': 'blink_connect_browser', 'arguments': {
                     'browser': {'mode': 'native', 'browser': 'edge', 'profile': 'synthetic'}, 'waitSeconds': 25}}}],
-                {'BLINK_PYTHON': str(executable)})
+                {'BLINK_PYTHON': str(executable), 'BLINK_HOME': str(Path(tmp) / 'blink')})
         result = messages[-1]['result']
         self.assertFalse(result['isError'])
         data = json.loads(result['content'][0]['text'])
