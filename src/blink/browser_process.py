@@ -206,68 +206,15 @@ def processes(browser, root, binary):
     return sorted(found, key=lambda row: row['pid'])
 
 
+RESTART_BLOCKED = ('Blink cannot restart only this profile while Chromium may share its main process with other profiles. '
+                   'No windows were closed. Use a live connection or the optional PW extension; reopening a profile for recovery is a separate safe action.')
+
+
 def restart_plan(value):
-    from .browsers import selected_profile, discover
-    value = {**value, 'mode': 'profile'}
-    selected, browser, profile = selected_profile(value)
-    if not browser['executable']:
-        raise BlinkError('browser_executable_missing', 'The selected browser application was not found. Choose an installed browser or a new PW browser.')
-    if selected['browser'] in ('chrome', 'firefox'):
-        raise BlinkError('profile_protected', 'Restart is not offered for a profile this adapter cannot launch directly. Choose native connection or the optional PW extension.')
-    running = processes(selected['browser'], profile['userDataDir'], browser['executable'])
-    related = [p['name'] for p in discover(selected['browser'])['browsers'][0]['profiles'] if p['userDataDir'] == profile['userDataDir']]
-    return {'selection': selected, 'browserName': browser['name'], 'profileName': profile['name'],
-            'profile': profile, 'executable': browser['executable'], 'processes': running,
-            'affectedProfiles': related, 'scope': 'All windows of this browser instance, including its other profiles.'}
-
-
-def _windows(pids, close=False):
-    from ctypes import wintypes
-    user = ctypes.WinDLL('user32', use_last_error=True)
-    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    user.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
-    user.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-    user.IsWindowVisible.argtypes = [wintypes.HWND]
-    user.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-    windows = []
-    def visit(window, _):
-        pid = wintypes.DWORD()
-        user.GetWindowThreadProcessId(window, ctypes.byref(pid))
-        if pid.value in pids and user.IsWindowVisible(window):
-            windows.append(window)
-            if close:
-                user.PostMessageW(window, 0x0010, 0, 0)  # WM_CLOSE permits browser save/cancel prompts.
-        return True
-    callback = callback_type(visit)
-    user.EnumWindows(callback, 0)
-    return windows
+    # A user-data-root/PID match does not prove profile/window isolation. Fail before any OS action.
+    raise BlinkError('restart_not_isolated', RESTART_BLOCKED)
 
 
 def close_for_restart(plan):
-    selected, profile = plan['selection'], plan['profile']
-    current = processes(selected['browser'], profile['userDataDir'], plan['executable'])
-    if current != plan['processes']:
-        raise BlinkError('restart_stale', 'The browser instance changed. Blink must ask about the current windows before restarting.')
-    pids = {p['pid'] for p in current}
-    if os.name == 'nt' and pids:
-        _windows(pids, close=True)
-        deadline = time.monotonic() + 15
-        while _windows(pids) and time.monotonic() < deadline:
-            time.sleep(.1)
-        if _windows(pids):
-            raise BlinkError('restart_cancelled', 'The browser kept a window open, possibly for an unfinished form. Restart was stopped; finish or cancel that window first.')
-    # Recheck identity before signalling. On Windows only background processes remain at this point.
-    for row in processes(selected['browser'], profile['userDataDir'], plan['executable']):
-        if row['pid'] not in pids:
-            raise BlinkError('restart_stale', 'A new browser instance appeared. Blink stopped the restart.')
-        if os.name == 'nt' and _windows({row['pid']}):
-            raise BlinkError('restart_stale', 'A browser window appeared after the close confirmation. Blink stopped instead of terminating it.')
-        try:
-            os.kill(row['pid'], signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    deadline = time.monotonic() + 8
-    while processes(selected['browser'], profile['userDataDir'], plan['executable']):
-        if time.monotonic() > deadline:
-            raise BlinkError('restart_cancelled', 'The browser did not exit cleanly. Blink will not force-close it; use native connection or the optional extension.')
-        time.sleep(.1)
+    # Preserve the legacy entry point, but never permit an old/stale caller to close a shared instance.
+    raise BlinkError('restart_not_isolated', RESTART_BLOCKED)
