@@ -18,7 +18,7 @@ from .storage import digest, encoded, strict_json
 METHODS = frozenset({
     'approve_manifest', 'set_trust', 'grant', 'bind', 'approve_intent',
     'reconcile', 'revoke', 'retry_intent',
-    'learn_import_har', 'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
+    'learn_import_har', 'learn_start', 'learn_start_guided', 'learn_stop', 'learn_propose', 'learn_accept_partial',
     'jobs_create', 'jobs_pause', 'jobs_resume', 'jobs_run', 'jobs_list',
     'workflow_validate', 'workflow_run', 'browser_open', 'browser_close', 'browser_select', 'browser_setup',
     'browser_connect', 'browser_restart', 'browser_restore', 'browser_permission_open', 'browser_extension_open',
@@ -31,7 +31,7 @@ METHODS = frozenset({
 # Under the opt-in dialog policy: local, reversible actions with no effect on any web service still run as
 # soon as the user asks for them (no dialog). Recording stays limited to the exact origins given; proposals
 # stay quarantined. private_set only changes the user's own local private Blink (never secrets).
-IMMEDIATE = frozenset({'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
+IMMEDIATE = frozenset({'learn_start', 'learn_start_guided', 'learn_stop', 'learn_propose', 'learn_accept_partial',
                        'browser_open', 'browser_close', 'workflow_validate', 'private_set'})
 TITLES = {
     'approve_intent': 'Run a prepared write', 'approve_manifest': 'Approve a reviewed integration',
@@ -88,6 +88,13 @@ def validate(method, params):
                 or ('automatic' in params and type(params['automatic']) is not bool)
                 or type(params.get('waitSeconds', 0)) is not int or not 0 <= params.get('waitSeconds', 0) <= 30):
             return _forbidden('browser_connect takes a browser selector, optional binding/automatic and a 0–30 second wait')
+    elif method == 'learn_start_guided':
+        if (set(params) - {'url', 'browser', 'binding', 'waitSeconds'}
+                or not isinstance(params.get('url'), str) or not 1 <= len(params['url']) <= 2048
+                or not isinstance(params.get('browser'), dict)
+                or ('binding' in params and (not isinstance(params['binding'], str) or not 1 <= len(params['binding']) <= 100))
+                or type(params.get('waitSeconds', 0)) is not int or not 0 <= params.get('waitSeconds', 0) <= 30):
+            return _forbidden('Start recording takes an app URL, browser selector, optional recording name and 0–30 second wait')
     elif method == 'browser_permission_open':
         if (set(params) - {'browser', 'binding', 'reopen'} or not isinstance(params.get('browser'), dict)
                 or ('binding' in params and not isinstance(params['binding'], str))

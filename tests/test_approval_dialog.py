@@ -292,6 +292,7 @@ def bridge_actions(staged):
         ('approve_intent', {'intentId': 'missing'}), ('approve_intents', {'intentIds': ['missing']}),
         ('reconcile', {}), ('revoke', {}), ('retry_intent', {}),
         ('learn_import_har', {}), ('learn_start', {}), ('learn_stop', {}), ('learn_propose', {}),
+        ('learn_start_guided', {'url': 'invalid', 'browser': {'mode': 'shared'}}),
         ('learn_accept_partial', {}), ('jobs_create', {}), ('jobs_pause', {}), ('jobs_resume', {}), ('jobs_run', {}),
         ('jobs_list', {}), ('workflow_validate', {}), ('workflow_run', {}), ('browser_open', {}), ('browser_close', {}),
         ('browser_select', {}), ('browser_setup', {'unexpected': True}),
