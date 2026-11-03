@@ -49,7 +49,9 @@ class BrowserConsentTests(unittest.TestCase):
                     mock.patch('blink.browser_process.open_profile') as opened, \
                     mock.patch('blink.browser_process.os.kill') as signal:
                 result = ext.dispatch('browser_permission_open', {'browser': SELECTED}, human=True)
-                again = ext.dispatch('browser_permission_open', {'browser': SELECTED}, human=True)
+                with mock.patch.object(browsers, 'wait_for_endpoint', return_value=None):
+                    again = ext.dispatch('browser_connect', {'browser': SELECTED, 'automatic': True,
+                                         'waitSeconds': 25}, human=True)
         self.assertEqual(result['status'], 'waiting_for_browser')
         self.assertFalse(result['data']['connected'])
         self.assertFalse(result['data']['readyToRecord'])

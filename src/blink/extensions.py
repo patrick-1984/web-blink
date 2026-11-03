@@ -170,7 +170,7 @@ class Extensions:
         if selected['browser'] not in ('chrome', 'edge'):
             raise BlinkError('unsupported', 'This browser does not provide Blink’s built-in connection permission flow. Use its optional PW extension.')
         key = (selected['browser'], selected['profile'])
-        if open_page and key not in self.permission_pages:
+        if open_page:
             open_profile(selected['browser'], profile, browser['executable'], permission=True)
             self.permission_pages.add(key)
         return permission_step(selected, browser, profile, binding=params.get('binding'),
