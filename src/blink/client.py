@@ -56,6 +56,8 @@ def _start_daemon(state, plugin_root):
     from .paths import plugin_root as locate_root
     trusted_root = locate_root(plugin_root)
     environment = dict(os.environ)
+    environment['PYTHONUTF8'] = '1'
+    environment['PYTHONIOENCODING'] = 'utf-8'
     environment.pop('PYTHONPATH', None)
     if (trusted_root / 'src').is_dir():
         environment['PYTHONPATH'] = str(trusted_root / 'src')
