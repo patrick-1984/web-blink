@@ -22,6 +22,9 @@ def sync(root=ROOT):
             shutil.copyfile(source, target)
     shutil.copyfile(root / 'blink-catalog.json', destination / 'blink-catalog.json')
     expected.add(Path('blink-catalog.json'))
+    helper = destination / 'mcp/profile-host.mjs'
+    helper.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(root / 'mcp/profile-host.mjs', helper)
     for old in destination.rglob('*.json'):
         if old.relative_to(destination) not in expected:
             old.unlink()

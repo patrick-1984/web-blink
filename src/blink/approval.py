@@ -21,6 +21,7 @@ METHODS = frozenset({
     'learn_import_har', 'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
     'jobs_create', 'jobs_pause', 'jobs_resume', 'jobs_run', 'jobs_list',
     'workflow_validate', 'workflow_run', 'browser_open', 'browser_close', 'browser_select', 'browser_setup',
+    'browser_connect', 'browser_restart', 'browser_permission_open', 'browser_extension_open',
     'forget_capture', 'tools_add', 'tools_remove', 'tools_list', 'notifications', 'preflight',
     'trust_pin', 'trust_unpin', 'health_enable', 'health_disable', 'health_clear',
     'custody_authorize', 'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover',
@@ -77,6 +78,9 @@ def validate(method, params):
     elif method == 'restart_daemon':
         if params:
             return _forbidden('restart_daemon takes no parameters')
+    elif method == 'browser_restart':
+        if set(params) - {'browser', 'binding'} or not isinstance(params.get('browser'), dict):
+            return _forbidden('browser_restart takes an exact browser/profile selector and optional binding; confirmation is always required')
     elif method in ('jobs_list', 'tools_list'):
         if params:
             return _forbidden(f'{method} takes no parameters')
@@ -140,6 +144,9 @@ def complete(method, params, *, state_dir=None, plugin_root=None, config_dir=Non
     """Fill in what the plugin can decide itself, identically when showing the dialog and when applying it:
     the POST requests that only read (from the candidate), so the model never has to name them."""
     params = strict_json(encoded(params))
+    if method == 'browser_restart':
+        from .browser_process import restart_plan
+        params['_restartPlan'] = restart_plan(params['browser'])
     if method in ('learn_start', 'browser_open'):
         from .browsers import recording_params
         params = recording_params(params, config_dir)
@@ -174,6 +181,13 @@ def describe(method, params, *, state_dir=None, plugin_root=None, config_dir=Non
         # A broken policy runs nothing and opens no dialog.
         return {'status': 'configuration_error', 'summary': f'Approval setting is invalid: {exc}', 'warnings': []}
     params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root, config_dir=config_dir)
+    if method == 'browser_restart':
+        plan = params['_restartPlan']
+        text = (f'Restart {plan["browserName"]} to open the existing profile “{plan["profileName"]}” with PW?\n'
+                f'{plan["scope"]}\nSave unfinished forms first. Browser logins stay in the same profile.\n'
+                'Accept restarts this instance and reconnects. Decline keeps it open.')
+        return {'status': 'ok', 'summary': 'Confirm browser restart', 'data': {
+            'method': method, 'mode': 'dialog', 'text': text, 'exactParametersSha256': digest(params)}, 'warnings': []}
     if mode == 'none':
         # The user's order authorizes the action: a small descriptor, no review document.
         return {'status': 'ok', 'summary': 'Exact action described',

@@ -124,7 +124,7 @@ class SelectionTests(BrowserFixture):
         profile = listing['browsers'][0]['profiles'][1]
         value = browsers.resolve_selection({'browser': 'brave', 'profile': profile['id']})
         self.assertEqual(value['profile'], profile['id'])
-        self.assertEqual(value['mode'], 'extension')
+        self.assertEqual(value['mode'], 'native')
         with self.assertRaises(BlinkError) as caught:
             browsers.resolve_selection({'browser': 'brave', 'profile': 'deleted'})
         self.assertEqual(caught.exception.code, 'profile_not_found')
@@ -132,7 +132,7 @@ class SelectionTests(BrowserFixture):
     def test_brave_plan_names_the_exact_binary_root_and_profile(self):
         listing = self.listing_patch()
         profile = listing['browsers'][0]['profiles'][1]
-        plan = browsers.connection_plan({'browser': 'brave', 'profile': 'Admin'}, self.home / 'state')
+        plan = browsers.connection_plan({'mode': 'extension', 'browser': 'brave', 'profile': 'Admin'}, self.home / 'state')
         argv = plan['command']
         for flag, expected in [('--profile-dir-name', 'Profile 1'), ('--user-data-dir', profile['userDataDir']),
                                ('--executable-path', '/usr/bin/brave-browser')]:

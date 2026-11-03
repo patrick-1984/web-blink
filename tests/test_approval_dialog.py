@@ -295,6 +295,7 @@ def bridge_actions(staged):
         ('learn_accept_partial', {}), ('jobs_create', {}), ('jobs_pause', {}), ('jobs_resume', {}), ('jobs_run', {}),
         ('jobs_list', {}), ('workflow_validate', {}), ('workflow_run', {}), ('browser_open', {}), ('browser_close', {}),
         ('browser_select', {}), ('browser_setup', {'unexpected': True}),
+        ('browser_connect', {}), ('browser_permission_open', {}), ('browser_extension_open', {}),
         ('forget_capture', {}), ('tools_add', {}), ('tools_remove', {}), ('tools_list', {}), ('notifications', {}),
         ('preflight', {'capability': 'runtime'}), ('trust_pin', {}), ('trust_unpin', {}), ('health_enable', {}),
         ('health_disable', {}), ('health_clear', {}),
@@ -317,7 +318,7 @@ class NoDialogPolicyTests(BridgeFixture):
 
     def test_every_supported_action_is_dispatched_without_elicitation_for_every_client(self):
         from blink.approval import METHODS
-        covered = {method for method, _ in bridge_actions(None)} | {'restart_daemon'}
+        covered = {method for method, _ in bridge_actions(None)} | {'restart_daemon', 'browser_restart'}
         self.assertEqual(covered, set(METHODS))
         for policy in ('missing', 'none'):
             if policy == 'none':
