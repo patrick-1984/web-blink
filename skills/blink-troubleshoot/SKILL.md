@@ -8,6 +8,14 @@ announcing dialogs. Continue through activation, exact-plan authorization and ex
 approval setting (`approvals`; it is the user's, set only by them in the CLI). Ask only for missing information
 required to perform the task.
 
+
+Known 0.10.0 incident: browser_restart could close windows from other profiles sharing the browser main
+process and then fail before reopening. Never retry that action or advise killing browser processes.
+Shared-profile restart is blocked. For explicit recovery use blink_restore_browser with the selected
+profile; it closes no windows and reports a restore request, not verified recovered tabs. Prefer the
+narrow blink_connect_browser tool for ordinary connection. The host may separately ask for MCP tool
+permission; do not change its policy or call a mutating operation read-only to avoid that permission.
+
 When Web Blink misbehaves, or the user complains that something does not work, first find the cause here and
 now; do not just apologise or retry blindly.
 

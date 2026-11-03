@@ -186,13 +186,13 @@ class ConnectionUXTests(unittest.TestCase):
         self.assertIn('browser-profiles', config['userDataDir'])
         self.assertNotIn('Profile 2', config['userDataDir'])
 
-    def test_browser_restart_always_requires_native_confirmation_even_under_default_policy(self):
+    def test_shared_profile_restart_is_refused_before_preparation_or_confirmation(self):
         plan = {'browserName': 'Edge', 'profileName': 'Work', 'scope': 'All windows of this browser instance.',
                 'processes': [{'pid': 7}]}
         with tempfile.TemporaryDirectory() as tmp, mock.patch('blink.browser_process.restart_plan', return_value=plan):
             result = approval.describe('browser_restart', {'browser': {'mode': 'profile', 'browser': 'edge', 'profile': 'id'}}, config_dir=tmp)
-        self.assertEqual(result['data']['mode'], 'dialog')
-        self.assertIn('All windows', result['data']['text'])
+        self.assertEqual(result['status'], 'restart_not_isolated')
+        self.assertFalse(result['data']['closedWindows'])
 
     def test_changed_restart_plan_never_signals_any_process(self):
         plan = {'selection': {'browser': 'edge'}, 'profile': {'userDataDir': '/tmp/edge'}, 'executable': '/tmp/edge.exe',
@@ -200,14 +200,14 @@ class ConnectionUXTests(unittest.TestCase):
         with mock.patch('blink.browser_process.processes', return_value=[{'pid': 2}]), mock.patch('blink.browser_process.os.kill') as kill:
             with self.assertRaises(BlinkError) as caught:
                 close_for_restart(plan)
-        self.assertEqual(caught.exception.code, 'restart_stale')
+        self.assertEqual(caught.exception.code, 'restart_not_isolated')
         kill.assert_not_called()
 
     def test_failure_guidance_contains_concrete_actions_instead_of_manual_commands(self):
         guide = browsers.failure_guidance('profile_in_use', {'browser': {'mode': 'profile', 'browser': 'edge', 'profile': 'id'}})
         methods = {a['method'] for a in guide['nextActions']}
         self.assertIn('browser_connect', methods)
-        self.assertIn('browser_restart', methods)
+        self.assertNotIn('browser_restart', methods)
         self.assertIn('browser_extension_open', methods)
         self.assertFalse(any('command' in action for action in guide['nextActions']))
 

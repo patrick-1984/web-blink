@@ -164,6 +164,22 @@ class Extensions:
 
     def connect_browser(self, params):
         from .browsers import resolve_selection, ensure_tools, connection_plan
+        if params.get('automatic') is True:
+            selector = resolve_selection(params['browser'])
+            attempts = [selector]
+            if selector['mode'] == 'native' and selector.get('browser') in ('edge', 'brave'):
+                attempts.append({**selector, 'mode': 'profile'})
+            first_error = None
+            for attempt in attempts:
+                try:
+                    return self.connect_browser({**params, 'browser': attempt, 'automatic': False})
+                except BlinkError as exc:
+                    if first_error is None:
+                        first_error = exc
+                    if exc.code not in ('browser_permission_required', 'browser_unavailable', 'native_connection_not_exposed',
+                                        'profile_in_use', 'profile_protected', 'profile_launch_failed'):
+                        raise
+            raise first_error
         selected = resolve_selection(params['browser'])
         plan = connection_plan(selected, self.store.path)
         if plan.get('reason') in ('profile-protected', 'firefox-adapter-required', 'native-connection-not-exposed', 'browser-executable-missing'):
@@ -244,7 +260,7 @@ class Extensions:
         methods |= {'custody_harvest', 'custody_reharvest_authorize', 'custody_handback',
                     'custody_recover', 'custody_forget', 'forget_service', 'purge_state'}
         methods |= {'browser_select', 'browser_setup'}
-        methods |= {'browser_connect', 'browser_restart', 'browser_permission_open', 'browser_extension_open'}
+        methods |= {'browser_connect', 'browser_restart', 'browser_restore', 'browser_permission_open', 'browser_extension_open'}
         if method not in methods:
             return None
         if not human:
@@ -285,19 +301,19 @@ class Extensions:
                                     if method == 'browser_permission_open' else
                                     f'Opened the PW extension page in {browser["name"]} → {profile["name"]}. Confirm Add in the browser, then Blink connects automatically.')}
             elif method == 'browser_restart':
-                from .browser_process import restart_plan, close_for_restart, open_profile
-                from .storage import digest
-                from .browsers import ensure_tools
-                plan = restart_plan(params['browser'])
-                if params.get('_restartPlan') is not None and digest(plan) != digest(params['_restartPlan']):
-                    raise BlinkError('restart_stale', 'The browser windows changed since confirmation. Blink must show the current restart scope again.')
-                ensure_tools(plan['selection'], self.store.path)
-                close_for_restart(plan)
-                try:
-                    data = self.connect_browser({'browser': plan['selection'], **({'binding': params['binding']} if params.get('binding') else {})})
-                except Exception:
-                    open_profile(plan['selection']['browser'], plan['profile'], plan['executable'], restore=True)
-                    raise BlinkError('browser_reopened', 'The browser did not allow PW control. Blink reopened its normal session. Choose native connection permission or the optional PW extension.') from None
+                from .browser_process import RESTART_BLOCKED
+                raise BlinkError('restart_not_isolated', RESTART_BLOCKED)
+            elif method == 'browser_restore':
+                from .browsers import selected_profile
+                from .browser_process import open_profile
+                selected, browser, profile = selected_profile(params['browser'])
+                if selected['browser'] == 'firefox':
+                    raise BlinkError('unsupported', 'This recovery action currently supports Chromium browser profiles.')
+                open_profile(selected['browser'], profile, browser['executable'], restore=True)
+                data = {'browser': selected, 'profileName': profile['name'], 'opened': True,
+                        'closedWindows': False, 'restoreRequested': True, 'tabsVerified': False, 'windowVerified': False,
+                        'message': f'Asked {browser["name"]} to reopen {profile["name"]} and restore its saved session. '
+                                   'Blink closed no windows. The browser decides which tabs can be recovered; the restored tabs have not been verified.'}
             elif method == 'learn_stop':
                 data = self.learner.stop(params['binding'])
             elif method == 'learn_accept_partial':

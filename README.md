@@ -33,6 +33,7 @@ Update the marketplace and its installed plugin, then restart Codex to reload th
 
 ```sh
 codex plugin marketplace upgrade patrick-1984
+codex plugin add web-blink@patrick-1984
 ```
 
 See the [Codex marketplace update documentation](https://developers.openai.com/plugins/build/plugins#add-a-marketplace-from-the-cli).
@@ -47,7 +48,7 @@ PW browser are separate choices. See [browser connections](docs/browser-sessions
 
 Native Windows uses authenticated local named pipes; macOS/Linux use Unix sockets. Normal startup is
 offline. A requested connection can prepare missing components in Blink's own folder; the host may ask to
-authorize that tool action. Browser consent remains required, and a browser restart always asks separately.
+authorize that tool action. Browser consent remains required, and shared-profile browser restart is blocked because it can affect other profiles.
 
 Your order is the authorization: when you tell Claude to record, propose, switch a Blink on or submit something,
 it is done, with no approval dialogs and no confirmation questions. Exact plans, budgets and reconciliation of

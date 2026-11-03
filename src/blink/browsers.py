@@ -469,7 +469,7 @@ def failure_guidance(code, params):
     def add(label, method, selected=None):
         actions.append({'label': label, 'tool': 'blink_request_approval', 'method': method,
                         'params': {'browser': selected or selector}})
-    if code in ('profile_in_use', 'profile_protected', 'native_connection_not_exposed', 'browser_reopened', 'browser_unavailable', 'profile_mismatch', 'profile_launch_failed'):
+    if code in ('profile_in_use', 'profile_protected', 'native_connection_not_exposed', 'browser_reopened', 'browser_unavailable', 'profile_mismatch', 'profile_launch_failed', 'restart_not_isolated', 'restart_stale', 'restart_cancelled'):
         if selector.get('profile'):
             native = {**selector, 'mode': 'native'}
             add('Connect to this same live profile without closing its windows', 'browser_connect', native)
@@ -477,10 +477,13 @@ def failure_guidance(code, params):
             if selector.get('browser') in ('edge', 'brave') and code not in ('profile_in_use', 'profile_protected'):
                 add('Launch this existing profile through PW', 'browser_connect', {**selector, 'mode': 'profile'})
             add('Use the optional PW extension in this profile', 'browser_extension_open', {**selector, 'mode': 'extension'})
-            if code == 'profile_in_use' and selector.get('browser') in ('edge', 'brave'):
-                add('Restart this browser instance with the existing profile (confirmation required)', 'browser_restart', {**selector, 'mode': 'profile'})
+            if code in ('restart_not_isolated', 'restart_stale', 'restart_cancelled', 'browser_reopened'):
+                add('Reopen this profile and ask the browser to restore its saved session; close nothing', 'browser_restore')
     elif code == 'browser_permission_required':
         add('Show the browser’s connection permission page', 'browser_permission_open')
+        if selector.get('browser') in ('edge', 'brave'):
+            add('Try PW launch of this exact profile if it is free; never close a running instance', 'browser_connect', {**selector, 'mode': 'profile'})
+        add('Use the optional PW extension with the current live profile', 'browser_extension_open', {**selector, 'mode': 'extension'})
         add('Retry after the browser permission was confirmed', 'browser_connect')
     elif code == 'extension_required':
         add('Use native connection without installing an extension', 'browser_connect', {**selector, 'mode': 'native'})
@@ -495,7 +498,7 @@ def failure_guidance(code, params):
              'label': 'Prepare and retry this selected browser automatically'}]}
     if not actions:
         return {}
-    return {'connected': False, 'nextActions': actions, 'userInstruction':
+    return {'connected': False, 'closedWindows': False, 'nextActions': actions, 'userInstruction':
             'Explain the exact available action. Do not say “requires configuration”, ask for profile paths, or print setup commands.'}
 
 

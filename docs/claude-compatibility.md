@@ -13,7 +13,7 @@ The package is published through the patrick-1984 Git marketplace.
 
 `mcp/server.mjs` implements initialize, ping, tools/list and tools/call over newline JSON-RPC stdio,
 following [MCP stdio transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
-Stdout contains protocol messages only. Eight tools are listed: seven runtime tools and `blink_doctor`.
+Stdout contains protocol messages only. The tools include runtime operations, diagnostics, a connection-only browser tool and a separate safe reopen tool.
 Unknown tool names, invalid argument shapes and public attempts to issue human authorization are rejected.
 
 The Node entry initializes and provides diagnostics even when Python is missing. Runtime calls use the

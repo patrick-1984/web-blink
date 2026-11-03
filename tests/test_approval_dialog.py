@@ -296,6 +296,7 @@ def bridge_actions(staged):
         ('jobs_list', {}), ('workflow_validate', {}), ('workflow_run', {}), ('browser_open', {}), ('browser_close', {}),
         ('browser_select', {}), ('browser_setup', {'unexpected': True}),
         ('browser_connect', {}), ('browser_permission_open', {}), ('browser_extension_open', {}),
+        ('browser_restore', {}),
         ('forget_capture', {}), ('tools_add', {}), ('tools_remove', {}), ('tools_list', {}), ('notifications', {}),
         ('preflight', {'capability': 'runtime'}), ('trust_pin', {}), ('trust_unpin', {}), ('health_enable', {}),
         ('health_disable', {}), ('health_clear', {}),
