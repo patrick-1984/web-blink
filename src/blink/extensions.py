@@ -325,6 +325,7 @@ class Extensions:
                                      'label': 'Finish connecting and start the requested recording'}]}
         selected = connection['browser']
         # Keep the requested app's identity when its first navigation redirects to a sign-in provider.
+        state['bindings'].add(target)  # Status must find an owned recorder even if acknowledgement fails after start.
         data = self.learner.start(target, url, browser=selected)
         state['pending_recording'] = None
         state['bindings'].add(data['binding'])

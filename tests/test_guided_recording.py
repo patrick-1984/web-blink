@@ -117,6 +117,22 @@ class GuidedRecordingTests(unittest.TestCase):
         self.assertEqual(result['data']['nextActions'][0]['tool'], 'blink_browser_status')
         self.assertNotIn('private detail', str(result))
 
+    def test_status_finds_a_recorder_if_the_start_acknowledgement_failed(self):
+        params = {'url': URL, 'browser': PW, '_flowId': '1' * 32}
+        real_start = self.ext.learner.start
+        def fail_after_start(*args, **kwargs):
+            real_start(*args, **kwargs)
+            raise OSError('Acknowledgement failed')
+        with mock.patch.object(self.ext, 'connect_browser', side_effect=self.connect), \
+                mock.patch.object(self.ext.learner, '_ensure_collector'), \
+                mock.patch.object(self.ext.learner, 'start', side_effect=fail_after_start):
+            result = self.ext.dispatch('learn_start_guided', params, human=True)
+        self.assertEqual(result['status'], 'recording_state_unknown')
+        status = self.ext.browser_status({'_flowId': params['_flowId']})
+        self.assertTrue(status['recording'])
+        self.assertEqual(status['guidance']['stage'], 'recording')
+        self.assertEqual(len(self.runtime.browser.starts), 1)
+
     def test_invalid_app_url_cannot_open_a_browser(self):
         for url in ('file:///private', 'https://user:password@app.example/', 'not-a-url', 'http://[invalid'):
             with self.subTest(url=url), mock.patch.object(self.ext, 'connect_browser') as connect:
