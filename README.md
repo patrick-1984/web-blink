@@ -56,6 +56,7 @@ shared with the Blink, and Claude reads it before preparing writes. Tell Claude 
 (`private_set`); `blink admin --input '{"action": "private", "service": "local:<blink>"}'` shows it without secret values.
 
 - [Runtime guide](docs/runtime-guide.md): setup, accounts, learning, execution and schedules.
+- [Use existing browser logins](docs/browser-sessions.md): select Chrome, Edge or Brave profiles, keep personal/admin accounts separate, and discover Firefox profiles.
 - [CLI reference](docs/cli-reference.md): command grammar, scripting, defaults and precedence.
 - [Execution profile](docs/execution-profile.md): supported request/auth/quote formats and limits.
 - [Git sources](docs/source-commands.md): immutable imports, local trust and publisher verification.

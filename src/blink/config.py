@@ -146,11 +146,19 @@ class ConfigStore:
     @staticmethod
     def validate(document):
         if (not isinstance(document, dict) or not {'schemaVersion', 'defaults', 'blinks'} <= set(document)
-                or set(document) - {'schemaVersion', 'defaults', 'blinks', 'approvals'}
+                or set(document) - {'schemaVersion', 'defaults', 'blinks', 'approvals', 'browser'}
                 or type(document['schemaVersion']) is not int or document['schemaVersion'] != 1):
             raise ConfigError('Unsupported settings document')
         if 'approvals' in document and document['approvals'] not in APPROVAL_MODES:
             raise ConfigError('approvals must be "none" or "dialog"')
+        if 'browser' in document:
+            from .browsers import validate_selection
+            try:
+                if not isinstance(document['browser'], dict) or 'mode' not in document['browser']:
+                    raise ConfigError('A saved browser selection requires its mode')
+                validate_selection(document['browser'])
+            except Exception as exc:
+                raise ConfigError('Invalid browser selection') from exc
         if not isinstance(document['defaults'], dict) or not isinstance(document['blinks'], dict):
             raise ConfigError('Settings groups must be objects')
         for key, value in document['defaults'].items():
@@ -242,6 +250,16 @@ class ConfigStore:
     def set(self, key, value, service=None):
         with self._update():
             return self._set(key, value, service)
+
+    def set_browser(self, selection):
+        """Remember a local connection preference; never credentials or arbitrary commands."""
+        from .browsers import resolve_selection
+        selected = resolve_selection(selection)
+        with self._update():
+            document = self.load()
+            document['browser'] = selected
+            self.save(document)
+        return selected
 
     def approval_mode(self):
         """The user's approval policy: 'none' (default, also when unset) runs every ordered action at once;

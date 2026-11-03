@@ -155,6 +155,20 @@ def build_parser():
     doctor = sub.add_parser('doctor', help='Report dependency capabilities and manual repair recipes')
     doctor.add_argument('--force', action='store_true', help='Recheck tools instead of reusing the static sentinel')
     doctor.add_argument('--capability', choices=('runtime', 'learn', 'gitSources', 'git-sources', 'signatures', 'browser'))
+    browser = sub.add_parser('browser', help='Discover and select local signed-in browser profiles')
+    actions = browser.add_subparsers(dest='browser_action', required=True)
+    listing = actions.add_parser('list', help='Read local profile metadata without starting a browser')
+    listing.add_argument('--browser', choices=('chrome', 'edge', 'brave', 'firefox'))
+    actions.add_parser('status', help='Show the remembered connection and setup instructions')
+    selection = actions.add_parser('select', help='Remember a browser connection for future recordings')
+    selection.add_argument('--mode', choices=('shared', 'extension', 'cdp', 'managed', 'credentials'), default='extension')
+    selection.add_argument('--browser', choices=('chrome', 'edge', 'brave', 'firefox'))
+    selection.add_argument('--profile', help='Exact discovered profile ID, directory or unique display name')
+    selection.add_argument('--endpoint', help='Chrome/Edge channel name or explicit loopback CDP URL')
+    selection.add_argument('--name', help='Name of a separate persistent Blink session')
+    selection.add_argument('--yes', action='store_true')
+    setup_browser = actions.add_parser('setup', help='Install the pinned Playwright MCP; does not launch any browser')
+    setup_browser.add_argument('--yes', action='store_true')
     for name in PUBLIC:
         p = sub.add_parser(name)
         p.add_argument('--input', '--cli-input-json', dest='input', help='JSON object, file://path, plain file path, or - for stdin')
@@ -224,6 +238,28 @@ def build_parser():
 
 
 def run(args):
+    if args.command == 'browser':
+        from .browsers import discover, connection_plan, connection_status, setup
+        from .config import ConfigStore
+        store = ConfigStore(getattr(args, '_config_directory', None))
+        if args.browser_action == 'list':
+            data = discover(args.browser)
+        elif args.browser_action == 'status':
+            from .doctor import default_state_dir
+            data = connection_status(store.load().get('browser', {'mode': 'shared'}), args.state_dir or default_state_dir())
+        elif args.browser_action == 'setup':
+            from .doctor import default_state_dir
+            confirm('browser_setup', {}, args.yes, mode=selected_approval_mode(args))
+            data = setup(args.state_dir or default_state_dir())
+        else:
+            from .doctor import default_state_dir
+            params = {key: getattr(args, key) for key in ('mode', 'browser', 'profile', 'endpoint', 'name')
+                      if getattr(args, key) is not None}
+            from .browsers import resolve_selection
+            params = resolve_selection(params)
+            confirm('browser_select', params, args.yes, mode=selected_approval_mode(args))
+            data = connection_plan(store.set_browser(params), args.state_dir or default_state_dir())
+        return {'status': 'ok', 'summary': 'Local browser connection', 'data': data, 'warnings': []}
     if args.command == 'doctor':
         result = report(args.state_dir)
         if args.force or args.capability:
@@ -264,6 +300,9 @@ def run(args):
             from .client import restart_legacy_daemon
             return restart_legacy_daemon(state_dir=args.state_dir, plugin_root=args.plugin_root)
         params = command_input(args)
+        if args.method in ('learn_start', 'browser_open'):
+            from .browsers import recording_params
+            params = recording_params(params, getattr(args, '_config_directory', None))
         # A private secret is confirmed by name; its value is never echoed to the terminal.
         hidden = dict(params, value='[hidden]') if args.method == 'private_secret_set' and 'value' in params else None
         confirm(args.method, params, args.yes, preview=hidden, mode=selected_approval_mode(args))
@@ -294,6 +333,9 @@ def run(args):
             return request('admin', {'action': 'sessions' if args.command == 'learn' else 'jobs'},
                            state_dir=args.state_dir, plugin_root=args.plugin_root)
         method = MANAGEMENT[args.command][action]
+        if method == 'learn_start':
+            from .browsers import recording_params
+            params = recording_params(params, getattr(args, '_config_directory', None))
         if not (args.command == 'tools' and action == 'list'):
             confirm(method, params, args.yes, mode=selected_approval_mode(args))
         return native_dispatch(args, method, params)

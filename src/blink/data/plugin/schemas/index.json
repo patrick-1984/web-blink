@@ -61,9 +61,9 @@
       {
         "id": "urn:web-blink:schema:settings:1",
         "path": "config-v1/settings.schema.json",
-        "version": "1.0.0",
-        "released": "2026-10-30",
-        "sha256": "b2b26edc87eadf6314aa768209e40f44d7d3d6e6c36d1eedc3cf88da2310adee"
+        "version": "1.1.0",
+        "released": "2026-11-03",
+        "sha256": "cd9e01c67d537627dbb69440875c0c320c67694df33a5efd5831c7568fda53b6"
       }
     ]
   },
