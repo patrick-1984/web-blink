@@ -225,8 +225,14 @@ def serve(state_dir=None, plugin_root=None):
         if os.name == 'nt':
             from .windows import PipeServer
             server_type = PipeServer
-        server = server_type(str(socket_path), Handler)
-        control_server = server_type(str(control_path), ControlHandler)
+        # Unix endpoints must already be private when the autostart client first observes them.
+        mask = os.umask(0o177) if os.name != 'nt' else None
+        try:
+            server = server_type(str(socket_path), Handler)
+            control_server = server_type(str(control_path), ControlHandler)
+        finally:
+            if mask is not None:
+                os.umask(mask)
         retiring = threading.Event()
         def stop_all():
             server.shutdown()

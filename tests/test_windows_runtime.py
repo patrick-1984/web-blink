@@ -115,6 +115,21 @@ class NativeRuntimeTests(unittest.TestCase):
                 connect(self.state / 'runtime.sock')
         self.assertEqual(request('doctor', state_dir=self.state)['status'], 'ok')
 
+    @unittest.skipUnless(os.environ.get('BLINK_TEST_BROWSER_SETUP') == '1', 'Opt-in pinned browser tool installation')
+    def test_native_browser_setup_and_offline_mcp_initialization(self):
+        from blink.browser import PlaywrightMCP
+        from blink.browsers import connection_plan
+        result = control_request('browser_setup', {}, state_dir=self.state, plugin_root=ROOT)
+        self.assertEqual(result['status'], 'ok', result)
+        plan = connection_plan({'mode': 'cdp', 'endpoint': 'msedge'}, self.state)
+        self.assertTrue(plan['available'], plan)
+        client = PlaywrightMCP(plan['command'], cwd=str(self.home))
+        try:
+            self.assertTrue(client.tabs_tool)
+            self.assertTrue(client.run_tool)
+        finally:
+            client.close()
+
 
 @unittest.skipUnless(shutil.which('node'), 'Node required')
 class NodeDiscoveryTests(unittest.TestCase):
@@ -138,6 +153,9 @@ class NodeDiscoveryTests(unittest.TestCase):
             profile = data['browsers'][0]['profiles'][0]
             self.assertEqual(profile['name'], 'Patrick work')
             self.assertTrue(profile['extensionInstalled'])
+            from blink.browsers import discover
+            python_profile = discover('edge', home=home, platform='win32', environment={})['browsers'][0]['profiles'][0]
+            self.assertEqual(profile['id'], python_profile['id'], 'Node choices must route to the same Python profile')
             self.assertNotIn('must-not', result.stdout)
             self.assertTrue(data['runtimeSupported'])
 
