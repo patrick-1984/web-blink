@@ -45,7 +45,8 @@ class BrowserConsentTests(unittest.TestCase):
     def test_permission_open_reports_waiting_with_visible_name_and_exact_clicks(self):
         with tempfile.TemporaryDirectory() as tmp:
             ext = Extensions(Runtime(tmp))
-            with mock.patch.object(browsers, 'selected_profile', return_value=(SELECTED, BROWSER, PROFILE)), \
+            with mock.patch.object(browsers, 'resolve_selection', side_effect=lambda value: value), \
+                    mock.patch.object(browsers, 'selected_profile', return_value=(SELECTED, BROWSER, PROFILE)), \
                     mock.patch('blink.browser_process.open_profile') as opened, \
                     mock.patch('blink.browser_process.os.kill') as signal:
                 result = ext.dispatch('browser_permission_open', {'browser': SELECTED}, human=True)
@@ -89,7 +90,8 @@ class BrowserConsentTests(unittest.TestCase):
     def test_timeout_does_not_reopen_pages_launch_or_close_anything(self):
         with tempfile.TemporaryDirectory() as tmp:
             ext = Extensions(Runtime(tmp))
-            with mock.patch.object(browsers, 'selected_profile', return_value=(SELECTED, BROWSER, PROFILE)), \
+            with mock.patch.object(browsers, 'resolve_selection', side_effect=lambda value: value), \
+                    mock.patch.object(browsers, 'selected_profile', return_value=(SELECTED, BROWSER, PROFILE)), \
                     mock.patch.object(browsers, 'wait_for_endpoint', return_value=None), \
                     mock.patch.object(browsers, 'ensure_tools') as prepare, \
                     mock.patch('blink.browser_process.open_profile') as opened:

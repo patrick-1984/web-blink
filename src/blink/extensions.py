@@ -87,6 +87,21 @@ class LazyBrowser:
                 self.bridges[key] = bridge
             return self.bridges[key]
 
+    def reusable_selection(self, binding, selection):
+        """Keep a working route to the same exact profile, including a prior safe PW fallback."""
+        import json
+        with self.lock:
+            key = self.routes.get(binding)
+            bridge = self.bridges.get(key)
+            if not bridge or binding not in bridge.owners or binding in bridge.unready:
+                return None
+            previous = json.loads(key)
+            if (selection.get('mode') == 'native' and previous.get('mode') in ('native', 'profile')
+                    and previous.get('browser') == selection.get('browser')
+                    and previous.get('profile') == selection.get('profile')):
+                return previous
+        return None
+
     def fetch(self, request, binding):
         return self.get(binding).fetch(request, binding)
 
@@ -170,7 +185,7 @@ class Extensions:
         if selected['browser'] not in ('chrome', 'edge'):
             raise BlinkError('unsupported', 'This browser does not provide Blink’s built-in connection permission flow. Use its optional PW extension.')
         key = (selected['browser'], selected['profile'])
-        if open_page:
+        if open_page and (key not in self.permission_pages or params.get('reopen') is True):
             open_profile(selected['browser'], profile, browser['executable'], permission=True)
             self.permission_pages.add(key)
         return permission_step(selected, browser, profile, binding=params.get('binding'),
@@ -181,6 +196,13 @@ class Extensions:
         wait = params.get('waitSeconds', 0)
         if type(wait) is not int or not 0 <= wait <= 30:
             raise BlinkError('invalid_arguments', 'Connection wait must be between 0 and 30 seconds.')
+        if params.get('automatic') is True:
+            selector = resolve_selection(params['browser'])
+            binding = params.get('binding') or 'connection-' + selector.get('profile', selector.get('name', selector['mode']))
+            if isinstance(self.browser, LazyBrowser):
+                previous = self.browser.reusable_selection(binding, selector)
+                if previous:
+                    return self.connect_browser({**params, 'browser': previous, 'automatic': False, 'waitSeconds': 0})
         if wait:
             from .browsers import selected_profile, wait_for_endpoint
             selector, _, profile = selected_profile(params['browser'])
@@ -190,9 +212,9 @@ class Extensions:
                 return self.browser_permission_step(params, open_page=False)
             params = {**params, 'waitSeconds': 0}
         if params.get('automatic') is True:
-            selector = resolve_selection(params['browser'])
             attempts = [selector]
-            if selector['mode'] == 'native' and selector.get('browser') in ('edge', 'brave'):
+            pending = (selector.get('browser'), selector.get('profile')) in self.permission_pages
+            if not wait and not pending and selector['mode'] == 'native' and selector.get('browser') in ('edge', 'brave'):
                 attempts.append({**selector, 'mode': 'profile'})
             first_error = None
             for attempt in attempts:
@@ -214,8 +236,7 @@ class Extensions:
         if selected['mode'] == 'profile':
             from .browser_process import processes, has_profile_host
             # An already connected PW host is reusable; an unrelated live browser needs live attachment.
-            existing = has_profile_host(self.store.path, selected['profile']) or (isinstance(self.browser, LazyBrowser) and any(
-                json_key.find(selected['profile']) >= 0 for json_key in self.browser.bridges))
+            existing = has_profile_host(self.store.path, selected['profile'])
             if not existing and processes(selected['browser'], plan['profile']['userDataDir'], plan['launchConfig']['document']['browser']['launchOptions']['executablePath']):
                 raise BlinkError('profile_in_use', 'The selected profile shares an open browser instance. Blink can connect to its live session or use the optional PW extension. No existing browser windows were closed.')
         ensure_tools(selected, self.store.path)

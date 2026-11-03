@@ -64,6 +64,14 @@ these clicks, then calls the supplied bounded wait/retry action while the user a
 step is needed. Waits inspect only that selected root's bridge and stop after a bounded interval. The
 browser's final consent is still the user's choice. A page request alone is not verified connection.
 
+Repeated connection checks reuse the working route and Blink's existing marked work tab. If the user
+closed that tab, Blink creates one replacement; a transport error is not treated as proof the tab closed.
+A failed native connection never counts as a live PW profile host or bypasses the running-browser check.
+Permission and extension pages are requested as ordinary tabs, without forcing a new window. Once the
+permission page has been requested, retries neither request it again nor try another PW launch. If the
+user explicitly asks to reopen a closed permission page, `browser_permission_open` accepts `reopen: true`.
+When no window exists for the selected profile, the browser itself may create its first window.
+
 ## Preparation and confirmations
 
 On a user-ordered connection/recording, Blink prepares missing local components itself. It can obtain a

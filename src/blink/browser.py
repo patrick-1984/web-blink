@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.10.3'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.10.4'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -155,6 +155,17 @@ class BrowserBridge:
                 'if (!p) throw new Error("Blink owned tab unavailable"); ' + body + ' }')
         return self.client.run(code)
 
+    def has_owned_tab(self, binding):
+        """Probe only Blink's marked tab; a failed transport probe must not be treated as a closed tab."""
+        owner = self.owners.get(binding)
+        if not owner or binding in self.unready:
+            return False
+        present = self.client.run('async (page) => { const owner = ' + json.dumps(owner) + '; '
+                                  'return page.context().pages().some(p => p.__blinkOwner === owner && !p.isClosed()); }')
+        if type(present) is not bool:
+            raise BrowserUnavailable('Could not verify the existing Blink work tab')
+        return present
+
     def open(self, binding, url, navigate=True):
         """Open a work tab via browser_tabs; tab zero and existing tabs are never selected. With navigate=False the
         tab stays blank, so a recorder can be installed before the first request."""
@@ -164,8 +175,12 @@ class BrowserBridge:
         with self.lock:
             if binding in self.owners:
                 if binding not in self.unready:
-                    return self.owners[binding]
-                self.close_tab(binding)
+                    if self.has_owned_tab(binding):
+                        return self.owners[binding]
+                    # The user closed our tab. Leave every other tab alone and replace only this one.
+                    del self.owners[binding]
+                else:
+                    self.close_tab(binding)
             owner = uuid.uuid4().hex
             sentinel = 'about:blank#blink-' + owner
             response = self.client.tool(self.client.tabs_tool, {'action': 'new', 'url': sentinel})
