@@ -123,8 +123,21 @@ class Preflight:
             path = Path(spec.origin)
             files['jsonschema'] = [str(path), path.stat().st_mtime_ns, path.stat().st_size]
         definitions = json.dumps({'tools': files, 'user': self.definitions(), 'python': sys.version,
-                                  'path': os.environ.get('PATH', '')}, sort_keys=True)
+                                  'path': os.environ.get('PATH', ''),
+                                  'browser': self._browser_status()}, sort_keys=True)
         return hashlib.sha256(definitions.encode()).hexdigest()
+
+    def _browser_status(self):
+        from .browsers import default_selection, connection_plan
+        try:
+            selected = default_selection()
+            if selected['mode'] == 'shared':
+                return {'selection': selected, 'available': bool(os.environ.get('BLINK_PLAYWRIGHT_COMMAND') or
+                        Path('/opt/shared-browser/bin/shared-browser').is_file())}
+            plan = connection_plan(selected, self.state)
+            return {key: plan.get(key) for key in ('selection', 'available', 'reason')}
+        except Exception:
+            return {'available': False, 'reason': 'invalid-browser-selection'}
 
     @locked
     def check(self, capability=None, *, force=False):
@@ -142,8 +155,7 @@ class Preflight:
                     'learn': checks['python'] and checks['jsonschema'],
                     'gitSources': checks['python'] and checks['jsonschema'] and checks['git'],
                     'signatures': checks['openssl'],
-                    'browser': bool(os.environ.get('BLINK_PLAYWRIGHT_COMMAND') or
-                                    Path('/opt/shared-browser/bin/shared-browser').is_file())}
+                    'browser': self._browser_status()['available']}
             for check in self.definitions():
                 try:
                     result = subprocess.run([check['executable'], *check['versionArgs']],

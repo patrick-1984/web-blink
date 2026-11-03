@@ -3,6 +3,12 @@ name: blink-use
 description: Use Web Blink operations through the MCP catalog: reads, and writes the user orders, executed at once.
 ---
 
+Browser account bindings retain the selector from their recording. To use a personal or admin login,
+reuse the matching binding; changing the recording default does not switch an existing account. Read
+`blink_admin` with `action: binding` for its `browser` selector, or `action: browsers` to discover local
+profiles. Use distinct bindings for different accounts; an identity mismatch stops dispatch and must
+never trigger an automatic fallback to another profile. See blink-learn for choosing a browser and setup.
+
 **The user's order authorizes Web Blink.** Execute the requested chain without asking for approval in chat or
 announcing dialogs. Continue through activation, exact-plan authorization and execution. Never change the
 approval setting (`approvals`; it is the user's, set only by them in the CLI). Ask only for missing information
@@ -33,5 +39,7 @@ hints), `defaults` per operation (e.g. `{"addEntry": {"body.task": "Development"
   `value`); never into `private_set`, and never repeat a secret value in chat. The user may also set it with
   `blink human private_secret_set` in a terminal.
 
-Run `blink_doctor` when capabilities are unavailable. Do not launch a browser or alternate browser profile.
-Browser work uses the workspace's shared Playwright MCP, own work tabs only, never tab 0.
+Run `blink_doctor` when capabilities are unavailable. Browser work goes through Blink's selected provider:
+the normal shared Playwright MCP, the selected existing profile, or an explicitly chosen remembered Blink
+session. Do not start browsers by shell commands or silently choose another profile. Use only owned work
+tabs, never tab 0 or another session's tabs. The workspace's browser rules still apply to agent-driven tests.

@@ -311,9 +311,16 @@ class Runtime:
         if p.get('tenant') is not None:
             p = {**p, 'tenant': str(p['tenant'])}
         record=self.active_manifest(service)
+        if 'browser' not in p and mode in ('C1', 'C2'):
+            capture = self.store.get('captures', record.get('provenance', {}).get('capture'))
+            if capture and capture.get('browser'):
+                p = {**p, 'browser': capture['browser']}
         if record.get('tier', 'untrusted') == 'untrusted':
             raise BlinkError('trust_required', 'Classify the reviewed integration before binding an account')
         if mode not in ('C1','C2','C3','C4','C5'):raise BlinkError('invalid_custody','Unknown custody mode')
+        if mode in ('C1', 'C2') and 'browser' in p and p['browser']:
+            from .browsers import resolve_selection
+            p = {**p, 'browser': resolve_selection(p['browser'])}
         identity=p.get('identity',{})
         auth=next(iter(record['compiled']['operations'].values()))['auth']
         if auth['kind']!='none':
@@ -1004,7 +1011,7 @@ class Runtime:
             if not binding:
                 raise BlinkError('unknown_binding', 'Account binding not found')
             return envelope('ok', 'Binding routing metadata', {'binding': binding['id'], 'service': binding['service'],
-                                                             'state': binding['state']})
+                                                             'state': binding['state'], 'browser': binding.get('browser') or {'mode': 'shared'}})
         raise BlinkError('forbidden','Administrative action is not exposed to the model')
 
     def _doctor(self,p):

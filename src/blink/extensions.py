@@ -18,74 +18,127 @@ def reply(data, summary='Action completed', status='ok'):
 
 
 class LazyBrowser:
-    """Do not wake the shared browser during daemon startup or diagnostics."""
-    def __init__(self):
-        self.bridge = None
+    """One lazy connection per selected profile, pinned to each recording/account binding."""
+    def __init__(self, state_dir=None):
+        import threading
+        from .doctor import default_state_dir
+        self.state_dir = state_dir or default_state_dir()
+        self.bridges, self.routes = {}, {}
+        self.lock = threading.RLock()
 
-    def get(self):
-        if self.bridge is None:
-            self.bridge = BrowserBridge()
-        return self.bridge
+    def select(self, binding, selection):
+        from .browsers import resolve_selection
+        import json
+        selected = resolve_selection(selection)
+        key = json.dumps(selected, sort_keys=True)
+        with self.lock:
+            previous = self.routes.get(binding)
+            old = self.bridges.get(previous)
+            if previous and previous != key and old and binding in old.owners:
+                raise BlinkError('browser_busy', 'Close the previous Blink work tab before changing its profile, or choose another binding name')
+            self.routes[binding] = key
+        return selected
+
+    def get(self, binding=None):
+        import json
+        import os
+        from pathlib import Path
+        from .browsers import connection_plan
+        from .browser import PlaywrightMCP
+        with self.lock:
+            if isinstance(binding, dict):
+                selector = binding.get('browser')
+                if not isinstance(selector, dict) or not ({'mode', 'browser'} & selector.keys()):
+                    selector = {'mode': 'shared'}
+                self.select(binding['id'], selector)
+                binding = binding['id']
+            key = self.routes.get(binding, json.dumps({'mode': 'shared'}, sort_keys=True))
+            if key not in self.bridges:
+                selection = json.loads(key)
+                if selection['mode'] == 'shared':
+                    bridge = BrowserBridge()
+                else:
+                    plan = connection_plan(selection, self.state_dir)
+                    if not plan['available']:
+                        raise BlinkError(plan['reason'].replace('-', '_'), plan['instructions'] + ' Setup: blink browser setup.')
+                    # Explicit selectors must not inherit an unrelated profile/token/proxy from another MCP.
+                    environment = {k: v for k, v in os.environ.items() if not k.startswith('PLAYWRIGHT_MCP_')}
+                    from .browsers import prepare_directories
+                    state = prepare_directories(selection, self.state_dir)
+                    output = state / 'browser-output'
+                    output.mkdir(mode=0o700, exist_ok=True)
+                    if output.is_symlink():
+                        raise BlinkError('invalid_arguments', 'Browser output cannot be a symlink')
+                    command = plan['command'] + ['--output-dir', str(output)]
+                    bridge = BrowserBridge(PlaywrightMCP(command, environment=environment, cwd=str(Path(state))))
+                self.bridges[key] = bridge
+            return self.bridges[key]
 
     def fetch(self, request, binding):
-        return self.get().fetch(request, binding)
+        return self.get(binding).fetch(request, binding)
 
     def open(self, binding, url, navigate=True):
-        return self.get().open(binding, url, navigate)
+        return self.get(binding).open(binding, url, navigate)
 
     def capture_start(self, binding, url=None):
-        return self.get().capture_start(binding, url)
+        return self.get(binding).capture_start(binding, url)
 
     def capture_stop(self, binding):
-        return self.get().capture_stop(binding)
+        return self.get(binding).capture_stop(binding)
 
     def capture_shot(self, binding, index):
-        return self.get().capture_shot(binding, index)
+        return self.get(binding).capture_shot(binding, index)
 
     def capture_shots(self, binding, start):
-        return self.get().capture_shots(binding, start)
+        return self.get(binding).capture_shots(binding, start)
 
     def capture_drain(self, binding, ack=None):
-        return self.get().capture_drain(binding, ack)
+        return self.get(binding).capture_drain(binding, ack)
 
     def rename_owner(self, old, new):
-        return self.get().rename_owner(old, new)
+        with self.lock:
+            bridge = self.get(old)
+            if new in self.routes or bridge.rename_owner(old, new) is False:
+                return False
+            if old in self.routes:
+                self.routes[new] = self.routes.pop(old)
+            return True
 
     def capture_shots_clear(self, binding):
-        return self.get().capture_shots_clear(binding)
+        return self.get(binding).capture_shots_clear(binding)
 
     def close_tab(self, binding):
-        return self.get().close_tab(binding)
+        return self.get(binding).close_tab(binding)
 
     def isolated_snapshot(self, binding):
-        return self.get().isolated_snapshot(binding)
+        return self.get(binding).isolated_snapshot(binding)
 
-    def require_profile(self, *names):
-        bridge = self.get()
+    def require_profile(self, *names, binding=None):
+        bridge = self.get(binding)
         if any(name not in getattr(bridge.client, 'tool_names', []) for name in names):
             raise BlinkError('unsupported', 'The configured shared provider has no isolated profile capability')
 
     def finish_snapshot(self, binding, profile_id, *, retain_profile):
-        return self.get().finish_snapshot(binding, profile_id, retain_profile=retain_profile)
+        return self.get(binding).finish_snapshot(binding, profile_id, retain_profile=retain_profile)
 
     def commit_profile(self, binding, generation, owner_epoch):
-        return self.get().commit_profile(binding, generation, owner_epoch)
+        return self.get(binding).commit_profile(binding, generation, owner_epoch)
 
     def prove_owner(self, binding, journal):
-        return self.get().prove_owner(binding, journal)
+        return self.get(binding).prove_owner(binding, journal)
 
     def forget_profile(self, binding, profile_id):
-        return self.get().forget_profile(binding, profile_id)
+        return self.get(binding).forget_profile(binding, profile_id)
 
     def close(self):
-        if self.bridge:
-            self.bridge.close()
+        for bridge in self.bridges.values():
+            bridge.close()
 
 
 class Extensions:
     def __init__(self, runtime):
         self.runtime, self.store = runtime, runtime.store
-        self.browser = runtime.browser or LazyBrowser()
+        self.browser = runtime.browser or LazyBrowser(self.store.path)
         runtime.browser = self.browser
         self.learner = Learner(runtime, self.browser)
         self.scheduler = Scheduler(runtime)
@@ -99,6 +152,14 @@ class Extensions:
     def dispatch(self, method, params, *, human=False):
         if method == 'admin':
             action = params.get('action')
+            if action == 'browsers':
+                from .browsers import discover, connection_status
+                from .config import ConfigStore
+                preferences = ConfigStore().load()
+                selection = preferences.get('browser', {'mode': 'shared'})
+                return reply({**discover(params.get('browser')), 'selected': selection,
+                              'selectionSaved': 'browser' in preferences,
+                              'connection': connection_status(selection, self.store.path)}, 'Local browsers and profiles')
             if action == 'sessions':
                 return reply([{**{k: row.get(k) for k in ('id', 'createdAt', 'source', 'status', 'folder')},
                                'requests': len(row.get('records') or []), 'screenshots': len(row.get('screenshots') or [])}
@@ -142,6 +203,7 @@ class Extensions:
         methods |= {'trust_pin', 'trust_unpin', 'health_enable', 'health_disable', 'health_clear'}
         methods |= {'custody_harvest', 'custody_reharvest_authorize', 'custody_handback',
                     'custody_recover', 'custody_forget', 'forget_service', 'purge_state'}
+        methods |= {'browser_select', 'browser_setup'}
         if method not in methods:
             return None
         if not human:
@@ -151,7 +213,18 @@ class Extensions:
             if method == 'learn_import_har':
                 data = self.learner.import_har(params['path'], params['origins'])
             elif method == 'learn_start':
-                data = self.learner.start(params.get('binding'), params['url'], params.get('origins'))
+                data = self.learner.start(params.get('binding'), params['url'], params.get('origins'),
+                                          **({'browser': params['browser']} if 'browser' in params else {}))
+            elif method == 'browser_select':
+                from .config import ConfigStore
+                from .browsers import connection_plan
+                selected = ConfigStore().set_browser(params)
+                data = connection_plan(selected, self.store.path)
+            elif method == 'browser_setup':
+                from .browsers import setup
+                if params:
+                    raise ValueError('browser_setup takes no parameters')
+                data = setup(self.store.path)
             elif method == 'learn_stop':
                 data = self.learner.stop(params['binding'])
             elif method == 'learn_accept_partial':
@@ -185,6 +258,9 @@ class Extensions:
                     service=params.get('service'), binding=params.get('binding'), inputs=params.get('inputs'),
                     run_id=params.get('runId'))
             elif method == 'browser_open':
+                if isinstance(self.browser, LazyBrowser):
+                    from .browsers import default_selection
+                    self.browser.select(params['binding'], params.get('browser') or default_selection())
                 self.browser.open(params['binding'], params['url'])
                 data = {'binding': params['binding'], 'opened': True}
             elif method == 'browser_close':
@@ -198,14 +274,15 @@ class Extensions:
             elif method.startswith('custody_'):
                 if method == 'custody_harvest':
                     if isinstance(self.browser, LazyBrowser):
-                        self.browser.require_profile('blink_profile_snapshot', 'blink_profile_finish_snapshot')
+                        self.browser.require_profile('blink_profile_snapshot', 'blink_profile_finish_snapshot',
+                                                     binding=self.store.get('binding', params['binding']))
                     data = self.custody.harvest(params['binding'], params['mode'])
                 elif method == 'custody_reharvest_authorize':
                     data = self.custody.authorize_reharvest(params['binding'],
                         approved=params.get('approved', True), expires_at=params.get('expiresAt'))
                 elif method == 'custody_handback':
                     if isinstance(self.browser, LazyBrowser):
-                        self.browser.require_profile('blink_profile_commit')
+                        self.browser.require_profile('blink_profile_commit', binding=self.store.get('binding', params['binding']))
                     data = self.custody.handback(params['binding'], params.get('mode', 'C1'))
                 elif method == 'custody_recover':
                     data = self.custody.recover(params['binding'])
