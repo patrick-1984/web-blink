@@ -15,6 +15,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from urllib.parse import urlsplit
 
 from .errors import BlinkError
@@ -318,11 +319,52 @@ def _local_endpoint(root):
         with (Path(root) / 'DevToolsActivePort').open(encoding='utf-8') as handle:
             lines = handle.read(1024).splitlines()
         port = int(lines[0])
-        if 0 < port < 65536 and re.fullmatch(r'/devtools/browser/[A-Za-z0-9-]+', lines[1]):
-            return f'ws://127.0.0.1:{port}{lines[1]}'
+        # The consent bridge can publish only the port. Ordinary CDP publishes a browser ID as well.
+        route = lines[1] if len(lines) > 1 else '/devtools/browser'
+        if 0 < port < 65536 and re.fullmatch(r'/devtools/browser(?:/[A-Za-z0-9-]+)?', route):
+            return f'ws://127.0.0.1:{port}{route}'
     except (OSError, ValueError, IndexError):
         pass
     return None
+
+
+def wait_for_endpoint(root, seconds):
+    """Wait only for this selected root's bridge, without touching preferences or other browsers."""
+    deadline = time.monotonic() + seconds
+    while True:
+        endpoint = _local_endpoint(root)
+        if endpoint:
+            return endpoint
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        time.sleep(min(.25, remaining))
+
+
+def permission_step(selected, browser, profile, *, binding=None, page_requested=False):
+    """A browser-owned choice, followed by a bounded tool wait; no technical setup homework."""
+    retry = {'browser': {**selected, 'mode': 'native'}, 'waitSeconds': 25}
+    if binding:
+        retry['binding'] = binding
+    return {'browser': selected, 'profileName': profile['name'], 'browserName': browser['name'],
+            'connected': False, 'readyToRecord': False, 'closedWindows': False,
+            'phase': 'awaiting_browser_permission', 'permissionPageRequested': page_requested,
+            'permissionPageVerified': False, 'waitingFor': 'browser_permission',
+            'userSteps': [
+                {'action': 'check', 'label': 'Allow remote debugging for this browser instance',
+                 'where': f'{browser["name"]} connection settings for {profile["name"]}'},
+                {'action': 'allow_if_asked', 'label': 'Allow', 'where': f'{browser["name"]} connection request'}],
+            'message': f'In {browser["name"]} → {profile["name"]}, tick “Allow remote debugging for this browser instance”. '
+                       'This lets Blink use your signed-in browser. When the browser asks to allow the connection, choose “Allow”.',
+            'nextActions': [{'tool': 'blink_connect_browser', 'params': retry,
+                             'label': 'Check for the browser choice and finish connecting'}],
+            'alternatives': [{'tool': 'blink_request_approval', 'method': 'browser_extension_open',
+                              'params': {'browser': {**selected, 'mode': 'extension'}},
+                              'label': 'Use the optional PW extension in this same profile instead'}],
+            'userInstruction': 'Explain the two clicks in the user’s language, using the visible profile name. '
+                               'Then immediately call nextActions while the user clicks; at most two waits per turn. '
+                               'Do not ask the user to type done. If still waiting, report that no connection was made and offer alternatives. '
+                               'Never claim a connection request is already visible, or that a page was verified, without evidence.'}
 
 
 def ensure_tools(value, state_dir):

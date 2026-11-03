@@ -81,6 +81,13 @@ def validate(method, params):
     elif method == 'browser_restart':
         if set(params) - {'browser', 'binding'} or not isinstance(params.get('browser'), dict):
             return _forbidden('browser_restart is blocked because Chromium may share its main process with other profiles')
+    elif method == 'browser_connect':
+        if (set(params) - {'browser', 'binding', 'automatic', 'waitSeconds'}
+                or not isinstance(params.get('browser'), dict)
+                or ('binding' in params and not isinstance(params['binding'], str))
+                or ('automatic' in params and type(params['automatic']) is not bool)
+                or type(params.get('waitSeconds', 0)) is not int or not 0 <= params.get('waitSeconds', 0) <= 30):
+            return _forbidden('browser_connect takes a browser selector, optional binding/automatic and a 0–30 second wait')
     elif method in ('jobs_list', 'tools_list'):
         if params:
             return _forbidden(f'{method} takes no parameters')

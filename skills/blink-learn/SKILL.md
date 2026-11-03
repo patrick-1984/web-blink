@@ -52,9 +52,17 @@ configuration. `browser_select` remembers the choice; a one-off `learn_start.bro
 
 Use the actual tool result, and finish every step that Blink can do:
 - `connected: true` / `readyToRecord: true`: say the connection is ready, then record when requested.
-- `browser_permission_required`: call `browser_permission_open` with this selector. It opens the browser's
-  native permission page in the selected profile. Say exactly what to confirm there, then retry connection
-  after confirmation. This is browser consent; never bypass it or say only “configuration is required”.
+- `waiting_for_browser` / `phase: awaiting_browser_permission`: this is a pending browser choice, not a
+  completed connection or a technical failure. Explain `userSteps` in the user's language, with their visible
+  profile name. For Edge: “In the Edge window, tick ‘Allow remote debugging for this browser instance’
+  (this lets Blink use your signed-in browser). If Edge asks to allow the connection, click ‘Allow’.”
+  Immediately call `nextActions` so Blink notices the checkbox and starts the connection request. Use at
+  most two bounded waits in this turn. Never ask for “done”, claim the connection request is already shown,
+  or promise automatic checking without making that follow-up call. If still waiting, state that access
+  has not been granted and offer the returned alternatives. Never click browser consent on the user's behalf.
+- `browser_permission_required` from an older/generic action: call `blink_connect_browser` for this selector.
+  It tries supported safe paths, requests the right permission page if needed, and returns the pending
+  browser-choice flow above. Do not hand the user a developer setup tutorial.
 - `profile_in_use`: offer a live connection or optional extension. Do not restart/close a shared Chromium
   instance: one process can own windows from multiple profiles. `browser_restart` is blocked. A request for
   one profile never authorizes closing other profiles. If the user is recovering from the 0.10.0 restart
@@ -70,6 +78,11 @@ Use the actual tool result, and finish every step that Blink can do:
 Never use generic lines like “the connection needs configuration”, “install these components yourself”,
 “you can run these commands”, or “I can do this part for you” when the plugin can perform the action.
 On native connection failure, proactively present the safe alternatives; do not wait only for “done”. Act, then report the result. Show technical detail only when the user asks for it.
+
+A new window is not proof of a new browser instance: Chromium can forward a launch to its existing main
+process. Start-up switches cannot change that running process. PW supplies its control pipe when it really
+launches an available profile. Do not add command-line switches to a permission-page launch and claim that
+this enabled control. Never restart a shared instance or edit live browser preferences/policies to avoid consent.
 
 Stock Firefox uses BiDi rather than Playwright's patched Firefox protocol; live control of an arbitrary
 stock Firefox profile is not implemented here. Its human names are indexed, and a separate PW Firefox
