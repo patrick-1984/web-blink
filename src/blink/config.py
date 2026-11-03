@@ -137,6 +137,9 @@ class ConfigStore:
         if create:
             self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         if self.directory.exists():
+            if os.name == 'nt':
+                from .windows import protect
+                protect(self.directory)
             info = self.directory.stat()
             if not stat.S_ISDIR(info.st_mode) or (hasattr(os, 'getuid') and info.st_uid != os.getuid()):
                 raise ConfigError('Settings directory must be owned by the current user')

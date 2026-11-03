@@ -31,7 +31,7 @@ class Preflight:
         self.root = Path(plugin_root or Path(__file__).resolve().parents[2])
         self.directory = self.state / 'preflight'
         self.directory.mkdir(mode=0o700, exist_ok=True)
-        if self.directory.is_symlink() or self.directory.stat().st_mode & 0o077:
+        if self.directory.is_symlink() or (os.name != 'nt' and self.directory.stat().st_mode & 0o077):
             raise ValueError('Preflight state must be private')
 
     @contextlib.contextmanager
@@ -58,7 +58,7 @@ class Preflight:
         path = self.directory / name
         if not path.exists():
             return default
-        if path.is_symlink() or path.stat().st_size > 1_000_000 or path.stat().st_mode & 0o077:
+        if path.is_symlink() or path.stat().st_size > 1_000_000 or (os.name != 'nt' and path.stat().st_mode & 0o077):
             raise ValueError('Unsafe preflight state file')
         return json.loads(path.read_text())
 
@@ -107,6 +107,7 @@ class Preflight:
         self._write('sentinel.json', {'stale': True})
 
     def fingerprint(self):
+        from . import __version__
         files = {}
         for name in ('git', 'node', 'uv', 'openssl'):
             found = shutil.which(name)
@@ -123,6 +124,7 @@ class Preflight:
             path = Path(spec.origin)
             files['jsonschema'] = [str(path), path.stat().st_mtime_ns, path.stat().st_size]
         definitions = json.dumps({'tools': files, 'user': self.definitions(), 'python': sys.version,
+                                  'runtimeVersion': __version__,
                                   'path': os.environ.get('PATH', ''),
                                   'browser': self._browser_status()}, sort_keys=True)
         return hashlib.sha256(definitions.encode()).hexdigest()
@@ -150,8 +152,8 @@ class Preflight:
                       'jsonschema': importlib.util.find_spec('jsonschema') is not None,
                       'git': shutil.which('git') is not None,
                       'openssl': shutil.which('openssl') is not None,
-                      'unixTransport': os.name != 'nt'}
-            caps = {'runtime': checks['python'] and checks['jsonschema'] and checks['unixTransport'],
+                      'unixTransport': os.name != 'nt', 'localTransport': True}
+            caps = {'runtime': checks['python'] and checks['jsonschema'] and checks['localTransport'],
                     'learn': checks['python'] and checks['jsonschema'],
                     'gitSources': checks['python'] and checks['jsonschema'] and checks['git'],
                     'signatures': checks['openssl'],

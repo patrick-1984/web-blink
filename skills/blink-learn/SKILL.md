@@ -52,8 +52,10 @@ failure. Report the reason and let the user choose a supported route.
 
 Firefox profiles are discoverable, including legacy and new directory-based profiles, but stock Firefox has
 no live Playwright adapter here. Offer its DevTools Network HAR export and `learn_import_har` with explicit
-`path` and `origins`; it has no Blink screenshots/live recording. Windows supports discovery and selection;
-the current recording daemon requires macOS or Linux. Tell the user these boundaries before setup.
+`path` and `origins`; it has no Blink screenshots/live recording. Native Windows uses authenticated named
+pipes and supports the runtime; `blink_admin browsers` lists profiles with Node alone. If recording lacks
+Python dependencies, run the explicit `data.runtimeSetup` argv returned by `blink_doctor` for the user's
+requested task, then retry. Do not tell Windows users to switch to Linux because a dependency is missing.
 
 1. Call `blink_request_approval` with `learn_start` and `{"url": ...}` (plus the chosen `browser` selector when
    needed). The plugin names the Blink after the

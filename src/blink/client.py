@@ -20,6 +20,9 @@ MAX_MESSAGE = 1_048_576
 
 
 def connect(path):
+    if os.name == 'nt':
+        from .windows import connect as pipe_connect
+        return pipe_connect(path)
     info = path.lstat()
     if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
         raise ValueError('daemon socket ownership or permissions are unsafe')
@@ -53,12 +56,16 @@ def _start_daemon(state, plugin_root):
     from .paths import plugin_root as locate_root
     trusted_root = locate_root(plugin_root)
     environment = dict(os.environ)
+    environment['PYTHONUTF8'] = '1'
+    environment['PYTHONIOENCODING'] = 'utf-8'
     environment.pop('PYTHONPATH', None)
     if (trusted_root / 'src').is_dir():
         environment['PYTHONPATH'] = str(trusted_root / 'src')
+    options = ({'creationflags': subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP}
+               if os.name == 'nt' else {'start_new_session': True})
     subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, cwd=trusted_root, env=environment,
-                     start_new_session=True, close_fds=True)
+                     close_fds=True, **options)
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
         try:
@@ -113,14 +120,14 @@ def _legacy_daemon_pids(state):
 
 
 def _lock_free(state):
-    import fcntl
+    from .filelock import acquire, release
     try:
         fd = os.open(state / 'runtime.lock', os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0))
     except FileNotFoundError:
         return True
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        acquire(fd)
+        release(fd)
         return True
     except BlockingIOError:
         return False
@@ -269,8 +276,6 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
         params = {}
     if method not in PUBLIC_METHODS or not isinstance(params, dict):
         raise ValueError('only public runtime methods can use this client')
-    if os.name == 'nt':
-        return {'status': 'unsupported', 'summary': 'Windows daemon transport is not supported; use diagnostics', 'warnings': []}
     state = secure_state_directory(state_dir)
     path = state / 'runtime.sock'
     sock, notice, restarted = None, None, False
@@ -331,8 +336,6 @@ def control_request(method, params=None, *, state_dir=None, plugin_root=None, au
     params = strict_json(encoded(params))  # Freeze the object used for both digest and wire bytes.
     if len(encoded(params).encode()) > MAX_MESSAGE - 500:
         raise ValueError('native command exceeds transport limit')
-    if os.name == 'nt':
-        return {'status': 'unsupported', 'summary': 'Native control transport currently requires POSIX', 'warnings': []}
     state = secure_state_directory(state_dir)
     ready = request('doctor', {}, state_dir=state, plugin_root=plugin_root, autostart=autostart)
     if ready.get('status') not in ('ok', 'degraded'):

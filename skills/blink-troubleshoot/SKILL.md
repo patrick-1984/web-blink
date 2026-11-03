@@ -18,6 +18,14 @@ now; do not just apologise or retry blindly.
    - `blink_admin` `status`, and for recordings `sessions` / `review` (`screenshots`, `screenshotErrors`,
      `lastScreenshotError`, `unsavedScreenshots`, `otherHosts`, `status`).
    - The exact failing call and its returned `status`/`summary`.
+   - On Windows, `blink_admin` with `action: browsers` discovers profiles with Node alone, without starting
+     Python or the daemon. A missing Python dependency does not prevent this check.
+   - When `blink_doctor` reports missing runtime prerequisites, use its `data.runtimeSetup` command/argument
+     array to prepare the pinned dependencies for the user's requested Blink task, then retry once. Run the
+     provided argv directly with the host's command tool, preserving paths with spaces. Setup downloads
+     dependencies once; ordinary runtime calls stay offline. If uv itself is missing, install it or use a
+     configured Python 3.11+ with jsonschema. Do not infer that Windows is unsupported from a dependency failure:
+     Windows uses authenticated local named pipes. Version 0.9.0 and older require a plugin update first.
    - Host facts that matter: OS, Claude Code version (`claude --version`), Node and Python versions, browser
      and Playwright MCP version when the browser is involved.
 2. Write a short root cause analysis: what happened, what was expected, the evidence (versions, statuses,

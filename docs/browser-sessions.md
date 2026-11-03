@@ -91,9 +91,12 @@ HAR imports have no Blink screenshots or live recording status. Keep the exporte
 contain login material. The current importer creates a metadata-only proposal input and does not import
 the HAR as detached credential custody.
 
-**The recording daemon currently requires macOS or Linux.** Windows can discover profiles and save a
-selection, but a native Windows recording transport remains unavailable. Running Blink inside Linux/WSL
-does not automatically discover or control Windows profiles.
+**Native Windows is supported through authenticated local named pipes.** Windows browser discovery in the
+MCP server needs Node only, so a missing Python dependency does not block listing Edge profiles. Recording
+also needs Python 3.11+, the pinned dependencies and the chosen Playwright connection. `blink_doctor`
+returns an explicit setup command when prerequisites are missing; run it once and retry. macOS and Linux
+use Unix sockets. Running Blink inside Linux/WSL does not automatically discover Windows profiles: run
+Codex and Blink natively on Windows to use your Windows Edge profile.
 
 ## Evidence and validation
 
