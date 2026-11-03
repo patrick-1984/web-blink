@@ -143,6 +143,31 @@ class ProfileIndexTests(unittest.TestCase):
 
 
 class ConnectionUXTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('node'), 'Node required')
+    def test_wrong_profile_is_rejected_before_the_service_is_visited(self):
+        class Client:
+            tabs_tool = 'browser_tabs'
+            def tool(self, name, arguments):
+                self.sentinel = arguments['url']
+                return {}
+            def run(self, code):
+                self.code = code
+                return {'opened': True}
+        client = Client()
+        bridge = BrowserBridge(client, expected_profile='C:/Profiles/Work', browser='edge')
+        bridge.open('work', 'https://service.example')
+        script = '''
+          const visited=[],p={};p.url=()=>process.argv[2];p.context=()=>({pages:()=>[p]});
+          p.goto=async url=>visited.push(url);p.locator=()=>({textContent:async()=> 'C:/Profiles/Other'});
+          (async()=>{let error;try{await eval('('+process.argv[1]+')')(p);}catch(e){error=e.message;}
+          console.log(JSON.stringify({error,visited}));})();
+        '''
+        proc = subprocess.run(['node', '-e', script, client.code, client.sentinel], capture_output=True, text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(result['error'], 'Blink profile mismatch')
+        self.assertNotIn('https://service.example', result['visited'])
+
     def test_pw_existing_profile_uses_actual_data_root_and_directory(self):
         listing = {'browsers': [{'browser': 'edge', 'name': 'Edge', 'executable': 'C:/Edge/msedge.exe', 'profiles': [{
             'id': 'edge-id', 'name': 'Work', 'directory': 'Profile 2', 'path': 'C:/Edge/User Data/Profile 2',

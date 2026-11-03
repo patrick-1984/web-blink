@@ -260,6 +260,8 @@ def close_for_restart(plan):
     for row in processes(selected['browser'], profile['userDataDir'], plan['executable']):
         if row['pid'] not in pids:
             raise BlinkError('restart_stale', 'A new browser instance appeared. Blink stopped the restart.')
+        if os.name == 'nt' and _windows({row['pid']}):
+            raise BlinkError('restart_stale', 'A browser window appeared after the close confirmation. Blink stopped instead of terminating it.')
         try:
             os.kill(row['pid'], signal.SIGTERM)
         except ProcessLookupError:
