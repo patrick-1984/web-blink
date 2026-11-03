@@ -10,7 +10,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 TREES = ('.claude-plugin', '.codex-plugin', 'mcp', 'src/blink', 'schemas', 'blinks', 'skills')
-FILES = ('.mcp.json', 'LICENSE', 'blink-catalog.json', 'pyproject.toml', 'README.md',
+FILES = ('.mcp.json', '.gitattributes', 'LICENSE', 'blink-catalog.json', 'pyproject.toml', 'README.md',
          'scripts/blink.py', 'scripts/demo.py', 'requirements.lock', 'docs/cli-reference.md', 'docs/claude-compatibility.md', 'docs/execution-profile.md',
          'docs/source-commands.md', 'docs/runtime-guide.md', 'docs/custody-provider.md', 'docs/state-lifecycle.md', 'docs/browser-sessions.md')
 ALLOWED_SUFFIXES = {'.json', '.py', '.mjs', '.md', '.toml'}

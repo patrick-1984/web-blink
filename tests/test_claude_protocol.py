@@ -95,6 +95,7 @@ class ClaudeProtocolTests(unittest.TestCase):
         self.assertFalse((ROOT / 'bin').exists())
         self.assertFalse((ROOT / 'hooks/hooks.json').exists())
         self.assertFalse((ROOT / 'mcp/session-status.mjs').exists())
+        self.assertIn('eol=lf', (ROOT / '.gitattributes').read_text())
         for name in ('.claude-plugin/plugin.json', '.codex-plugin/plugin.json'):
             self.assertNotIn('hooks', json.loads((ROOT / name).read_text()))
 
