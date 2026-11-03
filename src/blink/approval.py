@@ -88,6 +88,11 @@ def validate(method, params):
                 or ('automatic' in params and type(params['automatic']) is not bool)
                 or type(params.get('waitSeconds', 0)) is not int or not 0 <= params.get('waitSeconds', 0) <= 30):
             return _forbidden('browser_connect takes a browser selector, optional binding/automatic and a 0–30 second wait')
+    elif method == 'browser_permission_open':
+        if (set(params) - {'browser', 'binding', 'reopen'} or not isinstance(params.get('browser'), dict)
+                or ('binding' in params and not isinstance(params['binding'], str))
+                or ('reopen' in params and type(params['reopen']) is not bool)):
+            return _forbidden('browser_permission_open takes a browser selector, optional binding and explicit reopen flag')
     elif method in ('jobs_list', 'tools_list'):
         if params:
             return _forbidden(f'{method} takes no parameters')

@@ -97,7 +97,9 @@ def open_profile(browser, profile, binary, *, permission=False, extension=False,
     url = scheme + '://inspect/#remote-debugging' if permission else (
         'https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm' if extension else 'about:blank')
     args = [binary, '--user-data-dir=' + profile['userDataDir'], '--profile-directory=' + profile['directory']]
-    args += ['--restore-last-session'] if restore else ['--new-window', url]
+    # A URL invocation reuses a window of this profile when Chromium is already running.
+    # Do not force a new window for a permission/extension page or an ordinary blank tab.
+    args += ['--restore-last-session'] if restore else [url]
     subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      **({'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}))
 

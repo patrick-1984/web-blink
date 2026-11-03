@@ -109,7 +109,7 @@ class RestartSafetyTests(unittest.TestCase):
             if params['browser']['mode'] == 'native':
                 raise BlinkError('browser_permission_required', 'Native permission unavailable')
             return {'connected': True, 'browser': params['browser']}
-        host = SimpleNamespace(connect_browser=connect)
+        host = SimpleNamespace(connect_browser=connect, browser=None, permission_pages=set())
         with mock.patch('blink.browsers.resolve_selection', side_effect=lambda value: value):
             result = Extensions.connect_browser(host, {'browser': {**SELECTOR, 'mode': 'native'}, 'automatic': True})
         self.assertEqual(choices, ['native', 'profile'])
