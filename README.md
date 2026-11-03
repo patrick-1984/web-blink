@@ -39,9 +39,15 @@ See the [Codex marketplace update documentation](https://developers.openai.com/p
 Web Blink registers no session or lifecycle hooks. Opening a Codex or Claude session does not run Blink
 status checks or inspect your browser profiles.
 
-Native Windows uses authenticated local named pipes; macOS and Linux use Unix sockets. Browser discovery
-in Codex on Windows needs Node only. For recording, run `blink_doctor`; if Python dependencies are missing,
-use the returned `data.runtimeSetup` command once, then retry. Normal runtime startup stays offline.
+Tell Blink which browser/profile to use, or reply with a numbered row such as **“use #6”**. It shows a
+browser/profile table with real display names and aliases, remembers the choice and prepares needed local
+components itself. You do not need to paste paths, run setup commands or edit configuration. Existing live
+sessions, launching the selected existing profile through PW, an optional PW extension and a new persistent
+PW browser are separate choices. See [browser connections](docs/browser-sessions.md).
+
+Native Windows uses authenticated local named pipes; macOS/Linux use Unix sockets. Normal startup is
+offline. A requested connection can prepare missing components in Blink's own folder; the host may ask to
+authorize that tool action. Browser consent remains required, and a browser restart always asks separately.
 
 Your order is the authorization: when you tell Claude to record, propose, switch a Blink on or submit something,
 it is done, with no approval dialogs and no confirmation questions. Exact plans, budgets and reconciliation of

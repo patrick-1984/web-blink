@@ -386,8 +386,6 @@ class Learner:
             raise ValueError('Shared Playwright browser is not configured')
         if not isinstance(binding, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', binding):
             raise ValueError('Invalid capture binding')
-        if binding in self.running:
-            raise ValueError('Capture already running')
         parsed = urlsplit(url)
         source = canonical_origin(f'{parsed.scheme}://{parsed.netloc}', allow_http=True)
         if source not in origins:
@@ -395,6 +393,15 @@ class Learner:
         from .browsers import default_selection, resolve_selection
         selection = resolve_selection(browser if browser is not None else
                                       default_selection() if hasattr(self.browser, 'select') else {'mode': 'shared'})
+        if auto_name:
+            import hashlib
+            routes = getattr(self.browser, 'routes', {})
+            key = json.dumps(selection, sort_keys=True)
+            if routes.get(binding) and routes[binding] != key:
+                # Keep the previous profile's work tab; switching accounts must not close/reuse it.
+                binding = binding[:78] + '-' + hashlib.sha256(key.encode()).hexdigest()[:20]
+        if binding in self.running:
+            raise ValueError('Capture already running')
         select = getattr(self.browser, 'select', None)
         if callable(select):
             select(binding, selection)

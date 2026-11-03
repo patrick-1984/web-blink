@@ -38,7 +38,7 @@ class PlaywrightMCP:
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.9.1'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.10.0'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -88,6 +88,26 @@ class PlaywrightMCP:
     @staticmethod
     def result(value):
         if value.get('isError'):
+            message = ' '.join(block.get('text', '') for block in value.get('content', []) if isinstance(block, dict)).lower()
+            from .errors import BlinkError
+            reasons = [
+                (('profile mismatch',), 'profile_mismatch', 'The browser opened a different profile. Blink stopped before visiting your service; choose the profile again.'),
+                (('already in use', 'processsingleton', 'singletonlock', 'profile is in use'), 'profile_in_use',
+                 'This browser is already using the selected profile. Connect to its live session, use the optional PW extension, or confirm a restart of this browser instance.'),
+                (('non-default data directory', 'default chrome', 'default user data'), 'profile_protected',
+                 'The browser protects this profile from direct PW startup. Blink can request its native connection permission or use the optional PW extension.'),
+                (('devtoolsactiveport', 'remote debugging', 'connectovercdp', 'econnrefused'), 'browser_permission_required',
+                 'The browser has not accepted the connection. Blink can open its native permission page for the selected profile; allow the connection there.'),
+                (('extension not found', 'extension is not installed'), 'extension_required',
+                 'The optional PW extension is not installed in the selected profile. Choose native connection, or let Blink open its installation page in that profile.'),
+                (('host system is missing', 'install-deps', 'missing system dependencies'), 'browser_system_dependencies_missing',
+                 'This PW browser cannot start because operating-system libraries are missing. Choose an installed browser profile or another PW browser engine; Blink has not changed system packages.'),
+                (('executable doesn\'t exist', 'executable does not exist', 'playwright install'), 'browser_component_missing',
+                 'A required browser component is missing. Blink can prepare it again for this connection; no manual setup command is needed.'),
+            ]
+            for needles, code, text in reasons:
+                if any(needle in message for needle in needles):
+                    raise BlinkError(code, text)
             raise BrowserUnavailable('Shared browser refused or could not complete the request')
         if 'structuredContent' in value:
             return value['structuredContent']
@@ -121,9 +141,11 @@ class PlaywrightMCP:
 
 
 class BrowserBridge:
-    def __init__(self, client=None):
+    def __init__(self, client=None, *, expected_profile=None, browser=None):
         self.client = client or PlaywrightMCP()
+        self.expected_profile, self.browser = expected_profile, browser
         self.owners = {}
+        self.unready = set()
         self.lock = threading.RLock()
 
     def _run_owned(self, owner, body, payload=None):
@@ -141,21 +163,34 @@ class BrowserBridge:
             raise ValueError('Invalid browser application URL')
         with self.lock:
             if binding in self.owners:
-                return self.owners[binding]
+                if binding not in self.unready:
+                    return self.owners[binding]
+                self.close_tab(binding)
             owner = uuid.uuid4().hex
             sentinel = 'about:blank#blink-' + owner
             response = self.client.tool(self.client.tabs_tool, {'action': 'new', 'url': sentinel})
             if response.get('isError'):
-                raise BrowserUnavailable('Shared browser refused opening a work tab')
-            data = json.dumps({'owner': owner, 'sentinel': sentinel, 'url': url, 'navigate': navigate})
+                PlaywrightMCP.result(response)
+            data = json.dumps({'owner': owner, 'sentinel': sentinel, 'url': url, 'navigate': navigate,
+                               'expected': self.expected_profile, 'insensitive': os.name == 'nt',
+                               'versionUrl': ('edge' if self.browser == 'edge' else 'brave' if self.browser == 'brave' else 'chrome') + '://version'})
             try:
                 self.client.run('async (page) => { const v = ' + data + '; '
                                 'const p = page.context().pages().find(x => x.url() === v.sentinel); '
                                 'if (!p) throw new Error("New Blink tab unavailable"); '
-                                'p.__blinkOwner = v.owner; if (v.navigate) await p.goto(v.url); return {opened:true}; }')
+                                'p.__blinkOwner = v.owner; ' + r'''
+                                if(v.expected){
+                                  await p.goto(v.versionUrl);
+                                  const actual=await p.locator('#profile_path').textContent();
+                                  const norm=x=>{let s=String(x||'').trim().split(String.fromCharCode(92)).join('/');if(s.endsWith('/'))s=s.slice(0,-1);return v.insensitive?s.toLowerCase():s;};
+                                  if(norm(actual)!==norm(v.expected))throw Error('Blink profile mismatch');
+                                  await p.goto(v.sentinel);
+                                }
+                                if (v.navigate) await p.goto(v.url); return {opened:true}; }''')
             except Exception:
                 # Preserve ownership for cleanup; never guess at a tab index after a race.
                 self.owners[binding] = owner
+                self.unready.add(binding)
                 raise
             self.owners[binding] = owner
             return owner
@@ -513,6 +548,7 @@ class BrowserBridge:
                     p.off('popup',c.popup);p.off('worker',c.worker);p.off('requestfailed',c.failed);p.context().off('serviceworker',c.serviceworker);
                     p.off('framenavigated',c.navigated);p.off('request',c.submitting);p.off('console',c.ui);clearTimeout(c.timer());clearInterval(c.ticker);delete p.__blinkCapture;}delete p.__blinkFinal;delete p.__blinkShots;await p.close();return {closed:true};''')
                 self.owners.pop(binding, None)
+                self.unready.discard(binding)
 
     def _profile_call(self, name, payload):
         matches = [tool for tool in getattr(self.client, 'tool_names', []) if tool == name]

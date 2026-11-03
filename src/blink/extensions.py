@@ -65,12 +65,25 @@ class LazyBrowser:
                     environment = {k: v for k, v in os.environ.items() if not k.startswith('PLAYWRIGHT_MCP_')}
                     from .browsers import prepare_directories
                     state = prepare_directories(selection, self.state_dir)
+                    if plan.get('launchConfig'):
+                        from .storage import private_dir, private_file
+                        config = plan['launchConfig']
+                        config_path = Path(config['path'])
+                        private_dir(config_path.parent)
+                        private_file(config_path).write_text(json.dumps(config['document']), encoding='utf-8')
+                    if selection['mode'] == 'playwright':
+                        environment['PLAYWRIGHT_BROWSERS_PATH'] = str(state / 'browser-engines')
                     output = state / 'browser-output'
                     output.mkdir(mode=0o700, exist_ok=True)
                     if output.is_symlink():
                         raise BlinkError('invalid_arguments', 'Browser output cannot be a symlink')
                     command = plan['command'] + ['--output-dir', str(output)]
-                    bridge = BrowserBridge(PlaywrightMCP(command, environment=environment, cwd=str(Path(state))))
+                    if selection['mode'] == 'profile':
+                        from .browser_process import profile_host
+                        endpoint = profile_host(plan, state, environment)
+                        command = [*plan['command'][:4], '--endpoint', endpoint, '--output-dir', str(output)]
+                    bridge = BrowserBridge(PlaywrightMCP(command, timeout=90, environment=environment, cwd=str(Path(state))),
+                                           expected_profile=plan.get('expectedProfilePath'), browser=selection.get('browser'))
                 self.bridges[key] = bridge
             return self.bridges[key]
 
@@ -149,6 +162,33 @@ class Extensions:
         self.started = False
         self.last_maintenance = 0
 
+    def connect_browser(self, params):
+        from .browsers import resolve_selection, ensure_tools, connection_plan
+        selected = resolve_selection(params['browser'])
+        plan = connection_plan(selected, self.store.path)
+        if plan.get('reason') in ('profile-protected', 'firefox-adapter-required', 'native-connection-not-exposed', 'browser-executable-missing'):
+            raise BlinkError(plan['reason'].replace('-', '_'), plan['instructions'])
+        if selected['mode'] == 'profile':
+            from .browser_process import processes, has_profile_host
+            # An already connected PW host is reusable; an unrelated live browser needs native attach/restart.
+            existing = has_profile_host(self.store.path, selected['profile']) or (isinstance(self.browser, LazyBrowser) and any(
+                json_key.find(selected['profile']) >= 0 for json_key in self.browser.bridges))
+            if not existing and processes(selected['browser'], plan['profile']['userDataDir'], plan['launchConfig']['document']['browser']['launchOptions']['executablePath']):
+                raise BlinkError('profile_in_use', 'This profile is already open. Blink can connect to the live session, or restart this browser instance only after your confirmation.')
+        ensure_tools(selected, self.store.path)
+        binding = params.get('binding') or 'connection-' + selected.get('profile', selected.get('name', selected['mode']))
+        if not isinstance(self.browser, LazyBrowser):
+            raise BlinkError('unsupported', 'This host supplies its own browser provider; connect through that provider.')
+        self.browser.select(binding, selected)
+        try:
+            self.browser.open(binding, 'https://blink.invalid', navigate=False)
+        except BlinkError as exc:
+            if selected['mode'] == 'native' and exc.code == 'browser_unavailable':
+                raise BlinkError('browser_permission_required', 'The selected browser has not exposed its live connection. Blink can open its permission page in this exact profile; allow the connection there.') from None
+            raise
+        return {'connected': True, 'readyToRecord': True, 'browser': selected, 'binding': binding,
+                'message': 'The selected browser connection is ready. Blink can now record in its own work tab.'}
+
     def dispatch(self, method, params, *, human=False):
         if method == 'admin':
             action = params.get('action')
@@ -157,7 +197,7 @@ class Extensions:
                 from .config import ConfigStore
                 preferences = ConfigStore().load()
                 selection = preferences.get('browser', {'mode': 'shared'})
-                return reply({**discover(params.get('browser')), 'selected': selection,
+                return reply({**discover(params.get('browser'), refresh=params.get('refresh') is True), 'selected': selection,
                               'selectionSaved': 'browser' in preferences,
                               'connection': connection_status(selection, self.store.path)}, 'Local browsers and profiles')
             if action == 'sessions':
@@ -204,6 +244,7 @@ class Extensions:
         methods |= {'custody_harvest', 'custody_reharvest_authorize', 'custody_handback',
                     'custody_recover', 'custody_forget', 'forget_service', 'purge_state'}
         methods |= {'browser_select', 'browser_setup'}
+        methods |= {'browser_connect', 'browser_restart', 'browser_permission_open', 'browser_extension_open'}
         if method not in methods:
             return None
         if not human:
@@ -213,18 +254,50 @@ class Extensions:
             if method == 'learn_import_har':
                 data = self.learner.import_har(params['path'], params['origins'])
             elif method == 'learn_start':
+                from .browsers import ensure_tools, default_selection
+                ensure_tools(params.get('browser') or default_selection(), self.store.path)
                 data = self.learner.start(params.get('binding'), params['url'], params.get('origins'),
                                           **({'browser': params['browser']} if 'browser' in params else {}))
             elif method == 'browser_select':
                 from .config import ConfigStore
-                from .browsers import connection_plan
+                from .browsers import connection_status
                 selected = ConfigStore().set_browser(params)
-                data = connection_plan(selected, self.store.path)
+                data = connection_status(selected, self.store.path)
             elif method == 'browser_setup':
                 from .browsers import setup
                 if params:
                     raise ValueError('browser_setup takes no parameters')
                 data = setup(self.store.path)
+            elif method == 'browser_connect':
+                data = self.connect_browser(params)
+            elif method in ('browser_permission_open', 'browser_extension_open'):
+                from .browsers import selected_profile
+                from .browser_process import open_profile
+                selected, browser, profile = selected_profile(params['browser'])
+                if selected['browser'] == 'firefox':
+                    raise BlinkError('unsupported', 'This permission flow is for Chromium browsers. Choose a PW Firefox browser or the Firefox HAR workflow.')
+                open_profile(selected['browser'], profile, browser['executable'],
+                             permission=method == 'browser_permission_open', extension=method == 'browser_extension_open')
+                data = {'browser': selected, 'profileName': profile['name'], 'opened': True,
+                        'waitingFor': 'browser_permission' if method == 'browser_permission_open' else 'extension_installation',
+                        'message': (f'Opened the browser permission page in {browser["name"]} → {profile["name"]}. '
+                                    'Allow remote debugging for this browser instance, then accept the connection request. Blink handles the rest.'
+                                    if method == 'browser_permission_open' else
+                                    f'Opened the PW extension page in {browser["name"]} → {profile["name"]}. Confirm Add in the browser, then Blink connects automatically.')}
+            elif method == 'browser_restart':
+                from .browser_process import restart_plan, close_for_restart, open_profile
+                from .storage import digest
+                from .browsers import ensure_tools
+                plan = restart_plan(params['browser'])
+                if params.get('_restartPlan') is not None and digest(plan) != digest(params['_restartPlan']):
+                    raise BlinkError('restart_stale', 'The browser windows changed since confirmation. Blink must show the current restart scope again.')
+                ensure_tools(plan['selection'], self.store.path)
+                close_for_restart(plan)
+                try:
+                    data = self.connect_browser({'browser': plan['selection'], **({'binding': params['binding']} if params.get('binding') else {})})
+                except Exception:
+                    open_profile(plan['selection']['browser'], plan['profile'], plan['executable'], restore=True)
+                    raise BlinkError('browser_reopened', 'The browser did not allow PW control. Blink reopened its normal session. Choose native connection permission or the optional PW extension.') from None
             elif method == 'learn_stop':
                 data = self.learner.stop(params['binding'])
             elif method == 'learn_accept_partial':
@@ -346,7 +419,8 @@ class Extensions:
                             self.store.put('notifications', notice['id'], notice)
             return reply(data)
         except BlinkError as exc:
-            return reply({}, exc.message, exc.code)
+            from .browsers import failure_guidance
+            return reply(failure_guidance(exc.code, params), exc.message, exc.code)
         except Exception:
             return reply({}, 'Action parameters, prerequisite or capability is unavailable', 'invalid_request')
 

@@ -12,17 +12,16 @@ Extract it and load the directory with Claude Code:
 claude --plugin-dir /absolute/path/to/web-blink
 ```
 
-The MCP entry requires Node and starts diagnostic tools without Python. Before using the runtime, prepare
-the pinned Python dependencies through an explicit native command:
+The MCP entry requires Node. Browser/profile choice is shown as a numbered table, and “use #6” selects
+that row. A requested connection or recording prepares missing Python/browser components automatically
+through the native tool action. Ordinary startup stays offline; no session hook installs or checks anything.
+Host tool permissions and browser consent remain in force. Restarts require their own native confirmation.
+See [browser connections](browser-sessions.md) for modes, the metadata index and concrete fallback actions.
 
-```sh
-uv run --no-project --with-requirements /absolute/path/to/web-blink/requirements.lock python -c "import jsonschema"
-```
-
-The MCP launcher then uses the dependency cache offline. It never starts a model session or installs tools
-from an unattended job. Python 3.11 or later is required. The current daemon transport supports POSIX
-hosts and native Windows (authenticated named pipes). Git and OpenSSL are needed only for their respective optional source
-and signature features.
+For native CLI maintenance, dependencies may also be prepared explicitly by the operator. The plugin's
+`runtime_setup` action manages its own cache under `~/.web-blink/runtime`, avoiding a blocked global uv
+cache. Windows uses named pipes; macOS/Linux use Unix sockets. Git/OpenSSL remain optional source/signature
+capabilities.
 
 ## Where your data lives
 
@@ -48,7 +47,7 @@ that run keeps using the old folder, `blink doctor` warns, and the move happens 
 daemon has stopped. An explicit `BLINK_HOME`, state or configuration folder never triggers the move.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.9.1-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.10.0-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor

@@ -18,9 +18,11 @@ import sys
 from urllib.parse import urlsplit
 
 from .errors import BlinkError
+from .profile_names import ProfileIndex, chromium_names, firefox_groups, normalize, profile_table
 
 BROWSERS = ('chrome', 'edge', 'brave', 'firefox')
-MODES = ('shared', 'extension', 'cdp', 'managed', 'credentials')
+MODES = ('shared', 'native', 'profile', 'playwright', 'extension', 'cdp', 'managed', 'credentials')
+PW_ENGINES = ('chromium', 'firefox', 'webkit')
 MCP_VERSION = '0.0.84'
 EXTENSION_ID = 'mmlmfjhmonkocbjadbfplnigmagldckm'
 EXTENSION_URL = 'https://chromewebstore.google.com/detail/playwright-extension/' + EXTENSION_ID
@@ -31,6 +33,8 @@ CHANNELS = ('chrome', 'chrome-beta', 'chrome-dev', 'chrome-canary',
 
 def _json(path):
     try:
+        if path.is_symlink():
+            return {}
         with path.open('rb') as handle:
             raw = handle.read(4 * 1024 * 1024 + 1)
         value = json.loads(raw) if len(raw) <= 4 * 1024 * 1024 else {}
@@ -92,7 +96,7 @@ def _running_hint(root, profile, browser):
     if browser == 'firefox':
         return 'lock-present' if any(os.path.lexists(profile / n) for n in ('parent.lock', '.parentlock', 'lock')) else 'unknown'
     lock = root / 'SingletonLock'
-    if lock.is_symlink():
+    if os.name != 'nt' and lock.is_symlink():
         try:
             host, pid = os.readlink(lock).rsplit('-', 1)
             if host == socket.gethostname() and pid.isdigit():
@@ -151,28 +155,70 @@ def _profiles(browser, root):
         yield path, label, path.name
 
 
-def discover(browser=None, *, home=None, platform=None, environment=None):
+def discover(browser=None, *, home=None, platform=None, environment=None, refresh=False):
     if browser is not None and browser not in BROWSERS:
         raise BlinkError('invalid_arguments', 'Choose Chrome, Edge, Brave or Firefox')
+    home, platform = Path(home or Path.home()), platform or sys.platform
+    environment = os.environ if environment is None else environment
+    index = ProfileIndex(home, environment, platform)
     found = []
     for kind in (browser,) if browser else BROWSERS:
+        cached = index.get(kind, refresh)
+        if cached is not None:
+            found.append(cached)
+            continue
         binary = executable(kind, home=home, platform=platform, environment=environment)
-        profiles = []
+        profiles, dependencies = [], []
         for root in roots(kind, home=home, platform=platform, environment=environment):
-            for path, label, directory in _profiles(kind, root):
+            dependencies += [root, root / 'Local State', root / 'profiles.ini', root / 'Profile Groups']
+            items = {str(path.absolute()): (path, label, directory) for path, label, directory in _profiles(kind, root)}
+            grouped = {}
+            if kind == 'firefox':
+                for path, label, database in firefox_groups(root):
+                    items[str(path)] = (path, label, path.name)
+                    grouped[str(path)] = database
+                try:
+                    dependencies += list((root / 'Profile Groups').glob('*.sqlite*'))
+                except OSError:
+                    pass
+            local = _json(root / 'Local State').get('profile', {})
+            info_cache = local.get('info_cache', {}) if isinstance(local, dict) else {}
+            info_cache = info_cache if isinstance(info_cache, dict) else {}
+            for path, label, directory in items.values():
+                dependencies += [path / 'Preferences', path / 'Secure Preferences', path / 'Extensions', path / 'compatibility.ini']
                 profile_id = kind + '-' + hashlib.sha256(str(path.absolute()).encode()).hexdigest()[:20]
-                installed = kind != 'firefox' and (path / 'Extensions' / EXTENSION_ID).is_dir()
-                profiles.append({'id': profile_id, 'name': label, 'directory': directory,
+                secure, prefs = _json(path / 'Secure Preferences'), _json(path / 'Preferences')
+                preferences = {**secure, **prefs}
+                extension_record = {}
+                for document in (prefs, secure):
+                    record = document.get('extensions', {})
+                    if isinstance(record, dict) and isinstance(record.get('settings'), dict):
+                        candidate = record['settings'].get(EXTENSION_ID)
+                        if isinstance(candidate, dict):
+                            extension_record = candidate
+                installed = kind != 'firefox' and ((path / 'Extensions' / EXTENSION_ID).is_dir() or bool(extension_record))
+                names = chromium_names(info_cache.get(directory), preferences, directory) if kind != 'firefox' else {
+                    'name': label, 'displayName': label, 'aliases': list(dict.fromkeys([label, directory])), 'directoryName': directory,
+                    'nameSources': [{'source': grouped.get(str(path.absolute()), 'profiles.ini'), 'value': label}]}
+                profiles.append({'id': profile_id, **names, 'directory': directory,
                                  'path': str(path.absolute()), 'userDataDir': str(root.absolute()),
                                  'running': _running_hint(root, path, kind), 'extensionInstalled': installed,
+                                 'extensionEnabled': True if extension_record.get('state') == 1 else False if extension_record.get('state') == 0 else None,
                                  'connection': 'extension-detected' if installed else 'setup-required' if kind != 'firefox' else 'har-import',
                                  'attachSupported': kind != 'firefox'})
-        found.append({'browser': kind, 'name': {'chrome': 'Chrome', 'edge': 'Edge', 'brave': 'Brave', 'firefox': 'Firefox'}[kind],
+        record = {'browser': kind, 'name': {'chrome': 'Chrome', 'edge': 'Edge', 'brave': 'Brave', 'firefox': 'Firefox'}[kind],
                       'executable': binary, 'detected': bool(binary or profiles), 'profiles': profiles,
                       'recording': 'extension-or-cdp' if kind != 'firefox' else 'har-import',
                       'note': ('Stock Firefox needs a separate adapter; export a HAR from its Network panel and import it.'
-                               if kind == 'firefox' else 'Install the Playwright extension in the chosen profile and approve its connection.')})
+                               if kind == 'firefox' else 'Choose this profile by its display name; Blink will prepare the selected connection.')}
+        index.put(kind, record, dependencies)
+        found.append(record)
+    cache_status = index.save()
+    rows, table = profile_table(found)
     return {'browsers': found, 'host': socket.gethostname(), 'platform': platform or sys.platform,
+            'profileRows': rows, 'profileTable': table,
+            'index': {'path': str(index.path), 'status': cache_status, 'maxAgeSeconds': 300,
+                      'contents': 'Profile names, aliases, paths and connection capabilities only; no cookies or credentials.'},
             'runtimeSupported': True, 'extensionUrl': EXTENSION_URL,
             'discovery': 'Local metadata only. Locks are hints; profile presence or an extension directory does not prove a live connection. '
                          'Custom profile locations need an explicit CDP endpoint. Run Blink on the machine containing your profiles.'}
@@ -181,20 +227,21 @@ def discover(browser=None, *, home=None, platform=None, environment=None):
 def validate_selection(value):
     if not isinstance(value, dict) or set(value) - {'mode', 'browser', 'profile', 'endpoint', 'name'}:
         raise BlinkError('invalid_arguments', 'Browser selection accepts mode, browser, profile, endpoint and name only')
-    mode = value.get('mode', 'extension')
+    mode = value.get('mode', 'native')
     if mode not in MODES:
         raise BlinkError('invalid_arguments', 'Unknown browser connection mode')
     required = {'shared': set(), 'extension': {'browser', 'profile'}, 'cdp': {'endpoint'},
-                'managed': {'browser', 'name'}, 'credentials': set()}[mode]
+                'native': {'browser', 'profile'}, 'profile': {'browser', 'profile'},
+                'playwright': {'browser', 'name'}, 'managed': {'browser', 'name'}, 'credentials': set()}[mode]
     allowed = required | {'mode'}
     if set(value) - allowed or required - set(value):
         raise BlinkError('invalid_arguments', 'Browser selection is incomplete or combines incompatible modes')
     for key, item in value.items():
         if not isinstance(item, str) or not item or len(item) > 500 or any(ord(c) < 32 for c in item):
             raise BlinkError('invalid_arguments', 'Browser selection fields must be bounded text')
-    if 'browser' in value and value['browser'] not in BROWSERS:
+    if 'browser' in value and value['browser'] not in (PW_ENGINES if mode == 'playwright' else BROWSERS):
         raise BlinkError('invalid_arguments', 'Unknown browser')
-    if mode == 'managed' and not NAME.fullmatch(value['name']):
+    if mode in ('managed', 'playwright') and not NAME.fullmatch(value['name']):
         raise BlinkError('invalid_arguments', 'Choose a simple name for the remembered Blink session')
     if mode == 'cdp' and value['endpoint'] not in CHANNELS:
         try:
@@ -209,10 +256,23 @@ def validate_selection(value):
 
 
 def resolve_selection(value):
+    if isinstance(value, dict) and isinstance(value.get('profile'), str) and re.fullmatch(r'#[1-9][0-9]{0,5}', value['profile']):
+        listing = discover(value.get('browser'))
+        numbered = [(b['browser'], p) for b in listing['browsers'] for p in b['profiles'] if p.get('reference') == value['profile']]
+        if len(numbered) != 1:
+            raise BlinkError('profile_not_found', 'That profile number is not in the current index; show the profile table again')
+        browser, profile = numbered[0]
+        value = {**value, 'browser': browser, 'profile': profile['id']}
     value = validate_selection(value)
-    if value['mode'] == 'extension':
+    if value['mode'] in ('extension', 'native', 'profile'):
         listing = discover(value['browser'])['browsers'][0]
-        matches = [p for p in listing['profiles'] if value['profile'] in (p['id'], p['name'], p['directory'])]
+        def matching(p):
+            return value['profile'] == p['id'] or normalize(value['profile']) in {
+                normalize(x) for x in [p['name'], p['directory'], *p.get('aliases', [])]}
+        matches = [p for p in listing['profiles'] if matching(p)]
+        if not matches:
+            listing = discover(value['browser'], refresh=True)['browsers'][0]
+            matches = [p for p in listing['profiles'] if matching(p)]
         if not matches:
             raise BlinkError('profile_not_found', 'The selected profile is not on this machine; list browsers again')
         if len(matches) != 1:
@@ -237,7 +297,7 @@ def prepare_directories(value, state_dir):
     """Only a new Blink-owned directory may be used for a managed session."""
     from .doctor import secure_state_directory
     state = secure_state_directory(state_dir)
-    if value['mode'] == 'managed':
+    if value['mode'] in ('managed', 'playwright'):
         current = state
         for part in ('browser-profiles', value['browser'], value['name']):
             current = current / part
@@ -245,6 +305,57 @@ def prepare_directories(value, state_dir):
                 raise BlinkError('invalid_arguments', 'Managed browser profiles cannot traverse symlinks')
             current.mkdir(mode=0o700, exist_ok=True)
     return state
+
+
+def selected_profile(value):
+    selected = resolve_selection(value)
+    browser = discover(selected['browser'])['browsers'][0]
+    return selected, browser, next(p for p in browser['profiles'] if p['id'] == selected['profile'])
+
+
+def _local_endpoint(root):
+    try:
+        with (Path(root) / 'DevToolsActivePort').open(encoding='utf-8') as handle:
+            lines = handle.read(1024).splitlines()
+        port = int(lines[0])
+        if 0 < port < 65536 and re.fullmatch(r'/devtools/browser/[A-Za-z0-9-]+', lines[1]):
+            return f'ws://127.0.0.1:{port}{lines[1]}'
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def ensure_tools(value, state_dir):
+    """Called only by a human-ordered connection/recording, never by scheduler/daemon startup."""
+    value = resolve_selection(value)
+    if value['mode'] in ('shared', 'credentials') or (value.get('browser') == 'firefox' and value['mode'] != 'playwright'):
+        return
+    state = Path(state_dir)
+    cli = state / 'browser-tools/node_modules/@playwright/mcp/cli.js'
+    if not cli.is_file() or _json(cli.parent / 'package.json').get('version') != MCP_VERSION:
+        setup(state)
+    if value['mode'] == 'playwright':
+        marker = state / 'browser-engines' / f'{value["browser"]}-{MCP_VERSION}.json'
+        environment = {**os.environ, 'PLAYWRIGHT_BROWSERS_PATH': str(marker.parent)}
+        try:
+            probe = subprocess.run([shutil.which('node') or 'node', '-e',
+                'process.stdout.write(require(process.argv[1])[process.argv[2]].executablePath())',
+                str(state / 'browser-tools/node_modules/playwright'), value['browser']],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding='utf-8', timeout=5, env=environment)
+            installed = probe.returncode == 0 and len(probe.stdout) < 4096 and Path(probe.stdout).is_file()
+        except (OSError, subprocess.TimeoutExpired):
+            installed = False
+        if not installed:
+            marker.parent.mkdir(mode=0o700, exist_ok=True)
+            if marker.parent.is_symlink():
+                raise BlinkError('invalid_arguments', 'Browser downloads require a regular Blink data directory')
+            result = subprocess.run([shutil.which('node') or 'node', str(state / 'browser-tools/node_modules/playwright/cli.js'),
+                                     'install', value['browser']], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL, timeout=240, check=False,
+                                    env=environment)
+            if result.returncode:
+                raise BlinkError('browser_download_failed', 'Blink could not download the selected browser. Check network access and retry this connection.')
+            marker.write_text(json.dumps({'engine': value['browser'], 'package': MCP_VERSION}), encoding='utf-8')
 
 
 def connection_plan(value, state_dir):
@@ -258,7 +369,7 @@ def connection_plan(value, state_dir):
         available = bool(os.environ.get('BLINK_PLAYWRIGHT_COMMAND') or Path('/opt/shared-browser/bin/shared-browser').is_file())
         return {'selection': value, 'available': available,
                 'instructions': 'Use the existing configured shared Playwright MCP. On another host configure BLINK_PLAYWRIGHT_COMMAND or choose a local profile.'}
-    if value.get('browser') == 'firefox':
+    if value.get('browser') == 'firefox' and mode != 'playwright':
         return {'selection': value, 'available': False, 'reason': 'firefox-adapter-required',
                 'instructions': 'Record in Firefox DevTools, export a HAR, then use blink learn import with path and origins. '
                                 'Stock Firefox profiles cannot be attached through Playwright. Use a Chromium browser for live recording.'}
@@ -269,7 +380,36 @@ def connection_plan(value, state_dir):
     installed = cli.is_file() and _json(cli.parent / 'package.json').get('version') == MCP_VERSION
     ready, reason = bool(node and installed), 'ready' if node and installed else 'setup-required'
     detail = {}
-    if mode == 'extension':
+    if mode in ('native', 'profile'):
+        value, listing, profile = selected_profile(value)
+        detail = {'profile': profile, 'profileName': profile['name'], 'expectedProfilePath': profile['path'],
+                  'browser': value['browser'], 'instructions': f'Blink will connect to {listing["name"]} → {profile["name"]}. '
+                   'If the browser asks, allow the connection. No commands or profile-path copying are needed.'}
+        if mode == 'native':
+            endpoint = _local_endpoint(profile['userDataDir'])
+            if endpoint:
+                command += ['--cdp-endpoint', endpoint]
+            elif value['browser'] in ('chrome', 'edge'):
+                command += ['--cdp-endpoint', 'msedge' if value['browser'] == 'edge' else 'chrome']
+            else:
+                ready, reason = False, 'native-connection-not-exposed'
+                detail['instructions'] = ('This Brave instance has not exposed a native connection. '
+                    'Choose to launch this exact profile through PW, or use the optional PW extension.')
+        else:
+            if value['browser'] == 'chrome':
+                ready, reason = False, 'profile-protected'
+                detail['instructions'] = ('Chrome protects its normal profile from direct PW startup. '
+                    'Blink can open Chrome’s connection permission page for this same profile, or use the optional extension. Logins are retained.')
+            config = Path(state_dir) / 'browser-configs' / (profile['id'] + '.json')
+            command += ['--config', str(config)]
+            detail['launchConfig'] = {'path': str(config), 'document': {'browser': {'browserName': 'chromium',
+                'userDataDir': profile['userDataDir'], 'launchOptions': {
+                    'executablePath': listing['executable'], 'headless': False, 'ignoreDefaultArgs': ['--disable-extensions'],
+                    'args': ['--profile-directory=' + profile['directory'], '--restore-last-session']}}}}
+        if not listing['executable']:
+            ready, reason = False, 'browser-executable-missing'
+            detail['instructions'] = 'Blink found the profile but not its browser application. Choose a browser installed on this computer or let PW launch its own browser.'
+    elif mode == 'extension':
         listing = discover(value['browser'])['browsers'][0]
         profile = next(p for p in listing['profiles'] if p['id'] == value['profile'])
         binary = listing['executable']
@@ -289,6 +429,15 @@ def connection_plan(value, state_dir):
                                   '(edge://inspect/#remote-debugging for Edge), then accept its connection prompt. '
                                   if value['endpoint'] in CHANNELS else 'Attach to this debugging endpoint. ')
         detail['instructions'] += 'Verify the service account; an endpoint does not prove which profile it belongs to. For exact profile selection use extension mode.'
+    elif mode == 'playwright':
+        command += ['--browser', 'chrome' if value['browser'] == 'chromium' else value['browser'],
+                    '--user-data-dir', str(state_dir / 'browser-profiles' / value['browser'] / value['name'])]
+        # No installed Chrome channel: bundled Chromium must be selected through config.
+        config = state_dir / 'browser-configs' / (value['browser'] + '-' + value['name'] + '.json')
+        command = command[:-4] + ['--config', str(config)]
+        detail['launchConfig'] = {'path': str(config), 'document': {'browser': {'browserName': value['browser'],
+            'userDataDir': str(state_dir / 'browser-profiles' / value['browser'] / value['name']), 'launchOptions': {'headless': False}}}}
+        detail['instructions'] = f'Blink will open a PW {value["browser"]} browser for {value["name"]}. Its login is remembered for the next use.'
     elif mode == 'managed':
         binary = executable(value['browser'])
         if not binary:
@@ -299,15 +448,55 @@ def connection_plan(value, state_dir):
         detail['instructions'] = ('Use a separate persistent Blink profile. Sign in once here; future recordings reuse this login. '
                                   'This mode does not inherit a personal profile. Give your admin and personal sessions different names.')
     return {'selection': value, 'available': ready, 'reason': reason, 'command': command,
-            'setupCommand': 'blink browser setup', 'package': '@playwright/mcp@' + MCP_VERSION, **detail}
+            'automaticPreparation': {'tool': 'blink_request_approval', 'method': 'browser_connect', 'params': {'browser': value}},
+            'package': '@playwright/mcp@' + MCP_VERSION, **detail}
 
 
 def connection_status(value, state_dir):
     try:
-        return connection_plan(value, state_dir)
+        return {key: item for key, item in connection_plan(value, state_dir).items() if key not in ('command', 'launchConfig')}
     except BlinkError as exc:
         return {'selection': value, 'available': False, 'reason': exc.code,
                 'instructions': exc.message + '. Run blink browser list and select a profile again.'}
+
+
+def failure_guidance(code, params):
+    """Actionable browser onboarding steps, with no shell/configuration instructions for the user."""
+    selector = params.get('browser')
+    if not isinstance(selector, dict):
+        return {}
+    actions = []
+    def add(label, method, selected=None):
+        actions.append({'label': label, 'tool': 'blink_request_approval', 'method': method,
+                        'params': {'browser': selected or selector}})
+    if code in ('profile_in_use', 'profile_protected', 'native_connection_not_exposed', 'browser_reopened', 'browser_unavailable', 'profile_mismatch', 'profile_launch_failed'):
+        if selector.get('profile'):
+            native = {**selector, 'mode': 'native'}
+            add('Connect to this same live profile without closing its windows', 'browser_connect', native)
+            add('Open the browser’s connection permission page for this profile', 'browser_permission_open', native)
+            if selector.get('browser') in ('edge', 'brave') and code not in ('profile_in_use', 'profile_protected'):
+                add('Launch this existing profile through PW', 'browser_connect', {**selector, 'mode': 'profile'})
+            add('Use the optional PW extension in this profile', 'browser_extension_open', {**selector, 'mode': 'extension'})
+            if code == 'profile_in_use' and selector.get('browser') in ('edge', 'brave'):
+                add('Restart this browser instance with the existing profile (confirmation required)', 'browser_restart', {**selector, 'mode': 'profile'})
+    elif code == 'browser_permission_required':
+        add('Show the browser’s connection permission page', 'browser_permission_open')
+        add('Retry after the browser permission was confirmed', 'browser_connect')
+    elif code == 'extension_required':
+        add('Use native connection without installing an extension', 'browser_connect', {**selector, 'mode': 'native'})
+        add('Open the optional extension page in this exact profile', 'browser_extension_open', {**selector, 'mode': 'extension'})
+    elif code in ('profile_not_found', 'profile_ambiguous'):
+        return {'connected': False, 'nextActions': [{'tool': 'blink_admin', 'params': {'action': 'browsers', 'refresh': True},
+                'label': 'Refresh and show the numbered browser/profile table; choose by #ID'}]}
+    elif code in ('browser_system_dependencies_missing', 'browser_component_missing'):
+        return {'connected': False, 'nextActions': [
+            {'tool': 'blink_admin', 'params': {'action': 'browsers'}, 'label': 'Show installed browser profiles in the numbered table'},
+            {'tool': 'blink_request_approval', 'method': 'browser_connect', 'params': {'browser': selector},
+             'label': 'Prepare and retry this selected browser automatically'}]}
+    if not actions:
+        return {}
+    return {'connected': False, 'nextActions': actions, 'userInstruction':
+            'Explain the exact available action. Do not say “requires configuration”, ask for profile paths, or print setup commands.'}
 
 
 def setup(state_dir):

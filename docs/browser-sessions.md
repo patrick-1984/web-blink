@@ -1,117 +1,119 @@
-# Record with a browser you already use
+# Browser connections and profile choice
 
-Blink can connect to a signed-in Chrome, Edge or Brave profile and record in a new work tab. Choose your
-personal or admin profile without logging out of either. Run Blink on the computer containing those
-profiles: a remote workspace does not see the browsers on your laptop.
+Tell Blink which browser/profile to use, or choose a numbered row. You do not need to run setup commands,
+copy profile paths or edit configuration. For example: “Record using my Edge work profile.”
 
-## Choose a browser and profile
+Blink shows the actual discovery result as a table:
 
-Tell your agent: **“Record this using my Brave Admin profile.”** It lists the local browser/profile names,
-asks for any missing choice, checks setup and starts the recording. It does not read password or cookie
-databases to discover profiles. A lock is only a hint that a browser is running, not proof of which profile
-is open. The connection and the service's account identity are checked when used.
+| ID | Browser | Profile |
+|---|---|---|
+| #1 | Chrome | Personal |
+| #2 | Edge | Alex (Work) |
+| #6 | Brave | Administrator |
 
-On the first recording, if local profiles are detected and you have not saved a preference, the agent offers
-your existing login, the normal shared browser or a separate remembered Blink login. After you choose, it
-reuses that preference without asking every time. You can still name another profile for a single recording.
+“Use #6” selects that exact profile. Numbers are stored locally and retained after a display-name change;
+a deleted number is not reused for a new account. Clearing the index manually also clears those assignments.
+A remembered selection is reused without asking on every recording.
 
-From the CLI:
+## Names and the local index
+
+Directory names such as `Profile 2` differ from the browser's visible label. Blink reads Chromium's
+`Local State` plus whitelisted profile/account label fields in `Preferences` and `Secure Preferences`.
+It collects display-name aliases, including composed account/local names and punctuation/case variants.
+Firefox names come from `profiles.ini` and the newer `Profile Groups/*.sqlite` Profiles table, opened read-only.
+Only names, aliases, paths, capabilities and file timestamps are indexed; cookies, passwords, tokens and
+entire preference documents are not persisted in the index.
+
+The private index is `~/.web-blink/cache/browser-profiles.json` (`BLINK_HOME` selects another home).
+It is shared between Windows's Node-only discovery and the Python runtime. A changed metadata file causes
+an immediate refresh; entries are also refreshed after five minutes. A missing name triggers one fresh
+scan before Blink asks you to choose by number. It does not repeatedly ask you for `edge://version` paths.
+`blink_admin` with `action: browsers` returns `profileRows`, `profileTable` and the index location/status.
+`refresh: true` refreshes immediately. A cache write failure preserves discovery as an in-memory result.
+
+## Connection choices
+
+| Choice | Behavior |
+|---|---|
+| Existing live profile (`native`) | PW connects to the existing browser through its native interface. Blink verifies the selected profile before visiting the service. It can open that profile's native permission page; you approve access in the browser. |
+| Launch this existing profile through PW (`profile`) | Uses the selected real data root, directory and installed binary. It retains that profile's logins. It creates no substitute profile and copies no credentials. A busy profile needs live attachment or an explicitly confirmed restart. |
+| Optional PW extension (`extension`) | Uses the extension in that exact browser profile. Blink opens its installation page when chosen; you confirm Add/Enable. This is optional, not a mandatory default. |
+| A new browser launched by PW (`playwright`) | Blink obtains Chromium, Firefox or WebKit and keeps a separate persistent profile named e.g. work/admin. This genuinely new profile needs its initial login, which subsequent uses retain. |
+| Shared browser (`shared`) | Uses the already configured shared Playwright provider. |
+| Credentials only (`credentials`) | Uses supported native API-key/OAuth or explicitly eligible isolated custody. Direct reuse depends on the service; a generic personal-profile cookie decryption/export adapter is not provided. |
+
+Multiple browser connections can run at the same time. Different account bindings keep their own selector.
+A different default affects future recordings, not an existing account binding. Changing a display label
+or switching connection methods must never silently substitute another profile/account.
+
+PW can launch several independent browser instances with distinct data roots. A second command against a
+live Chromium profile usually forwards to its existing instance; it does not create an independent writer
+to the same files or automatically enable debugging. Blink does not remove profile locks or copy active
+personal profiles to sidestep this restriction.
+
+## Preparation and confirmations
+
+On a user-ordered connection/recording, Blink prepares missing local components itself. It can obtain a
+pinned, SHA-256-verified uv and download Python/libraries into its own runtime folder. The prepared cache is
+also used for ordinary offline startup, rather than requiring access to a blocked global uv cache. Healthy
+existing runtimes continue working. Browser tools and a selected PW engine are prepared only when needed.
+No preparation runs from a session/lifecycle hook or an unattended job.
+
+The host's tool permissions and the browser's own consent remain in force. A preparation confirmation means
+“download components for Blink on this computer”; it does not grant access to browser logins. Blink never
+changes Codex's sandbox or permission settings. Its approval preference is still controlled by the user.
+
+A restart always gets a native confirmation describing the browser/profile and warning that all windows
+of that instance can be affected, including other profiles. Blink matches the current user's exact browser
+process/data root, rechecks it before signalling and permits browser save/cancel prompts on Windows. A
+changed process plan or a window that stays open stops the restart. If PW cannot reconnect after a confirmed
+restart, Blink reopens the normal browser session. No other browser instance is terminated.
+
+An existing profile launched through PW has a dedicated PW host; the MCP client attaches to it. Disconnecting
+Blink's own work tabs does not deliberately close that profile's other windows. Closing the browser itself
+ends its host. The selected profile path is checked in a new owned tab before service navigation.
+
+## Real platform/browser limits
+
+Chrome protects the normal data root from direct remote-debugging startup. Its native connection requires
+the browser's opt-in/permission flow; the optional extension is another supported route. Blink opens the
+correct consent page rather than dumping configuration instructions. Edge/Brave direct profile launch is
+attempted only through the selected binary/root and is subject to browser version and enterprise policy.
+A refusal produces concrete alternatives (`nextActions`), never a silent switch to another account.
+
+Stock Firefox speaks BiDi, while Playwright uses its patched Firefox build. Existing stock Firefox profile
+names are indexed, but this adapter does not live-control them through PW. A separate persistent PW Firefox
+browser and the existing metadata-only HAR import remain available. Disk access also does not guarantee a
+service's auth can be reused outside its browser: encryption, rotation and binding must be checked per service.
+
+Windows uses authenticated local named pipes. Profile discovery there needs Node only (Node 22+ reads the
+new Firefox SQLite metadata). macOS/Linux use Unix sockets. Discovery and attachment happen on the computer
+running Blink; a cloud workspace cannot see a laptop's profiles automatically.
+
+## Advanced CLI
+
+These commands are optional interfaces, not setup tasks for an agent to hand to the user:
 
 ```sh
 blink browser list
-blink browser list --browser brave
-blink browser setup
-blink browser select --browser brave --profile 'Admin'
+blink browser list --refresh
+blink browser select --mode native --profile '#6'
+blink browser select --mode profile --profile '#6'
+blink browser select --mode playwright --browser firefox --name work
 blink browser status
-blink learn start --input '{"url":"https://app.example"}'
 ```
 
-`setup` installs **@playwright/mcp@0.0.84** under private local state; it does not launch a browser or
-download browser binaries. Node.js and npm are prerequisites. Connection startup uses that installed
-version offline, rather than fetching an unpinned package. Install the
-[Playwright extension](https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm)
-in every profile you want to use. The browser may ask you to approve the connection. Choose a spare blank
-tab in the extension's picker; Blink then creates its own recording tab. Keep your other work tabs private.
+The local `browser_connect`, `browser_permission_open`, `browser_extension_open` and confirmed
+`browser_restart` actions are exposed through `blink_request_approval`. `runtime_setup` performs explicit
+native preparation when needed. Tool results provide the actual state and next actions. They do not claim
+an authenticated account merely because a profile exists.
 
-Names such as `Admin`, directory names such as `Profile 2`, and exact profile IDs from `browser list` are
-accepted. Duplicate names require the exact ID. The choice is remembered in private settings; it stores no
-cookies or extension token. `--config-dir` and the normal `--dry-run`/approval preferences apply. Browser
-connection setup never changes your approval policy.
+Primary references checked 2026-11-03:
 
-For a one-off profile, supply `browser` in `learn_start` instead of changing the default:
-
-```json
-{"url":"https://app.example","browser":{"mode":"extension","browser":"brave","profile":"<profile ID>"}}
-```
-
-The result, saved recording and proposal carry that selector. Account activation inherits it from the
-recording unless an explicit selector is supplied. Personal and admin accounts need distinct binding IDs.
-Changing the default later affects new recordings, not existing bindings. Previously created bindings
-without a selector continue using the shared browser. A tab already belonging to a binding cannot switch
-profiles underneath it: close that Blink work tab, or use another binding name.
-
-## Other connection modes
-
-| Mode | CLI example | Login behavior |
-|---|---|---|
-| Shared browser | `blink browser select --mode shared` | Uses the existing shared Playwright MCP configuration. |
-| Existing Chrome/Edge without an extension | `blink browser select --mode cdp --endpoint chrome` | Enable remote debugging at `chrome://inspect/#remote-debugging` and accept the browser prompt. Edge uses `msedge` and `edge://inspect/#remote-debugging`. Requires a browser supporting this flow. |
-| Local debugging endpoint | `blink browser select --mode cdp --endpoint http://127.0.0.1:9222` | Reuses the session exposed by that endpoint. Only loopback endpoints without URL credentials are accepted. Blink does not scan ports or restart your browser. |
-| Separate remembered login | `blink browser select --mode managed --browser brave --name admin` | Opens a separate persistent Blink-owned profile. Sign in once here; reuse it on later runs. Use another name for personal logins. |
-| Credentials only | `blink browser select --mode credentials` | Selects the service-specific custody workflow; this mode does not start a recording. Native API keys/OAuth grants and eligible isolated custody remain supported through the existing `account`/`custody` commands. |
-
-Extension mode targets an exact discovered profile. A CDP channel/endpoint selects a browser connection,
-not a proven profile identity: use extension mode when exact profile targeting matters. Blink retains its
-normal account/tenant checks before service operations.
-
-The separate remembered-login mode does **not** copy a personal profile. Two browser instances cannot
-reliably share the same profile directory, and Chrome restricts the traditional debugging flags on its
-normal data directory. Exporting cookies is not a general substitute: session storage, refresh rotation,
-device binding and additional authentication steps can prevent browser-free reuse. Blink does not label
-a live personal profile as an isolated/exclusive credential family.
-
-## Firefox, platforms and discovery limits
-
-Chrome, Edge, Brave and Firefox profile discovery covers standard Windows, macOS and Linux locations.
-Firefox includes `profiles.ini`, absolute profile paths, new profile directories and standard Linux
-Snap/Flatpak locations. A new Firefox profile's directory name is used when its display name is unavailable.
-Custom Chromium data roots and portable installations may not be discovered; use an explicit endpoint.
-An extension directory indicates installation only; disabled extensions or browser policy can still block
-the connection. No mode silently falls back to another browser or account when connection fails.
-
-**Stock Firefox live attachment is not implemented.** Its protocols differ from Playwright's Chromium
-connection. In Firefox, open Developer Tools → Network, enable persistent logs, demonstrate the workflow,
-export the HAR with the request details needed for learning, then import it:
-
-```sh
-blink learn import --input '{"path":"/absolute/path/recording.har","origins":["https://app.example"]}'
-```
-
-HAR imports have no Blink screenshots or live recording status. Keep the exported file private; it can
-contain login material. The current importer creates a metadata-only proposal input and does not import
-the HAR as detached credential custody.
-
-**Native Windows is supported through authenticated local named pipes.** Windows browser discovery in the
-MCP server needs Node only, so a missing Python dependency does not block listing Edge profiles. Recording
-also needs Python 3.11+, the pinned dependencies and the chosen Playwright connection. `blink_doctor`
-returns an explicit setup command when prerequisites are missing; run it once and retry. macOS and Linux
-use Unix sockets. Running Blink inside Linux/WSL does not automatically discover Windows profiles: run
-Codex and Blink natively on Windows to use your Windows Edge profile.
-
-## Evidence and validation
-
-The provider is the existing Playwright MCP, so Blink keeps its owned-tab recorder, account probes and
-credential custody boundaries. Browser discovery and routing are covered by synthetic profile fixtures,
-including ten Brave profiles, ambiguous names, stale selections, separate account routes and private
-settings. Browser-specific OS/version tests need the matching local installation; discovery does not
-claim a live desktop attachment was tested merely because metadata was found.
-
-Primary implementation references (checked 2026-11-03):
-
-- [Playwright MCP browser connections](https://playwright.dev/mcp/configuration/browser-extension)
-- [Playwright extension setup, custom executable and profile selection](https://github.com/microsoft/playwright/tree/main/packages/extension)
-- [Chrome's connection permission flow](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session)
-- [Chrome's default data-directory restriction](https://developer.chrome.com/blog/remote-debugging-port)
-- [Firefox remote protocols](https://firefox-source-docs.mozilla.org/remote/)
-- [Firefox profile storage changes](https://firefox-source-docs.mozilla.org/toolkit/profile/changes.html)
-- [Brave's Chrome extension support](https://brave.com/learn/using-chrome-extensions-in-brave/)
+- [Chromium profile display-name composition](https://github.com/chromium/chromium/blob/main/chrome/browser/profiles/profile_attributes_entry.cc)
+- [Firefox profile datastore](https://github.com/mozilla-firefox/firefox/blob/main/toolkit/profile/ProfilesDatastoreService.sys.mjs)
+- [Playwright browser connections](https://playwright.dev/mcp/configuration/browser-extension)
+- [Chrome native connection consent](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session)
+- [Chrome default-profile debugging restriction](https://developer.chrome.com/blog/remote-debugging-port)
+- [Microsoft Edge DevTools Protocol](https://learn.microsoft.com/en-us/microsoft-edge/devtools/protocol/)
+- [Firefox BiDi](https://firefox-source-docs.mozilla.org/remote/Security.html)
