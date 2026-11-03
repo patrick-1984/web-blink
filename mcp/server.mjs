@@ -81,6 +81,7 @@ function doctor() {
   hostPermission:'The host may ask to authorize this preparation tool. Explain that it downloads local components, not access to browser logins. Do not change host permission or sandbox settings.'};
  return {status:runtimeAvailable?'ok':'degraded',summary:'Host bootstrap capabilities',data:{
   capabilities:{diagnostics:true,browserDiscovery:true,runtime:runtimeAvailable,windowsRuntime:!unix&&runtimeAvailable},
+  activeComponent:{version:'0.10.1',pluginRoot:root},
   checks:{node:{available:true,version:process.versions.node},runtimeDependencies:{available:runtimeAvailable},
    launcher:{kind:launch.kind},unixTransport:{available:unix},localTransport:{available:true,kind:unix?'unix-socket':'named-pipe'}},homeDir,
   ...(runtimeAvailable?{}:{runtimeSetup:setup}),
@@ -225,8 +226,8 @@ async function prepareRuntime(params,callId){
 }
 function rpcError(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
 function toolFailure(message,error){
- const tool=tools.find(t=>t.name===message.params?.name);
- if(message.method!=='tools/call'||!tool)return rpcError(message.id??null,-32603,'Internal error');
+ const tool=tools.find(t=>t.name===message?.params?.name);
+ if(message?.method!=='tools/call'||!tool)return rpcError(message?.id??null,-32603,'Internal error');
  const kinds=['TypeError','RangeError','SyntaxError','ReferenceError','Error'];
  const operation=message.params?.arguments?.method??message.params?.arguments?.action??methods.get(tool.name);
  return {jsonrpc:'2.0',id:message.id,result:{isError:true,content:[{type:'text',text:JSON.stringify({

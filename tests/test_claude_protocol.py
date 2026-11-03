@@ -55,6 +55,7 @@ class ClaudeProtocolTests(unittest.TestCase):
         report = json.loads(messages[2]['result']['content'][0]['text'])
         self.assertTrue(report['data']['capabilities']['diagnostics'])
         self.assertFalse(report['data']['capabilities']['runtime'])
+        self.assertEqual(report['data']['activeComponent']['version'], messages[0]['result']['serverInfo']['version'])
         connect = next(t for t in tools if t['name'] == 'blink_connect_browser')
         self.assertFalse(connect['annotations']['readOnlyHint'])
         self.assertEqual(connect['title'], 'Connect a browser profile')
