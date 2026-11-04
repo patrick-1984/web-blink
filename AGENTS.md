@@ -5,7 +5,8 @@ Release work includes that linked catalog, not only this repository or its compa
 
 ## Publishing Web Blink
 
-1. Keep the Python/runtime version and both plugin manifests consistent. Build and verify the plugin ZIP,
+1. Give every shipped update a new plugin version; never replace a published tag. Keep the Python/runtime
+   version and both plugin manifests consistent. Build and verify the plugin ZIP,
    CLI wheel and SHA256SUMS, publish the corresponding `v<plugin-version>` release, and synchronize `plugin`.
 2. Dispatch the marketplace's `sync-release.yml` workflow with the published Web Blink tag and wait for it.
 3. Confirm `.claude-plugin/marketplace.json` in the marketplace has Web Blink's exact release `source.ref`
