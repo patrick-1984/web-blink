@@ -135,7 +135,15 @@ class Runtime:
                                  for binding in self.store.list('binding') if binding['service'] == entry['service']]
         for row in self.store.list('manifest_candidate'):
             if row['service'] not in active and row.get('state')=='quarantined':
-                data.append({'service':row['service'],'digest':row['digest'],'candidate':row['candidate'],'state':'quarantined'})
+                recipe=row['compiled'].get('document',{}).get('x-blink-service',{}).get('auth',{})
+                if not recipe:
+                    recipe=row.get('document',{}).get('x-blink-service',{}).get('auth',{})
+                has_probe=bool(recipe.get('probe'))
+                has_credential_source=(recipe.get('kind')=='none' or bool(recipe.get('storage') or recipe.get('cookies')))
+                data.append({'service':row['service'],'digest':row['digest'],'candidate':row['candidate'],
+                             'state':'quarantined','operations':len(row['compiled']['operations']),
+                             'nextAction':'review_and_activate' if has_probe and has_credential_source
+                             else 'complete_auth_and_identity_probe'})
         return envelope('ok','Service catalog',data)
 
     def _search(self,p):
