@@ -9,6 +9,14 @@ tag before pinning its catalog to the version tag. Dispatch it during publicatio
 a delayed fallback. It rejects unsafe v0.10.0, prereleases and downgrades. No cross-repository write token
 is needed: synchronization runs inside the marketplace repository.
 
+Every Web Blink release also requires a marketplace patch release, irrespective of the plugin's own
+patch/minor/major bump. The sync workflow updates Web Blink's catalog `version` and pinned `source.ref`,
+increments the marketplace's separate `metadata.version`, regenerates the plugin/version table at the end
+of the marketplace README and publishes a marketplace GitHub release. Adding a new plugin instead requires
+a marketplace minor bump with patch reset to zero. Repeating the same synchronization is idempotent.
+Wait for the workflow and verify all these outputs before reporting publication complete. The authoritative
+maintenance rules are in both repositories' `AGENTS.md` files.
+
 Update an existing Codex installation with both commands, then restart Codex:
 
 ```sh
