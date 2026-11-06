@@ -48,7 +48,8 @@ PW browser are separate choices. See [browser connections](docs/browser-sessions
 
 When you ask to learn or record an app, Blink connects **and starts recording**, then guides you through
 demonstrating the workflow. Opening a browser alone explicitly leaves recording off and offers the next step.
-Switching browsers during setup keeps your original recording request. See the [guided recording flow](docs/recording-flow.md).
+Switching browsers during setup keeps your original recording request. Optional consent waits apply only
+to native Chrome/Edge profiles; other modes connect normally. See the [guided recording flow](docs/recording-flow.md).
 
 Native Windows uses authenticated local named pipes; macOS/Linux use Unix sockets. Normal startup is
 offline. A requested connection can prepare missing components in Blink's own folder; the host may ask to
@@ -83,6 +84,9 @@ Use `--dry-run` to validate a local plan without dispatch, and stable request ID
 Writes need an exact native approval; unknown outcomes retain their intent and budget for reconciliation.
 Successful dispatch is labelled accepted/unverified. `blink_verify` checks explicit expectations through
 reviewed reads; writes require correlated read-back and never repeat a mutation for verification.
+Activation exposes nested parameter schemas before changes; failures retain sanitized stage/field, HTTP
+status and dispatch evidence. Public reads with incidental cookies can use explicit credential-free checks
+before anonymous classification. See the [execution contract](docs/execution-profile.md).
 
 Each Blink also has a **private Blink** for you alone: your login name, field defaults ("leave PTO empty"),
 preferences and process notes ("fill weeks Monday to Friday"), plus optional secrets kept in a separate file.

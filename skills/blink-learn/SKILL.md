@@ -206,8 +206,9 @@ Python libraries are a preparation step, not a reason to tell the user Windows i
    `data.error.fieldPath` before proceeding. This validation does not verify the remote account.
    Switch the Blink on in the same turn, unless the user said only to record or propose: one
    `blink_request_approval` `activate_blink` with `manifest` (the `learn_propose` result's approval data),
-   `bind` (`binding` = Blink name, `service`, `account`, `mode` `C1`, identity from the suggested probe) and
-   `grant` (`binding`; operations and origins are filled in by the plugin). `browser` in `bind` must be the
+   optional `bind` when authentication or writes require it (`binding` = Blink name, `service`, `account`,
+   `mode` `C1`, genuine identity from the suggested probe for authenticated services), and `grant` when
+   using a binding (`binding`; operations and origins are filled in by the plugin). `browser` in `bind` must be the
    selector returned by the recording/proposal when present (the runtime also inherits it from the source
    recording). Use distinct binding IDs for personal and admin accounts. Then carry out whatever the user
    ordered with the Blink (see blink-use).
