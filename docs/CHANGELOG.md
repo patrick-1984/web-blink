@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.1 — 2026-11-06
+
+- Bundled Blinks: `ruddr-com` 0.6.0 (Ruddr time tracking, 36 operations; company, workspace, member and email are private variables) and `entra-microsoft` 0.1.0 (experimental, 73 Microsoft Graph operations; sign-in recipe still to be learned). No account or tenant data.
+- Test: every bundled Blink compiles without anyone's values and contains no emails or IDs.
+
 ## 0.12.0 — 2026-11-06
 
 - A1: Limit consent waits to native Chrome/Edge profiles; guided recording works with other modes and waits.
