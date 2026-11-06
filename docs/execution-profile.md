@@ -202,3 +202,13 @@ Runtime construction. Revocation fences binding/grant authority before attemptin
 Current profile deliberately rejects signature-bound/device-bound direct execution, custom executable
 adapters, broad auth extraction expressions, undeclared/dynamic endpoint origins and unsupported request
 encodings. These are capability errors, not silently downgraded execution.
+
+## Explicit public-read classification
+
+Captured cookies or Authorization headers indicate possible authentication. A learned anonymous proposal
+with this evidence must explicitly include `anonymousCheck: {"arguments": {...}}` on each selected GET/HEAD
+read. Before staging, Blink executes those reads directly without a browser, binding, cookie jar or captured
+headers. Successful checks record operation/input/response digests, HTTP status and timestamp in candidate
+provenance. This evidence covers the checked input only; it does not verify business correctness or all inputs.
+Captured authenticated writes and unconfirmed POST reads cannot use this path. A failed/missing check stages
+nothing and does not relax account identity or write authorization.

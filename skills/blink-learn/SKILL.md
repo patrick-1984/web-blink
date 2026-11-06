@@ -190,6 +190,13 @@ Python libraries are a preparation step, not a reason to tell the user Windows i
    Full request details, values included, are in `requestsFile`; read it only for a specific question.
    An `interrupted` session: call `learn_accept_partial` with the factual reason from the result (for example
    "the tab was closed at stop; all saved requests are kept") and continue.
+   Cookies are evidence of possible authentication, including analytics/preferences cookies. For an explicitly
+   public API, select each public GET/HEAD read with `anonymousCheck: {"arguments": {...}}` and `auth: {"kind":"none"}`.
+   Blink tests that exact input without browser cookies, Authorization or broker credentials and records the
+   operation/input/response digests and HTTP status in candidate provenance. A successful check proves only
+   that selected input was publicly readable at that time. Missing/failed checks keep the proposal blocked.
+   Never use this to downgrade a captured authenticated write or POST, and never invent an identity from
+   an unrelated stable field. Authenticated APIs still require a genuine read-only account probe.
 6. Switch the Blink on in the same turn, unless the user said only to record or propose: one
    `blink_request_approval` `activate_blink` with `manifest` (the `learn_propose` result's approval data),
    `bind` (`binding` = Blink name, `service`, `account`, `mode` `C1`, identity from the suggested probe) and
