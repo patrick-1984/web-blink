@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from .installation import work_dir
 import re
 import shutil
 import socket
@@ -406,7 +407,7 @@ def ensure_tools(value, state_dir):
             probe = subprocess.run([shutil.which('node') or 'node', '-e',
                 'process.stdout.write(require(process.argv[1])[process.argv[2]].executablePath())',
                 str(state / 'browser-tools/node_modules/playwright'), value['browser']],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding='utf-8', timeout=5, env=environment)
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding='utf-8', timeout=5, env=environment, cwd=work_dir(state))
             installed = probe.returncode == 0 and len(probe.stdout) < 4096 and Path(probe.stdout).is_file()
         except (OSError, subprocess.TimeoutExpired):
             installed = False
@@ -417,7 +418,7 @@ def ensure_tools(value, state_dir):
             result = subprocess.run([shutil.which('node') or 'node', str(state / 'browser-tools/node_modules/playwright/cli.js'),
                                      'install', value['browser']], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                     stderr=subprocess.DEVNULL, timeout=240, check=False,
-                                    env=environment)
+                                    env=environment, cwd=work_dir(state))
             if result.returncode:
                 raise BlinkError('browser_download_failed', 'Blink could not download the selected browser. Check network access and retry this connection.')
             marker.write_text(json.dumps({'engine': value['browser'], 'package': MCP_VERSION}), encoding='utf-8')
@@ -600,7 +601,7 @@ def setup(state_dir):
     result = subprocess.run([*launcher, 'install', '--prefix', str(base), '--no-audit', '--no-fund', '--ignore-scripts',
                              '--save-exact', '@playwright/mcp@' + MCP_VERSION],
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            timeout=180, check=False)
+                            timeout=180, check=False, cwd=work_dir(base))
     if result.returncode:
         raise BlinkError('env_unavailable', 'Playwright MCP setup failed; check npm registry access and run blink browser setup again')
     return {'package': '@playwright/mcp@' + MCP_VERSION, 'installed': True,

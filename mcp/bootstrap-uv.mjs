@@ -9,7 +9,7 @@ import {privateDirectory} from './private-dir.mjs';
 export async function bootstrapUV(directory){
  const binary=path.join(directory,'bin',process.platform==='win32'?'uv.exe':'uv');
  if(fs.existsSync(binary)&&fs.lstatSync(binary).isFile()&&!fs.lstatSync(binary).isSymbolicLink()){
-  const check=spawnSync(binary,['--version'],{stdio:'ignore',timeout:3000,windowsHide:true});
+  const check=spawnSync(binary,['--version'],{cwd:directory,stdio:'ignore',timeout:3000,windowsHide:true});
   if(!check.error&&check.status===0)return binary;
  }
  const pinned=JSON.parse(fs.readFileSync(fileURLToPath(new URL('./uv-assets.json',import.meta.url)),'utf8'));
@@ -31,8 +31,8 @@ export async function bootstrapUV(directory){
   fs.writeFileSync(archive,bytes,{mode:0o600});fs.mkdirSync(extract,{mode:0o700});
   const result=process.platform==='win32'
    ?spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command','Expand-Archive -LiteralPath $env:BLINK_BOOTSTRAP_ARCHIVE -DestinationPath $env:BLINK_BOOTSTRAP_EXTRACT -Force'],
-      {env:{...process.env,BLINK_BOOTSTRAP_ARCHIVE:archive,BLINK_BOOTSTRAP_EXTRACT:extract},stdio:'ignore',windowsHide:true,timeout:30000})
-   :spawnSync('tar',['-xf',archive,'-C',extract],{stdio:'ignore',timeout:30000});
+      {cwd:directory,env:{...process.env,BLINK_BOOTSTRAP_ARCHIVE:archive,BLINK_BOOTSTRAP_EXTRACT:extract},stdio:'ignore',windowsHide:true,timeout:30000})
+   :spawnSync('tar',['-xf',archive,'-C',extract],{cwd:directory,stdio:'ignore',timeout:30000});
   if(result.error||result.status!==0)throw Error('unpack-failed');
   const find=folder=>{for(const item of fs.readdirSync(folder,{withFileTypes:true})){
    const file=path.join(folder,item.name);if(item.isFile()&&item.name===path.basename(binary))return file;

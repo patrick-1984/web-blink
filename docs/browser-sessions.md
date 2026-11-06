@@ -149,3 +149,40 @@ Primary references checked 2026-11-03:
 - [Microsoft: attaching to browsers and forwarded launches](https://code.visualstudio.com/docs/nodejs/browser-debugging#_attaching-to-browsers)
 - [Microsoft: live Edge connection checkbox](https://learn.microsoft.com/en-us/microsoft-edge/web-platform/devtools-mcp-server#step-1-enable-remote-debugging-in-edge)
 - [Firefox BiDi](https://firefox-source-docs.mozilla.org/remote/Security.html)
+
+## Updating on Windows / Claude Desktop
+
+For **0.12.0 (and other versions before 0.13.1)**, a detached `python.exe -m blink.daemon`
+can keep Claude Desktop's plugin folder locked even after the connector stops. The folder may
+have a random name with no version number. A newer updater cannot repair a running old process.
+
+1. Stop recording and stop the Blink connector in Claude Desktop.
+2. In Task Manager, show command lines and end **only** the `python.exe` with `blink.daemon`
+   in its command line, or restart Windows. Do not end unrelated Python or browser processes.
+   If the current CLI is available, `blink daemon stop` stops the daemon without starting one.
+   An explicit stop can interrupt a recording; stop recording first.
+3. Click **Update before using Blink again**. Starting the old plugin again recreates its lock.
+4. Restart Claude Desktop and call `blink_doctor`. Its active component and daemon must both
+   report **0.13.1 or later**. `data.updateBlocker` reports an old/stale plugin root or a possibly
+   pinned cwd, with the exact remedy. Old daemons do not expose cwd; this is reported as a risk,
+   not a measured cwd. If Windows still refuses the update, restart Windows and update first.
+
+From 0.13.1, the connector immediately changes to `BLINK_HOME/processes`. Daemons and every
+child process use private state directories; code and contracts are copied to immutable
+`BLINK_HOME/runtime/components` revisions. Plugin-local Python/venv runtimes are copied to
+`BLINK_HOME/runtime/interpreters`, including an embedded base interpreter, before child launch.
+Automatic preparation uses managed Python and its cache under `BLINK_HOME/runtime`, never a
+project venv. No SQLite database, log or runtime lock belongs in the plugin folder.
+
+The last connector's EOF/SIGTERM asks the daemon to retire while idle. Other live connectors
+and active recordings keep it alive. A one-second idle check and every dispatch/scheduled tick
+check the original folder identity, both manifests and the current-installation marker. A
+missing/replaced root, changed version, or newer registered installation blocks new work and
+scheduled jobs. An active call finishes; an active recording can still be inspected/stopped,
+then the daemon retires. All lazy Python imports continue from the copied revision, so an old
+process cannot import new plugin files during that interval. `restart_daemon` resolves the
+current installation recorded by the newest connector and uses a neutral working directory.
+The host still needs to restart its connector to load an updated MCP server.
+
+Runtime copies remain while processes may use them; this release does not garbage-collect them.
+If BLINK_HOME or a custom state directory is inside the plugin tree, move it outside before use.

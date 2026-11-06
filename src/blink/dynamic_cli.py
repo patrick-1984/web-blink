@@ -15,7 +15,7 @@ from .errors import BlinkError
 
 LEGACY = {'doctor', 'services', 'search', 'describe', 'read', 'prepare', 'execute', 'verify', 'status',
           'human', 'install', 'approve-manifest', 'approve-intent', 'sources', 'schemas', 'tools',
-          'account', 'custody', 'learn', 'jobs', 'health', 'trust', 'forget', 'purge', 'browser', 'routine'}
+          'account', 'custody', 'learn', 'jobs', 'health', 'trust', 'forget', 'purge', 'browser', 'routine', 'daemon'}
 VALUE_FLAGS = {'--output': 'output', '-o': 'output', '--region': 'region', '--language': 'language',
                '--binding': 'binding', '--config-dir': 'config_dir', '--state-dir': 'state_dir',
                '--plugin-root': 'plugin_root'}

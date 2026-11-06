@@ -7,6 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {privateDirectory} from './private-dir.mjs';
 import {bootstrapUV} from './bootstrap-uv.mjs';
+import {inside} from './process-paths.mjs';
 
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const home=path.resolve(process.env.BLINK_HOME||path.join(os.homedir(),'.web-blink'));
@@ -25,13 +26,16 @@ say('Preparing Blink on this computer. This may download Python and the required
 say('Files will be stored in: '+directory);
 say('This step does not open a browser or read browser logins.');
 try{
- const available=process.env.BLINK_TEST_BOOTSTRAP_UV==='1'?{status:1}:spawnSync('uv',['--version'],{stdio:'ignore',windowsHide:true,timeout:3000});
+ if(inside(home,root))throw new Error('unsafe-path');
+ privateDirectory(directory);
+ process.chdir(directory);
+ const available=process.env.BLINK_TEST_BOOTSTRAP_UV==='1'?{status:1}:spawnSync('uv',['--version'],{cwd:directory,stdio:'ignore',windowsHide:true,timeout:3000});
  const uv=available.error||available.status!==0?await bootstrapUV(directory):'uv';
  {
   privateDirectory(directory);
   const prepared=spawnSync(uv,['--cache-dir',cache,'run','--no-project','--with-requirements',path.join(root,'requirements.lock'),
     'python','-c','import sys,jsonschema; assert sys.version_info >= (3,11)'],
-   {cwd:root,env:{...process.env,UV_PYTHON_INSTALL_DIR:python,PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'},
+   {cwd:directory,env:{...process.env,UV_PYTHON_INSTALL_DIR:python,UV_PYTHON_PREFERENCE:'only-managed',VIRTUAL_ENV:'',PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'},
     stdio:'ignore',windowsHide:true,timeout:240000});
   if(prepared.error||prepared.status!==0){
    result('env_unavailable','Blink setup could not finish. If Codex or Windows blocked access, approve this one setup action and retry; otherwise check network access.',

@@ -78,19 +78,56 @@ def consume_permit(runtime, method, params, permit_id):
             return False
         permit['state'] = 'consumed'
         runtime.store.put('human_permit', permit_id, permit, connection=db)
+        # Authority expires after 60 seconds; dispatch evidence must survive its cleanup.
+        db.execute('INSERT INTO audit(at,event,reference,status) VALUES(?,?,?,?)',
+                   (now, 'control_permit', method + ':' + permit_id, 'consumed'))
     return True
+
+
+def check_installation(server):
+    """Called under call_lock, including before dispatch and before each scheduled tick."""
+    stale = server.installation.stale()
+    if stale and not getattr(getattr(server.extensions, 'learner', None), 'running', None) and not server.retiring.is_set():
+        server.retiring.set()
+        threading.Thread(target=server.stop_all, daemon=True).start()
+    return stale
+
+
+def idle_tick(server):
+    with server.call_lock:
+        stale = check_installation(server)
+        connectors = getattr(server, 'connectors', {})
+        if connectors and not getattr(getattr(server.extensions, 'learner', None), 'running', None):
+            from .browser_process import _alive
+            if not any(_alive(pid) for pid in connectors.values()) and not server.retiring.is_set():
+                server.retiring.set()
+                threading.Thread(target=server.stop_all, daemon=True).start()
+        if not stale and not server.retiring.is_set() and server.extensions:
+            server.extensions.tick()
 
 
 class Handler(socketserver.StreamRequestHandler):
     control = False
 
     def dispatch(self, raw):
+        check = getattr(self.server, 'check_installation', None)
+        stale = check() if check else False
         if self.server.retiring.is_set():
             return error('daemon_retiring', 'This daemon is shutting down for a newer version; call again')
+        request = strict_json(raw)
+        if stale and request.get('method') not in ('doctor', 'learn_stop', 'shutdown_daemon', 'retire') and not (
+                request.get('method') == 'admin' and request.get('params', {}).get('action') in ('status', 'recording', 'sessions')):
+            return error('daemon_stale', 'Plugin changed; stop recording so the old daemon can retire')
         if not self.control:
-            request = strict_json(raw)
             if isinstance(request, dict) and request.get('method') == 'retire':
                 return self.retire(request.get('params'))
+            if isinstance(request, dict) and request.get('method') == 'connector':
+                params = request.get('params', {})
+                if (set(params) != {'id', 'pid'} or not isinstance(params['id'], str)
+                        or not re.fullmatch('[a-f0-9]{32}', params['id']) or type(params['pid']) is not int or params['pid'] <= 0):
+                    return error('invalid_request', 'Invalid connector identity')
+                self.server.connectors[params['id']] = params['pid']
+                return error('ok', 'Connector registered')
         if self.control:
             method, params, permit = parse_control_request(raw)
             # Control socket only: the permit grants authority; `human=True` below is the internal compatibility
@@ -122,7 +159,19 @@ class Handler(socketserver.StreamRequestHandler):
         wanted = _version(params.get('ifOlderThan')) if isinstance(params, dict) else None
         current = _version(self.server.identity['version'])
         learner = getattr(self.server.extensions, 'learner', None)
-        if wanted is None or current is None or current >= wanted:
+        idle = isinstance(params, dict) and params.get('ifIdle') is True
+        if idle:
+            if params.get('pluginRoot') != self.server.identity.get('pluginRoot'):
+                return error('different_installation', 'A different installation owns this daemon')
+            from .browser_process import _alive
+            connectors = getattr(self.server, 'connectors', {})
+            if params.get('connector') in connectors:
+                # Keep a tombstone so the idle tick can retire after a recording ends,
+                # even when the last connector disconnected while it was recording.
+                connectors[params['connector']] = 0
+            if any(_alive(pid) for pid in connectors.values()):
+                return error('in_use', 'Another connector still uses this daemon')
+        elif wanted is None or current is None or current >= wanted:
             return error('not_older', 'This daemon is not older than the requested version')
         if getattr(learner, 'running', None):
             return error('recording', 'A recording is in progress; the daemon keeps running')
@@ -189,8 +238,18 @@ def _remove_stale_socket(path):
 
 def serve(state_dir=None, plugin_root=None):
     from .filelock import acquire
-    from .runtime import Runtime
+    from pathlib import Path
+    from .paths import plugin_root as locate_root
+    installed_root = locate_root(plugin_root)
     state = secure_state_directory(state_dir)
+    from .home import home_dir
+    for directory in (state, home_dir(), os.environ.get('BLINK_CONFIG_DIR')):
+        if directory and Path(directory).resolve().is_relative_to(installed_root):
+            raise ValueError('Blink data must be outside the plugin tree')
+    # Schema helpers also consult this environment variable during lazy imports. Keep
+    # it on the copied contracts; installed_root alone is watched for update detection.
+    os.environ['BLINK_PLUGIN_ROOT'] = str(Path(__file__).parent / 'data/plugin')
+    from .runtime import Runtime
     lock_path = state / 'runtime.lock'
     socket_path, control_path = state / 'runtime.sock', state / 'control.sock'
     flags = os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0)
@@ -209,7 +268,8 @@ def serve(state_dir=None, plugin_root=None):
         if os.name != 'nt':
             for path in (socket_path, control_path):
                 _remove_stale_socket(path)
-        runtime = Runtime(state_dir=state, plugin_root=plugin_root)
+        # Executable modules and all contracts stay on one copied revision while the host replaces its plugin.
+        runtime = Runtime(state_dir=state, plugin_root=Path(__file__).parent / 'data/plugin')
         if hasattr(runtime, 'recover_startup'):
             runtime.recover_startup()
         try:
@@ -238,29 +298,31 @@ def serve(state_dir=None, plugin_root=None):
             server.shutdown()
         from . import __version__
         from .paths import plugin_root as locate_root
-        identity = {'version': __version__, 'pluginRoot': str(locate_root(plugin_root)), 'pid': os.getpid(),
-                    'startedAt': time.time()}
+        from .installation import Installation
+        installation = Installation(installed_root, __version__)
+        identity = {'version': __version__, 'pluginRoot': str(installed_root), 'pid': os.getpid(),
+                    'startedAt': time.time(), 'cwd': os.getcwd(), 'executable': sys.executable,
+                    'codeRoot': str(Path(__file__).parent)}
         shared_lock = threading.RLock()
+        connectors = {}
         for instance, path in ((server, socket_path), (control_server, control_path)):
             if os.name != 'nt':
                 os.chmod(path, 0o600)
             instance.runtime, instance.extensions, instance.call_lock = runtime, extensions, shared_lock
             instance.identity = identity
             instance.retiring, instance.stop_all = retiring, stop_all
+            instance.installation, instance.connectors = installation, connectors
+            instance.check_installation = lambda: check_installation(server)
         control_worker = threading.Thread(target=lambda: control_server.serve_forever(poll_interval=.2), daemon=True)
         control_worker.start()
-        if extensions:
-            def tick_loop():
-                while not stopping.wait(1):
-                    try:
-                        with shared_lock:
-                            if retiring.is_set():
-                                continue  # checked under the lock: no scheduled work starts once retiring
-                            extensions.tick()
-                    except Exception:
-                        pass  # Extension notifications record their own safe failures.
-            worker = threading.Thread(target=tick_loop, daemon=True)
-            worker.start()
+        def tick_loop():
+            while not stopping.wait(1):
+                try:
+                    idle_tick(server)
+                except Exception:
+                    pass  # Extension notifications record their own safe failures.
+        worker = threading.Thread(target=tick_loop, daemon=True)
+        worker.start()
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, lambda *_: threading.Thread(target=server.shutdown, daemon=True).start())
         server.serve_forever(poll_interval=.2)
@@ -290,7 +352,34 @@ def main(argv=None):
     parser.add_argument('--plugin-root')
     args = parser.parse_args(argv)
     try:
-        return serve(args.state_dir, args.plugin_root)
+        from pathlib import Path
+        from .installation import external_python, snapshot, work_dir
+        from .paths import plugin_root as locate_root
+        root = locate_root(args.plugin_root)
+        state = secure_state_directory(args.state_dir)
+        if state.resolve().is_relative_to(root):
+            raise ValueError('state must be outside the plugin tree')
+        code = snapshot()
+        python = external_python(root)
+        os.chdir(work_dir(state))
+        if Path(sys.executable).absolute() != Path(python):
+            environment = dict(os.environ, PYTHONPATH=str(code), PYTHONDONTWRITEBYTECODE='1')
+            environment.pop('PYTHONHOME', None)
+            os.execve(python, [python, '-m', 'blink.daemon', '--state-dir', str(state), '--plugin-root', str(root)], environment)
+        if Path(__file__).resolve().parent.parent != code:
+            # Keep the process handle/PID on Windows when Python is already external. No
+            # runtime/native dependencies have loaded yet; switch all Blink imports together.
+            import importlib
+            import blink
+            sys.path.insert(0, str(code))
+            blink.__path__ = [str(code / 'blink')]
+            for name in list(sys.modules):
+                if name.startswith('blink.'):
+                    del sys.modules[name]
+            importlib.reload(blink)
+            from blink.daemon import serve as copied_serve
+            return copied_serve(state, root)
+        return serve(state, root)
     except Exception:
         print('Blink daemon could not start. Check private state permissions and runtime dependencies.', file=sys.stderr)
         return 1

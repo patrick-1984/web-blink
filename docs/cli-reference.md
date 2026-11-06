@@ -224,3 +224,7 @@ writes command metadata and setting-source names to stderr, excluding request bo
 and headers. Help and doctor remain available even when the settings file is malformed.
 Dry-run and terminal confirmation previews redact sensitive field names and values, including known
 copies of those values elsewhere in the preview. The exact action digest still binds the original payload.
+
+`blink daemon stop` stops the running daemon without starting one, including a 0.12.0 daemon.
+Stop recording first. This command is useful before a Windows / Claude Desktop plugin update;
+see [Updating on Windows / Claude Desktop](release-updates.md#updating-on-windows--claude-desktop).

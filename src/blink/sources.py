@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .distribution import Distribution, digest, joined_path, relative_json_path, strict_json
 from .errors import BlinkError
+from .installation import work_dir
 from .signatures import public_key_fingerprint, signature_capability, verify_catalog_signature
 
 
@@ -100,13 +101,13 @@ class GitSnapshotReader:
         command += arguments
         try:
             if not fetch:
-                completed = subprocess.run(command, env=env, stdin=subprocess.DEVNULL,
+                completed = subprocess.run(command, cwd=work_dir(), env=env, stdin=subprocess.DEVNULL,
                                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                            timeout=self.limits.seconds, check=True)
                 if len(completed.stdout) > self.limits.file_bytes:
                     raise _error("source_limit", "Git response exceeds the byte limit")
                 return completed.stdout
-            process = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
+            process = subprocess.Popen(command, cwd=work_dir(), env=env, stdin=subprocess.DEVNULL,
                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             deadline = time.monotonic() + self.limits.seconds
             try:
