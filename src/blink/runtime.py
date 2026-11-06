@@ -63,6 +63,8 @@ class Runtime:
 
     def recover_startup(self):
         """Run only after daemon singleton lock; CLI construction never recovers live work."""
+        from .headless import reap
+        reap(self.store.path)
         with self.store.transaction() as db:
             rows=db.execute("SELECT id FROM intents WHERE state='dispatching'").fetchall()
             for row in rows:

@@ -1,4 +1,5 @@
 """Bounded declarative result checks. Only reviewed reads can produce verification evidence."""
+import copy
 import json
 import math
 import time
@@ -40,18 +41,62 @@ def _bounded(value):
     return value if len(json.dumps(value, ensure_ascii=False).encode()) <= 4096 else {'digest': digest(value), 'truncated': True}
 
 
+def binding_identity(binding):
+    if binding is None:
+        return None
+    return {k: binding.get(k) for k in ('service', 'account', 'tenant', 'ownerEpoch')} | {
+        'executionMode': 'in_page' if binding['mode'] in ('C1', 'C2') else 'direct'}
+
+
+def proof_identity(runtime, proof):
+    binding = runtime.store.get('binding', proof['binding']) if proof.get('binding') else None
+    if proof.get('binding') and (not binding or binding.get('state') == 'revoked' or 'bindingIdentity' not in proof):
+        raise BlinkError('account_mismatch', 'Verify again with the original account identity')
+    if proof.get('bindingIdentity') != binding_identity(binding):
+        raise BlinkError('account_mismatch', 'Verification belongs to a different account identity or execution mode')
+    return binding
+
+
+def preflight(runtime, p):
+    """Validate the entire read recipe before any business mutation can escape."""
+    issue = schema_issue(SCHEMA, p)
+    if issue:
+        return issue
+    if not math.isfinite(p.get('intervalSeconds', 0)) or len(json.dumps(p, allow_nan=False).encode()) > 32_000:
+        raise BlinkError('invalid_arguments', 'Verification inputs must be finite and bounded', stage='validation')
+    for condition in p['expected']:
+        _path(condition['path'])
+    for key in ('path', 'argumentPath', 'responsePath'):
+        if key in p.get('correlation', {}):
+            _path(p['correlation'][key])
+    record = runtime.active_manifest(p['service'])
+    operation = record['compiled']['operations'].get(p['operation'])
+    if not operation or operation['effect'] != 'read':
+        raise BlinkError('effect_denied', 'Verification requires a reviewed read operation')
+    args = runtime._with_variables(record, operation, p.get('arguments', {}))
+    issue = schema_issue(operation['inputSchema'], args, 'verification.arguments')
+    if issue:
+        return issue
+    if p.get('correlation'):
+        from .execution import set_pointer
+        path = p['correlation']['argumentPath']
+        try:
+            if not path:
+                raise ValueError('Arguments must remain an object')
+            set_pointer(copy.deepcopy(args), path, pointer(args, path))
+        except (KeyError, IndexError, TypeError, ValueError):
+            raise BlinkError('invalid_arguments', 'Correlation destination requires an existing parent container',
+                             field_path='verification.correlation.argumentPath') from None
+    runtime._validate_argument_values({'expected': p['expected'], 'arguments': args})
+    return None
+
+
 def verify(runtime, p):
     from .runtime import envelope, redact
-    issue = schema_issue(SCHEMA, p)
+    issue = preflight(runtime, p)
     if issue: return issue
     delay = p.get('intervalSeconds', 0)
-    if not math.isfinite(delay) or len(json.dumps(p, allow_nan=False).encode()) > 32_000:
-        raise BlinkError('invalid_arguments', 'Verification inputs must be finite and bounded', stage='validation')
-    for condition in p['expected']: _path(condition['path'])
-    runtime._validate_argument_values({'expected': p['expected']})
     record, operation = runtime._operation(p)
-    if operation['effect'] != 'read':
-        raise BlinkError('effect_denied', 'Verification permits reviewed reads only; never a mutation')
     args = runtime._with_variables(record, operation, p.get('arguments', {}))
     binding = p.get('binding')
     correlation = p.get('correlation')
@@ -87,6 +132,8 @@ def verify(runtime, p):
             raise BlinkError('invalid_arguments', 'Read-back arguments do not correlate with the original intent', field_path='correlation.argumentPath')
     elif correlation:
         raise BlinkError('invalid_arguments', 'Correlation requires the original intentId', field_path='intentId')
+    verified_binding = runtime.store.get('binding', binding) if binding else None
+    identity = binding_identity(verified_binding)
     result = {'id': uuid.uuid4().hex, 'service': record['service'], 'operation': operation['operationId'],
               'intentId': p.get('intentId'), 'intentState': intent_state, 'binding': binding,
               'state': 'pending', 'verification': 'unverified',
@@ -125,5 +172,15 @@ def verify(runtime, p):
             if attempt + 1 < p.get('maxAttempts', 1) and delay:
                 time.sleep(delay)  # At most two waits of two seconds, reads only.
     result = redact(result, list(runtime.broker.known_secrets()))
+    current_binding = runtime.store.get('binding', binding) if binding else None
+    if identity != binding_identity(current_binding):
+        raise BlinkError('account_mismatch', 'Account identity changed during verification')
     runtime.store.put('verification', result['id'], result)
+    if result['verification'] == 'verified':
+        # Private replay evidence: routines may only be built from calls that actually passed read-back.
+        # Keep the exact inputs separately from the bounded public verification record.
+        request = {k: p[k] for k in ('operation', 'expected', 'correlation', 'maxAttempts', 'intervalSeconds') if k in p}
+        request['arguments'] = args
+        runtime.store.put('verified_call', result['id'], {'service': record['service'], 'manifestDigest': record['digest'],
+            'binding': binding, 'bindingIdentity': identity, 'verification': request, 'intentId': p.get('intentId')})
     return envelope('ok', 'Result checked against explicit expectations; no mutation dispatched', result)

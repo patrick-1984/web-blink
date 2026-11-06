@@ -48,10 +48,11 @@ class ClaudeProtocolTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in messages], [1, 2, 3])
         self.assertEqual(messages[0]['result']['protocolVersion'], '2025-11-25')
         tools = messages[1]['result']['tools']
-        self.assertEqual(len(tools), 14)
+        self.assertEqual(len(tools), 16)
         self.assertEqual({t['name'] for t in tools}, {'blink_services', 'blink_search', 'blink_describe',
             'blink_call_read', 'blink_prepare', 'blink_execute', 'blink_admin', 'blink_doctor', 'blink_request_approval',
-            'blink_connect_browser', 'blink_restore_browser', 'blink_start_recording', 'blink_browser_status', 'blink_verify'})
+            'blink_connect_browser', 'blink_restore_browser', 'blink_start_recording', 'blink_browser_status', 'blink_verify',
+            'blink_execution_run', 'blink_routine_run'})
         report = json.loads(messages[2]['result']['content'][0]['text'])
         self.assertTrue(report['data']['capabilities']['diagnostics'])
         self.assertFalse(report['data']['capabilities']['runtime'])

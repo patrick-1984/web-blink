@@ -170,6 +170,17 @@ def build_parser():
     selection.add_argument('--yes', action='store_true')
     setup_browser = actions.add_parser('setup', help='Install the pinned Playwright MCP; does not launch any browser')
     setup_browser.add_argument('--yes', action='store_true')
+    routine = sub.add_parser('routine', help='Save, look up and execute private verified routines')
+    actions = routine.add_subparsers(dest='routine_action', required=True)
+    for action in ('save', 'lookup', 'list', 'show', 'run', 'step'):
+        item = actions.add_parser(action)
+        item.add_argument('name', nargs='?')
+        item.add_argument('--service')
+        item.add_argument('--input', default=None)
+        item.add_argument('--confirmed', action='store_true', help='Answer the known-routine question affirmatively')
+        item.add_argument('--plan-digest')
+        item.add_argument('--run-id')
+        item.add_argument('--yes', action='store_true', help='Host action permission; does not answer the routine question')
     for name in PUBLIC:
         p = sub.add_parser(name)
         p.add_argument('--input', '--cli-input-json', dest='input', help='JSON object, file://path, plain file path, or - for stdin')
@@ -239,6 +250,8 @@ def build_parser():
 
 
 def run(args):
+    if args.command == 'routine':
+        return run_routine(args)
     if args.command == 'browser':
         from .browsers import discover, connection_plan, connection_status, setup
         from .config import ConfigStore
@@ -363,6 +376,66 @@ def run(args):
         if action == 'install':
             return manager.install(args.id, args.integration, args.version)
     raise ValueError('unsupported command')
+
+
+def run_routine(args):
+    from .client import request
+    params = command_input(args)
+    if args.service:
+        params['service'] = args.service
+    if args.name:
+        params['name'] = args.name
+    if 'service' not in params:
+        # "blink routine run <name>" needs no service flag when the local name is unambiguous.
+        from .routines import resolve_service
+        params['service'] = resolve_service(params.get('name'))
+    action = args.routine_action
+    if action in ('list', 'show', 'lookup'):
+        action = {'list': 'routines', 'show': 'routine', 'lookup': 'routine_lookup'}[action]
+        return request('admin', {**params, 'action': action}, state_dir=args.state_dir, plugin_root=args.plugin_root)
+    if action in ('save', 'step'):
+        method = 'routine_' + action
+        confirm(method, params, args.yes, mode=selected_approval_mode(args))
+        return native_dispatch(args, method, params)
+    plan = request('admin', {**params, 'action': 'routine_plan'}, state_dir=args.state_dir, plugin_root=args.plugin_root)
+    if plan['status'] != 'confirmation_required':
+        return plan
+    confirmed = args.confirmed or params.get('confirmed') is True
+    if not confirmed and sys.stdin.isatty():
+        if plan['data'].get('previewBeforeCommit'):
+            print(json.dumps(plan['data']['preview'], indent=2), file=sys.stderr)
+        confirmed = input(plan['data']['question'] + ' [yes/no] ') == 'yes'
+    if not confirmed:
+        return plan
+    params.update(confirmed=True, planDigest=args.plan_digest or params.get('planDigest') or plan['data']['planDigest'])
+    if args.run_id:
+        params['runId'] = args.run_id
+    confirm('routine_begin', params, args.yes, mode=selected_approval_mode(args))
+    started = native_dispatch(args, 'routine_begin', params)
+    if started['status'] != 'ok':
+        return started
+    import subprocess
+    from .storage import digest, private_file
+    run = started['data']
+    script = Path(run['routine']['script'])
+    from .contexts import directory
+    from .routines import script_source
+    source = script_source(run['service'], run['name'], len(run['routine']['steps']), run['routine']['delayMs'])
+    expected = directory('scripts', run['service']) / (run['name'] + '-' + digest(source)[:12] + '.py')
+    if script != expected or digest(private_file(script).read_text(encoding='utf-8')) != run['routine']['scriptDigest']:
+        raise ValueError('Generated routine script changed; save the routine again')
+    # Child CLI calls inherit the invoking client's state/config selection and always emit JSON.
+    environment = dict(os.environ, BLINK_STATE_DIR=str(args.state_dir or os.environ.get('BLINK_STATE_DIR', '')),
+                       BLINK_PLUGIN_ROOT=str(args.plugin_root), BLINK_OUTPUT='json',
+                       PYTHONPATH=os.pathsep.join(str(path) for path in sys.path))
+    if getattr(args, '_config_directory', None):
+        environment['BLINK_CONFIG_DIR'] = str(args._config_directory)
+    response = subprocess.run([sys.executable, str(script), run['id']], env=environment, capture_output=True, text=True)
+    try:
+        return parse_json(response.stdout)
+    except ValueError:
+        return {'status': 'outcome_unknown', 'summary': 'Routine script reply unavailable; inspect its journal before resuming',
+                'data': {'runId': run['id']}, 'warnings': []}
 
 
 def main(argv=None):
