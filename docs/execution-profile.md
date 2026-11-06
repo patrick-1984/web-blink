@@ -107,6 +107,21 @@ A service-supported `x-blink-idempotency.mechanism: "header:Idempotency-Key"` pe
 retries an uncertain mutation through a new intent or execution mode. Reusing a stable `intentId` at
 prepare returns its existing plan only if service, operation, account, semantic digest and arguments match.
 
+Learning recognizes the case-insensitive request header names `Idempotency-Key` and `X-Idempotency-Key`
+on captured writes, including HAR imports. It emits `x-blink-idempotency` with `mechanism` equal to
+`header:Idempotency-Key` or `header:X-Idempotency-Key`. Only the name is retained in the proposal; the
+captured value is never an argument, default, variable or credential. At preparation the runtime generates
+one random key and persists it in the intent journal before dispatch. Repeated preparation with the same
+intent ID, execution, restart and explicit unknown-outcome retry all use that stored key. A new intent gets
+a new key. Header evidence does not authorize dispatch or imply that a mutation's result has been verified.
+Conflicting recognized header names for one captured endpoint block the proposal instead of choosing one.
+No header evidence means no inferred retry support; reads do not acquire a generated write key.
+
+Existing reviewed manifests are immutable: upgrading the plugin does not add a header to an active Blink
+or change an outstanding intent's contract. Re-propose from a capture that includes the write header and
+review/activate the replacement (`replace: true` when relearning an existing operation). Reconcile old
+unknown intents under their original contract; never use a new manifest or intent to bypass them.
+
 ## Credentials and identities
 
 The profile supports anonymous, API-key header, bearer-storage, OAuth-refresh and named-cookie recipes.

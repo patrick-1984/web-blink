@@ -100,3 +100,14 @@ A missing HTTP status means none is known. Keep the original intent for uncertai
 its journal and perform correlated read-back/reconciliation. Never repeat the mutation to diagnose it.
 For uncertain recording starts, follow the returned `blink_browser_status` continuation with its exact
 binding/browser. Keep credentials, response bodies and tracebacks out of problem reports.
+
+`plugin_changed` after an update is an expected old-connector guard, including for diagnostics. Restart
+the connector in the current host app (Claude or Codex), then verify the component/daemon with
+`blink_doctor`. Do not retry writes to diagnose it. If prepare returned no intent, it dispatched no write.
+For HTTP 400 `idempotency_key_required`, inspect the operation's idempotency contract. A pre-0.13.2
+learned Blink may lack it: re-propose from capture evidence containing `Idempotency-Key` or
+`X-Idempotency-Key`, review and activate a replacement. Never paste the captured key into arguments,
+reuse one key for different intents, or bypass outstanding unknown intents with a new proposal.
+Long application jobs should return promptly and be polled through bounded reads; do not hold a shared
+browser evaluation open for more than its call deadline. Blink's HTTP/browser fetches already have
+bounded transport timeouts. Retain the original intent if a browser tool times out with an unknown write.

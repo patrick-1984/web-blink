@@ -321,6 +321,29 @@ class UpdateTests(unittest.TestCase):
 class McpShutdownTests(unittest.TestCase):
     setUp = UpdateTests.setUp
     stop = UpdateTests.stop
+
+    def test_replaced_plugin_blocks_old_connector_with_host_neutral_restart_guidance(self):
+        proc = subprocess.Popen(['node', str(ROOT / 'mcp/server.mjs')], cwd=self.base,
+            env=dict(os.environ), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8')
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        init = {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {
+            'protocolVersion': '2025-11-25', 'capabilities': {}, 'clientInfo': {'name': 'test', 'version': '1'}}}
+        proc.stdin.write(json.dumps(init) + '\n'); proc.stdin.flush()
+        self.assertIn('result', json.loads(proc.stdout.readline()))
+        self.manifest.write_text(json.dumps({'version': '999.0.0'}), encoding='utf-8')
+        for name in ('blink_doctor', 'blink_prepare'):
+            call = {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': name, 'arguments': {}}}
+            proc.stdin.write(json.dumps(call) + '\n'); proc.stdin.flush()
+            response = json.loads(proc.stdout.readline())['result']
+            result = json.loads(response['content'][0]['text'])
+            self.assertTrue(response['isError'])
+            self.assertEqual(result['status'], 'plugin_changed')
+            self.assertIn('host app', result['summary'])
+            self.assertNotIn('Claude Desktop', result['summary'])
+        proc.stdin.close(); proc.wait(timeout=10)
+        proc.stdout.close(); proc.stderr.close()
+
     def test_eof_and_sigterm_retire_the_idle_daemon(self):
         for shutdown in ('eof', 'terminate', 'kill'):
             env = dict(os.environ, BLINK_PLUGIN_ROOT=str(ROOT), BLINK_PYTHON=sys.executable)

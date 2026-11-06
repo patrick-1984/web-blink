@@ -15,6 +15,12 @@ Use reviewed read-back to verify the actual created/changed object and call `exe
 exact capture request, operation/arguments, account and correlation. Its verified record can become a routine
 step without another mutation. A gap or uncertain outcome stays unverified and requires reconciliation.
 
+Captured writes with `Idempotency-Key` or `X-Idempotency-Key` automatically propose a generated header
+contract. Keep that contract; never copy the captured key into an argument, default, private variable or
+secret. No observed header means no inferred retry support. For an existing operation learned without
+the header, use header-bearing capture evidence and an explicitly reviewed replacement (`replace: true`);
+do not silently edit its active manifest or any pending intent. Preserve the other operations when replacing.
+
 After successful verification, create a local routine with `routine_save`: service/name, phrase, aliases,
 `previewBeforeCommit` (the user's preference), ordered `verificationIds`, optional context and `delayMs`
 (default 100; 50–500 ms). The runtime derives steps from actual evidence and generates a private script that

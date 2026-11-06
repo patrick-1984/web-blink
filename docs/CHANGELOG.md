@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.2 — 2026-11-06
+
+- Learn observed `Idempotency-Key` and `X-Idempotency-Key` write headers from live recordings and HAR
+  imports as generated per-intent values. Never copy the recorded key into a manifest, argument or secret.
+- Preserve the existing journaled key through lost responses, runtime restarts and explicit same-intent
+  retries in direct and browser execution. Keep approval, identity, grant and unknown-outcome guards.
+- Reject conflicting observed idempotency header names instead of guessing; leave reads and writes
+  without header evidence unchanged. Existing Blinks need a reviewed replacement proposal to learn it.
+- Clarify that `plugin_changed` requires restarting the connector in its host app, including Codex;
+  the update guard still blocks all old-connector tool calls, including diagnostics.
+- Tolerate Git removing temporary pack/lock files during snapshot size scans. Preserve fetch time/storage
+  limits, the final scan after Git exits, and errors other than a disappearing file.
+
 ## 0.13.1 — 2026-11-06
 
 - Release Windows plugin folders before Claude Desktop updates: neutral working directories for all
