@@ -9,7 +9,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import uuid
 
 from blink.distribution import Distribution, digest, export_schemas, refresh_schema_index, schema_index, strict_json
@@ -20,6 +20,39 @@ from blink.storage import Store
 from blink.runtime import Runtime
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class GitFetchScanTests(unittest.TestCase):
+    def fetch(self, paths, *, limit=100, polls=(None, 0, 0)):
+        reader = GitSnapshotReader('https://git.example/repo.git', 'main', limits=Limits(repository_bytes=limit))
+        reader.directory = SimpleNamespace(rglob=lambda _: paths)
+        process = Mock(returncode=0)
+        process.poll.side_effect = polls
+        with patch('blink.sources.subprocess.Popen', return_value=process), patch('blink.sources.work_dir', return_value=ROOT):
+            return reader._run(['fetch'], fetch=True)
+
+    def file(self, *, size=3, error=None):
+        file = Mock()
+        file.is_file.return_value = True
+        if error:
+            file.stat.side_effect = error
+        else:
+            file.stat.return_value = SimpleNamespace(st_size=size, st_mode=0o100644)
+        return file
+
+    def test_git_removing_a_temporary_file_during_size_scan_is_tolerated(self):
+        self.assertEqual(self.fetch([self.file(error=FileNotFoundError()), self.file()]), b'')
+
+    def test_size_scan_still_enforces_the_storage_limit_during_and_after_fetch(self):
+        for polls in ((None, 0), (0, 0)):
+            with self.subTest(polls=polls), self.assertRaises(BlinkError) as raised:
+                self.fetch([self.file(size=101)], polls=polls)
+            self.assertEqual(raised.exception.code, 'source_limit')
+
+    def test_size_scan_does_not_swallow_permission_errors(self):
+        with self.assertRaises(BlinkError) as raised:
+            self.fetch([self.file(error=PermissionError())])
+        self.assertEqual(raised.exception.code, 'source_fetch')
 
 
 class FixtureRuntime:
