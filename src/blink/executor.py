@@ -19,11 +19,8 @@ class HTTPExecutor:
         self.allow_http=allow_http;self.browser=browser
 
     def build(self,operation,arguments,headers=None,idempotency_key=None):
-        from .control import schema_issue
-        issue=schema_issue(operation['inputSchema'],arguments,'arguments')
-        if issue:
-            raise BlinkError('invalid_arguments','Arguments do not match the reviewed operation schema',
-                             stage='validation',field_path=issue['data']['error']['fieldPath'])
+        try:Draft202012Validator(operation['inputSchema']).validate(arguments)
+        except Exception:raise BlinkError('invalid_arguments','Arguments do not match the reviewed operation schema') from None
         path=operation['path'];query=[];out={'Accept':'application/json',**(headers or {})}
         for parameter in operation['parameters']:
             name=parameter['name']
@@ -95,8 +92,7 @@ class HTTPExecutor:
                     raw=response.read(MAX_RESPONSE+1);response_headers=dict(response.headers)
                     cookies=response.headers.get_all('Set-Cookie',[])
             except BlinkError:raise
-            except Exception:raise BlinkError('transport_error','Service request did not produce a complete response',
-                                             stage='transport',dispatched=None) from None
+            except Exception:raise BlinkError('transport_error','Service request did not produce a complete response') from None
         validation_error=None
         if 300<=status<400:validation_error='redirect_refused'
         if len(raw)>MAX_RESPONSE:validation_error='response_too_large'

@@ -169,13 +169,16 @@ def rewrite_paths(old, new):
 
 def _held(state):
     """Hold the old daemon lock while moving: a running daemon defers the move, a starting one steps aside."""
-    from .filelock import acquire
+    try:
+        import fcntl
+    except ImportError:  # no POSIX daemon can run here
+        return None
     try:
         fd = os.open(state / 'runtime.lock', os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0))
     except FileNotFoundError:
         return None
     try:
-        acquire(fd)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         os.close(fd)
         return False
@@ -191,13 +194,7 @@ def migrate(kinds=('state', 'config')):
         return {'status': 'none'}
     _private(home)
     with open(home / '.migrate.lock', 'a') as guard:
-        if os.name == 'nt':
-            import msvcrt
-            if os.fstat(guard.fileno()).st_size == 0:
-                guard.write('0'); guard.flush()
-            guard.seek(0)
-            msvcrt.locking(guard.fileno(), msvcrt.LK_LOCK, 1)
-        else:
+        with contextlib.suppress(ImportError):
             import fcntl
             fcntl.flock(guard.fileno(), fcntl.LOCK_EX)
         jobs = _jobs(home, kinds)

@@ -27,7 +27,7 @@ DYNAMIC_SEGMENT = re.compile(r'^(\d+|[0-9a-fA-F-]{8,}|[A-Za-z0-9_-]{24,}|[^/@]+@
 
 
 def _private_write(path, text, mode='w'):
-    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == 'a' else os.O_TRUNC), 0o600), mode, encoding='utf-8') as handle:
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == 'a' else os.O_TRUNC), 0o600), mode) as handle:
         handle.write(text)
 
 
@@ -374,7 +374,7 @@ class Learner:
             records.append(item)
         return self._save(records, 'har', missing)
 
-    def start(self, binding, url, origins=None, *, browser=None):
+    def start(self, binding, url, origins=None):
         # Only the URL is needed: the name follows the host reached after redirects, the origins default to it.
         auto_name = not binding
         if origins is None:
@@ -386,31 +386,14 @@ class Learner:
             raise ValueError('Shared Playwright browser is not configured')
         if not isinstance(binding, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', binding):
             raise ValueError('Invalid capture binding')
+        if binding in self.running:
+            raise ValueError('Capture already running')
         parsed = urlsplit(url)
         source = canonical_origin(f'{parsed.scheme}://{parsed.netloc}', allow_http=True)
         if source not in origins:
             raise ValueError('Application origin is outside capture scope')
-        from .browsers import default_selection, resolve_selection
-        selection = resolve_selection(browser if browser is not None else
-                                      default_selection() if hasattr(self.browser, 'select') else {'mode': 'shared'})
-        if auto_name:
-            import hashlib
-            routes = getattr(self.browser, 'routes', {})
-            key = json.dumps(selection, sort_keys=True)
-            if routes.get(binding) and routes[binding] != key:
-                # Keep the previous profile's work tab; switching accounts must not close/reuse it.
-                binding = binding[:78] + '-' + hashlib.sha256(key.encode()).hexdigest()[:20]
-        if binding in self.running:
-            raise ValueError('Capture already running')
-        select = getattr(self.browser, 'select', None)
-        if callable(select):
-            select(binding, selection)
-        elif selection['mode'] != 'shared':
-            from .errors import BlinkError
-            raise BlinkError('unsupported', 'This configured browser provider cannot select a local profile')
         # The session folder comes first; if the browser part fails, the folder is marked failed and nothing runs.
         run = self._open_session(binding, url, origins, 'starting')
-        run['meta']['browser'] = selection
         try:
             try:  # record from the very first request: blank tab, recorder, then navigation
                 self.browser.open(binding, url, navigate=False)
@@ -446,7 +429,6 @@ class Learner:
         self._ensure_collector()
         _private_write(run['folder'] / 'meta.json', json.dumps(run['meta'], indent=2))
         result = {'binding': binding, 'blink': binding, 'recording': True, 'screenshots': state, 'session': run['session'],
-                  'browser': selection,
                   'folder': str(run['folder']), 'origins': run['origins'], 'reachedUrl': run['meta'].get('reachedUrl'),
                   'capabilities': run['meta'].get('capabilities'), 'coverageGaps': COVERAGE_GAPS}
         if state != 'enabled':
@@ -814,7 +796,6 @@ class Learner:
                     continue
         shots += list(legacy_shots)
         extra = {'otherHosts': sorted({r['origin'] for r in records if not r['inScope']}),
-                 'browser': run['meta'].get('browser', {'mode': 'shared'}),
                  'staticAssets': self._assets(counters.get('assets')), 'screenshots': shots,
                  'assetsTruncated': bool(counters.get('assetsTruncated')), 'folder': str(run['folder']),
                  'screenshotErrors': sum(counters[k] for k in ('shotErrors', 'shotsDropped', 'shotsAbandoned')
@@ -1266,7 +1247,6 @@ class Learner:
         if not isinstance(auth, dict) or not isinstance(auth.get('kind'), str):
             raise ValueError('Explicit authentication recipe required, including kind:none for anonymous services')
         paths, origins, operation_ids, endpoints = {}, set(), set(), set()
-        anonymous_checks = {}
         for selection in operations:
             if not isinstance(selection, dict):
                 raise ValueError('Invalid operation selection')
@@ -1274,6 +1254,8 @@ class Learner:
             if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(capture['records']):
                 raise ValueError('Selection index is outside this capture')
             record = capture['records'][index]
+            if auth['kind'] == 'none' and {'cookie', 'authorization'} & set(record['headerNames']):
+                raise ValueError('Captured authentication cannot be silently declared anonymous')
             effect = selection.get('effect')
             if effect not in {'read', 'write', 'financial', 'destructive'}:
                 raise ValueError('Human effect classification required')
@@ -1283,17 +1265,6 @@ class Learner:
             operation_id = selection.get('operationId')
             if not isinstance(operation_id, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,99}', operation_id) or operation_id in operation_ids:
                 raise ValueError('Operation IDs must be valid and unique')
-            possible_auth = bool({'cookie', 'authorization'} & set(record.get('headerNames') or []))
-            check = selection.get('anonymousCheck')
-            if auth['kind'] == 'none' and (possible_auth or check is not None):
-                from .errors import BlinkError
-                if effect != 'read' or record['method'] not in ('GET', 'HEAD'):
-                    raise ValueError('Captured authentication cannot be downgraded for writes or unconfirmed POST reads')
-                if not isinstance(check, dict) or set(check) != {'arguments'} or not isinstance(check['arguments'], dict):
-                    raise BlinkError('anonymous_check_required',
-                                     'Anonymous classification requires an explicit credential-free check for each selected public read',
-                                     stage='validation',field_path=f'operations.{len(operation_ids)}.anonymousCheck.arguments')
-                anonymous_checks[operation_id] = copy.deepcopy(check['arguments'])
             endpoint = (path, record['method'].lower())
             if endpoint in endpoints:
                 raise ValueError('Curated endpoints cannot silently overwrite one another')
@@ -1411,33 +1382,11 @@ class Learner:
             conflicts = {k: {'kept': stored[k], 'recorded': v} for k, v in values.items() if k in stored and stored[k] != v}
             if conflicts and review is not None:
                 review['conflicts'] = conflicts
-        evidence = []
-        if anonymous_checks:
-            from .profile import compile_manifest
-            from .storage import digest
-            compiled = compile_manifest(document, allow_http=self.runtime.allow_http,
-                                        variables={**stored, **new_values} if values else None)
-            for opid, arguments in anonymous_checks.items():
-                operation = compiled['operations'][opid]
-                self.runtime._validate_argument_values(arguments)
-                # No browser, binding, broker, cookie jar or captured headers: this exact read
-                # must work without credentials. Never run a mutation to test anonymous access.
-                response = self.runtime.executor.send(operation, arguments)
-                if not 200 <= response['status'] < 300 or response.get('validation_error'):
-                    from .errors import BlinkError
-                    raise BlinkError('anonymous_check_failed',
-                                     'Credential-free public read failed; keep authenticated classification and a genuine identity probe',
-                                     stage='anonymous_check',http_status=response['status'],dispatched=True)
-                evidence.append({'operation': opid, 'operationDigest': operation['digest'],
-                                 'argumentsDigest': digest(arguments), 'httpStatus': response['status'],
-                                 'responseDigest': digest(response['data']), 'credentialFree': True, 'checkedAt': time.time()})
         result = self.runtime.install_manifest(document, source, service, variables={**stored, **new_values} if values else None,
-                                               provenance={'capture': session, 'verified': False, 'anonymousChecks': evidence})
+                                               provenance={'capture': session, 'verified': False})
         if new_values:  # only after the Blink was staged: the user's own values go to the private Blink
             private.set_private(private.blink_name(service), {'variables': new_values})
         out = {'proposal': result, 'manifest': document, 'verified': False}
-        if capture.get('browser'):
-            out['browser'] = capture['browser']
         if review is not None:
             out['specifics'] = review
         return out

@@ -66,9 +66,6 @@ def _secure_dir():
     if directory.is_symlink() or not directory.is_dir():
         raise BlinkError('unsafe_state', 'Private Blink directory is not a regular directory')
     os.chmod(directory, 0o700)
-    if os.name == 'nt':
-        from .windows import protect
-        protect(directory)
     return directory
 
 
@@ -98,8 +95,7 @@ def _write(path, document):
     directory = _secure_dir()
     fd, temporary = tempfile.mkstemp(prefix='.private-', dir=directory)
     try:
-        if os.name != 'nt':
-            os.fchmod(fd, 0o600)
+        os.fchmod(fd, 0o600)
         with os.fdopen(fd, 'w', encoding='utf-8') as handle:
             handle.write(raw)
             handle.flush()

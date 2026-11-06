@@ -2,7 +2,6 @@
 """Run a complete native-CLI/MCP demo using only an ephemeral synthetic local service."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-import contextlib
 import os
 from pathlib import Path
 import subprocess
@@ -14,7 +13,6 @@ from urllib.parse import parse_qs, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'src'))
 
 
 def main():
@@ -56,32 +54,17 @@ def main():
     origin = f'http://127.0.0.1:{server.server_port}'
     daemon = None
     try:
-        with tempfile.TemporaryDirectory(prefix='blink-demo-') as temp, contextlib.ExitStack() as cleanup:
+        with tempfile.TemporaryDirectory(prefix='blink-demo-') as temp:
             work = Path(temp)
             state, config = work / 'state', work / 'config'
             environment = {**os.environ, 'PYTHONPATH': str(ROOT / 'src'), 'BLINK_ALLOW_HTTP_LOOPBACK': '1',
-                           'BLINK_HOME': str(work / 'home'), 'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8',
                            'BLINK_PYTHON': sys.executable, 'BLINK_STATE_DIR': str(state),
                            'BLINK_CONFIG_DIR': str(config), 'BLINK_PLUGIN_ROOT': str(ROOT)}
             daemon = subprocess.Popen([sys.executable, '-m', 'blink.daemon', '--state-dir', str(state),
                                        '--plugin-root', str(ROOT)], env=environment,
                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            def stop_daemon():
-                if daemon.poll() is None:
-                    daemon.terminate()
-                    try:
-                        daemon.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        daemon.kill(); daemon.wait(timeout=5)
-            cleanup.callback(stop_daemon)  # release Windows file handles before TemporaryDirectory cleans up
             for _ in range(200):
-                from blink.client import connect
-                try:
-                    connection = connect(state / 'control.sock')
-                except (FileNotFoundError, ConnectionRefusedError):
-                    pass
-                else:
-                    connection.close()
+                if (state / 'control.sock').exists():
                     break
                 if daemon.poll() is not None:
                     raise RuntimeError('Demo daemon failed startup')
@@ -91,7 +74,7 @@ def main():
 
             def cli(*args):
                 result = subprocess.run([sys.executable, '-m', 'blink.cli', *args], env=environment,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', timeout=40)
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=40)
                 document = json.loads(result.stdout)
                 if result.returncode:
                     raise RuntimeError('Demo CLI action failed: ' + document.get('status', 'unknown'))
@@ -146,7 +129,7 @@ def main():
                 {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'blink_call_read',
                  'arguments': {'service': stage['service'], 'operation': 'list_items', 'binding': 'demo', 'arguments': {'region': 'eu'}}}}]
             mcp = subprocess.run(['node', str(ROOT / 'mcp/server.mjs')], env=environment,
-                input=''.join(json.dumps(x) + '\n' for x in messages), text=True, encoding='utf-8',
+                input=''.join(json.dumps(x) + '\n' for x in messages), text=True,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=45)
             replies = [json.loads(line) for line in mcp.stdout.splitlines()]
             call = next(x for x in replies if x.get('id') == 3)
@@ -156,7 +139,7 @@ def main():
                               'dryRunNoDispatch': True, 'mutationEffects': len(effects),
                               'stableRequestState': repeated['status'], 'secretOutputLeak': False}))
     finally:
-        if daemon and daemon.poll() is None:
+        if daemon:
             daemon.terminate()
             try:
                 daemon.wait(timeout=5)

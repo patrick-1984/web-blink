@@ -18,10 +18,9 @@ from .storage import digest, encoded, strict_json
 METHODS = frozenset({
     'approve_manifest', 'set_trust', 'grant', 'bind', 'approve_intent',
     'reconcile', 'revoke', 'retry_intent',
-    'learn_import_har', 'learn_start', 'learn_start_guided', 'learn_stop', 'learn_propose', 'learn_accept_partial',
+    'learn_import_har', 'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
     'jobs_create', 'jobs_pause', 'jobs_resume', 'jobs_run', 'jobs_list',
-    'workflow_validate', 'workflow_run', 'browser_open', 'browser_close', 'browser_select', 'browser_setup',
-    'browser_connect', 'browser_restart', 'browser_restore', 'browser_permission_open', 'browser_extension_open',
+    'workflow_validate', 'workflow_run', 'browser_open', 'browser_close',
     'forget_capture', 'tools_add', 'tools_remove', 'tools_list', 'notifications', 'preflight',
     'trust_pin', 'trust_unpin', 'health_enable', 'health_disable', 'health_clear',
     'custody_authorize', 'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover',
@@ -31,7 +30,7 @@ METHODS = frozenset({
 # Under the opt-in dialog policy: local, reversible actions with no effect on any web service still run as
 # soon as the user asks for them (no dialog). Recording stays limited to the exact origins given; proposals
 # stay quarantined. private_set only changes the user's own local private Blink (never secrets).
-IMMEDIATE = frozenset({'learn_start', 'learn_start_guided', 'learn_stop', 'learn_propose', 'learn_accept_partial',
+IMMEDIATE = frozenset({'learn_start', 'learn_stop', 'learn_propose', 'learn_accept_partial',
                        'browser_open', 'browser_close', 'workflow_validate', 'private_set'})
 TITLES = {
     'approve_intent': 'Run a prepared write', 'approve_manifest': 'Approve a reviewed integration',
@@ -64,11 +63,6 @@ def validate(method, params):
         return _forbidden('This action is not supported by the Web Blink control bridge')
     if not isinstance(params, dict):
         return _forbidden('Parameters must be an object')
-    if '_flowId' in params:
-        import re
-        if (method not in ('browser_connect', 'learn_start_guided', 'learn_start', 'learn_stop')
-                or not isinstance(params['_flowId'], str) or not re.fullmatch('[a-f0-9]{32}', params['_flowId'])):
-            return _forbidden('Invalid browser workflow identity')
     if method == 'approve_intent':
         if set(params) != {'intentId'} or not isinstance(params['intentId'], str):
             return _forbidden('approve_intent takes exactly a string intentId')
@@ -83,28 +77,6 @@ def validate(method, params):
     elif method == 'restart_daemon':
         if params:
             return _forbidden('restart_daemon takes no parameters')
-    elif method == 'browser_restart':
-        if set(params) - {'browser', 'binding'} or not isinstance(params.get('browser'), dict):
-            return _forbidden('browser_restart is blocked because Chromium may share its main process with other profiles')
-    elif method == 'browser_connect':
-        if (set(params) - {'browser', 'binding', 'automatic', 'waitSeconds', '_flowId'}
-                or not isinstance(params.get('browser'), dict)
-                or ('binding' in params and not isinstance(params['binding'], str))
-                or ('automatic' in params and type(params['automatic']) is not bool)
-                or type(params.get('waitSeconds', 0)) is not int or not 0 <= params.get('waitSeconds', 0) <= 30):
-            return _forbidden('browser_connect takes a browser selector, optional binding/automatic and a 0–30 second wait')
-    elif method == 'learn_start_guided':
-        if (set(params) - {'url', 'browser', 'binding', 'waitSeconds', '_flowId'}
-                or not isinstance(params.get('url'), str) or not 1 <= len(params['url']) <= 2048
-                or not isinstance(params.get('browser'), dict)
-                or ('binding' in params and (not isinstance(params['binding'], str) or not 1 <= len(params['binding']) <= 100))
-                or type(params.get('waitSeconds', 0)) is not int or not 0 <= params.get('waitSeconds', 0) <= 30):
-            return _forbidden('Start recording takes an app URL, browser selector, optional recording name and 0–30 second wait')
-    elif method == 'browser_permission_open':
-        if (set(params) - {'browser', 'binding', 'reopen'} or not isinstance(params.get('browser'), dict)
-                or ('binding' in params and not isinstance(params['binding'], str))
-                or ('reopen' in params and type(params['reopen']) is not bool)):
-            return _forbidden('browser_permission_open takes a browser selector, optional binding and explicit reopen flag')
     elif method in ('jobs_list', 'tools_list'):
         if params:
             return _forbidden(f'{method} takes no parameters')
@@ -142,7 +114,6 @@ def _credential_names(credentials):
 
 def presented(method, params):
     """Parameters as a dialog may show them: exact, except secret values. Digests still bind the real values."""
-    params = {key: value for key, value in params.items() if key != '_flowId'}
     if method == 'private_secret_set' and isinstance(params.get('value'), str):
         return dict(params, value=f"[hidden: {len(params['value'])} characters]")
     if method == 'custody_authorize':
@@ -165,16 +136,10 @@ def _review(manifest, state_dir, plugin_root):
     return review.get('data') if review.get('status') == 'ok' else None
 
 
-def complete(method, params, *, state_dir=None, plugin_root=None, config_dir=None):
+def complete(method, params, *, state_dir=None, plugin_root=None):
     """Fill in what the plugin can decide itself, identically when showing the dialog and when applying it:
     the POST requests that only read (from the candidate), so the model never has to name them."""
     params = strict_json(encoded(params))
-    if method == 'browser_restart':
-        from .browser_process import restart_plan
-        params['_restartPlan'] = restart_plan(params['browser'])
-    if method in ('learn_start', 'browser_open'):
-        from .browsers import recording_params
-        params = recording_params(params, config_dir)
     grant = params if method == 'grant' else params.get('grant') if method == 'activate_blink' else None
     if isinstance(grant, dict):
         # Origins are never guessed: exactly the Blink's own requested origins (from the candidate being switched on,
@@ -199,24 +164,13 @@ def describe(method, params, *, state_dir=None, plugin_root=None, config_dir=Non
     invalid = validate(method, params)
     if invalid:
         return invalid
-    if method == 'browser_restart':
-        from .browser_process import RESTART_BLOCKED
-        from .browsers import failure_guidance
-        return {'status': 'restart_not_isolated', 'summary': RESTART_BLOCKED,
-                'data': failure_guidance('restart_not_isolated', params), 'warnings': []}
     from .config import ConfigError
     try:
         mode = approval_mode(config_dir)
     except ConfigError as exc:
         # A broken policy runs nothing and opens no dialog.
         return {'status': 'configuration_error', 'summary': f'Approval setting is invalid: {exc}', 'warnings': []}
-    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root, config_dir=config_dir)
-    if method == 'activate_blink':
-        from .client import request
-        checked = request('admin', {'action': 'control_action', 'method': method, 'params': params},
-                          state_dir=state_dir, plugin_root=plugin_root)
-        if checked.get('status') != 'ok':
-            return checked
+    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root)
     if mode == 'none':
         # The user's order authorizes the action: a small descriptor, no review document.
         return {'status': 'ok', 'summary': 'Exact action described',
@@ -275,22 +229,13 @@ def _dialog(method, params, *, state_dir=None, plugin_root=None):
     return {'status': 'ok', 'summary': 'Approval dialog content', 'data': data, 'warnings': []}
 
 
-def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None, config_dir=None):
+def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None):
     invalid = validate(method, params)
     if invalid:
         return invalid
-    if method == 'browser_restart':
-        from .browser_process import RESTART_BLOCKED
-        return {'status': 'restart_not_isolated', 'summary': RESTART_BLOCKED, 'data': {'closedWindows': False}, 'warnings': []}
-    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root, config_dir=config_dir)
+    params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root)
     if not isinstance(expected_digest, str) or digest(params) != expected_digest:
         return {'status': 'authorization_required', 'summary': 'Parameters differ from the described action', 'warnings': []}
-    if method == 'activate_blink':
-        from .client import request
-        checked = request('admin', {'action': 'control_action', 'method': method, 'params': params},
-                          state_dir=state_dir, plugin_root=plugin_root)
-        if checked.get('status') != 'ok':
-            return checked
     if method == 'restart_daemon':
         from .client import restart_legacy_daemon
         return restart_legacy_daemon(state_dir=state_dir, plugin_root=plugin_root)
@@ -330,7 +275,7 @@ def main(argv=None):
                               config_dir=args.config_dir)
         else:
             result = apply(payload['method'], payload['params'], payload.get('digest'),
-                           state_dir=args.state_dir, plugin_root=args.plugin_root, config_dir=args.config_dir)
+                           state_dir=args.state_dir, plugin_root=args.plugin_root)
     except Exception:
         result = {'status': 'invalid_request', 'summary': 'Control request failed; check diagnostics and parameters', 'warnings': []}
     print(json.dumps(result, ensure_ascii=False, allow_nan=False))

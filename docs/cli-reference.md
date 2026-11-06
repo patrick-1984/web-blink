@@ -52,7 +52,6 @@ With `blink configure set approvals dialog` it asks in the terminal, and `--yes`
 | `blink account` | `bind`, `grant`, `revoke` |
 | `blink custody` | `authorize`, `harvest`, `reharvest-authorize`, `handback`, `recover`, `forget` |
 | `blink learn` | `start`, `stop`, `import`, `propose`, `list` |
-| `blink browser` | `list`, `select`, `status`, `setup` (see [browser sessions](browser-sessions.md)) |
 | `blink jobs` | `create`, `list`, `run`, `pause`, `resume` |
 | `blink health` | `enable`, `disable`, `clear` |
 | `blink trust` | `pin`, `unpin`, `set`, `promote` |

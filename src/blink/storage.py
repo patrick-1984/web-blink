@@ -44,9 +44,6 @@ def private_dir(path):
         if (parent / '.git').exists():
             raise BlinkError('unsafe_state', 'State must be outside Git worktrees')
     resolved.mkdir(parents=True, mode=0o700, exist_ok=True)
-    if os.name == 'nt':
-        from .windows import protect
-        protect(resolved)
     st = resolved.stat()
     if not stat.S_ISDIR(st.st_mode) or (hasattr(os, 'getuid') and st.st_uid != os.getuid()):
         raise BlinkError('unsafe_state', 'State directory is not owned by the current user')
@@ -65,9 +62,6 @@ def private_file(path):
     st = path.stat()
     if not stat.S_ISREG(st.st_mode) or (hasattr(os, 'getuid') and st.st_uid != os.getuid()):
         raise BlinkError('unsafe_state', 'State file ownership/type mismatch')
-    if os.name == 'nt':
-        from .windows import protect
-        protect(path)
     if os.name != 'nt' and stat.S_IMODE(st.st_mode) & 0o077:
         raise BlinkError('unsafe_state', 'State files require mode 0600')
     return path

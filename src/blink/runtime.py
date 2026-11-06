@@ -13,13 +13,13 @@ import uuid
 
 from jsonschema import Draft202012Validator
 from .broker import Broker,at_path,secret_values
-from .errors import BlinkError,failure
+from .errors import BlinkError
 from .executor import HTTPExecutor
 from .profile import compile_manifest,origin,SENSITIVE
 from .storage import Store,digest,encoded
 from .paths import plugin_root as resolve_plugin_root
 
-PUBLIC={'services','search','describe','call_read','prepare','execute','verify','admin','doctor'}
+PUBLIC={'services','search','describe','call_read','prepare','execute','admin','doctor'}
 HUMAN={'approve_manifest','set_trust','grant','bind','custody_authorize','approve_intent','reconcile','revoke','retry_intent',
        'private_set','private_secret_set'}
 ID=re.compile(r'^[a-z0-9]+(?:[.-][a-z0-9]+)*$')
@@ -117,20 +117,14 @@ class Runtime:
             return envelope('forbidden','This method needs an exact-command control permit (CLI or the blink_request_approval bridge) or is not exposed')
         try:
             with self._lock,self.broker.secret_scope():
-                if method in ('call_read', 'prepare', 'execute', 'verify'):
+                if method in ('call_read', 'prepare', 'execute'):
                     if not self.preflight.check('runtime')['usable']:
                         raise BlinkError('env_unavailable', 'Required runtime capability is unavailable; run doctor')
                 result=getattr(self,'_'+method)(params)
-                if method in ('call_read','execute') and result['status'] in ('ok','succeeded','resolved_done'):
-                    result['verification']={'state':'accepted','verification':'unverified',
-                                            'reason':'Compare explicit expectations with a read or correlated write read-back.'}
-                if method=='execute' and result['status'] in ('outcome_unknown','dispatching') and not result.get('data',{}).get('error'):
-                    result=failure(BlinkError('outcome_unknown','Original mutation outcome remains unknown',dispatched=None),
-                                   'execute',data=result.get('data'),status=result['status'],summary=result['summary'])
             # Public data cannot contain raw credentials even when a service reflects them.
             return result
-        except BlinkError as exc:return failure(exc,method)
-        except Exception as exc:return failure(exc,method,status='error',dispatched=None)
+        except BlinkError as exc:return envelope(exc.code,exc.message)
+        except Exception:return envelope('error','Runtime operation could not complete')
 
     def _services(self,p):
         active={row['service']:row for row in self.store.list('active_manifest')}
@@ -141,15 +135,7 @@ class Runtime:
                                  for binding in self.store.list('binding') if binding['service'] == entry['service']]
         for row in self.store.list('manifest_candidate'):
             if row['service'] not in active and row.get('state')=='quarantined':
-                recipe=row['compiled'].get('document',{}).get('x-blink-service',{}).get('auth',{})
-                if not recipe:
-                    recipe=row.get('document',{}).get('x-blink-service',{}).get('auth',{})
-                has_probe=bool(recipe.get('probe'))
-                has_credential_source=(recipe.get('kind')=='none' or bool(recipe.get('storage') or recipe.get('cookies')))
-                data.append({'service':row['service'],'digest':row['digest'],'candidate':row['candidate'],
-                             'state':'quarantined','operations':len(row['compiled']['operations']),
-                             'nextAction':'review_and_activate' if has_probe and has_credential_source
-                             else 'complete_auth_and_identity_probe'})
+                data.append({'service':row['service'],'digest':row['digest'],'candidate':row['candidate'],'state':'quarantined'})
         return envelope('ok','Service catalog',data)
 
     def _search(self,p):
@@ -325,31 +311,22 @@ class Runtime:
         if p.get('tenant') is not None:
             p = {**p, 'tenant': str(p['tenant'])}
         record=self.active_manifest(service)
-        if 'browser' not in p and mode in ('C1', 'C2'):
-            capture = self.store.get('captures', record.get('provenance', {}).get('capture'))
-            if capture and capture.get('browser'):
-                p = {**p, 'browser': capture['browser']}
         if record.get('tier', 'untrusted') == 'untrusted':
             raise BlinkError('trust_required', 'Classify the reviewed integration before binding an account')
         if mode not in ('C1','C2','C3','C4','C5'):raise BlinkError('invalid_custody','Unknown custody mode')
-        if mode in ('C1', 'C2') and 'browser' in p and p['browser']:
-            from .browsers import resolve_selection
-            p = {**p, 'browser': resolve_selection(p['browser'])}
         identity=p.get('identity',{})
         auth=next(iter(record['compiled']['operations'].values()))['auth']
         if auth['kind']!='none':
             if not isinstance(identity,dict) or not isinstance(identity.get('accountPath'),str):
-                raise BlinkError('invalid_arguments','Authenticated bindings require an identity accountPath',
-                                 field_path='identity.accountPath',stage='validation')
+                raise BlinkError('invalid_arguments','Authenticated bindings require an identity accountPath')
             probe=identity.get('operation',auth.get('probe'))
             if probe not in record['compiled']['operations'] or record['compiled']['operations'][probe]['effect']!='read':
                 raise BlinkError('invalid_arguments','Identity probe must be a reviewed read operation')
             probe_operation=record['compiled']['operations'][probe]
             self._assert_read_verified(record,probe_operation)
             probe_arguments=identity.get('arguments',{})
-            from .control import schema_issue
-            issue=schema_issue(probe_operation['inputSchema'],probe_arguments,'identity.arguments')
-            if issue:return issue
+            try:Draft202012Validator(probe_operation['inputSchema']).validate(probe_arguments)
+            except Exception:raise BlinkError('invalid_arguments','Identity arguments do not match the reviewed probe schema') from None
             self._validate_argument_values(probe_arguments)
             identity={**identity,'arguments':copy.deepcopy(probe_arguments)}
             identity={**identity,'operation':probe}
@@ -621,20 +598,17 @@ class Runtime:
             if result['validation_error'] == 'drift_suspected':
                 self.store.put('op_quarantine', record['service'] + ':' + operation['operationId'],
                                {'digest': operation['digest'], 'at': time.time(), 'state': 'quarantined'})
-            raise BlinkError(result['validation_error'],'Response does not match the execution contract',
-                             stage='remote_response',http_status=result['status'],dispatched=True)
+            raise BlinkError(result['validation_error'],'Response does not match the execution contract')
         status=result['status']
         if not 200<=status<300:
             if status==401:
                 if binding:self.broker.park(binding,'login_required')
-                raise BlinkError('login_required','Service requires a fresh login; the business request was not retried',
-                                 stage='remote_response',http_status=status,dispatched=True)
+                raise BlinkError('login_required','Service requires a fresh login; the business request was not retried')
             if status==403:
                 if binding:self.broker.park(binding,'challenge_required')
-                raise BlinkError('challenge_required','Service requires human attention; the business request was not retried',
-                                 stage='remote_response',http_status=status,dispatched=True)
-            if status==429:raise BlinkError('rate_limited','Service rate limit reached',stage='remote_response',http_status=status,dispatched=True)
-            raise BlinkError('service_error','Service returned an error response',stage='remote_response',http_status=status,dispatched=True)
+                raise BlinkError('challenge_required','Service requires human attention; the business request was not retried')
+            if status==429:raise BlinkError('rate_limited','Service rate limit reached')
+            raise BlinkError('service_error','Service returned an error response')
         return result['data'] if private else redact(result['data'],secrets+list(self.broker.known_secrets()))
 
     def _call_read(self,p):
@@ -647,10 +621,6 @@ class Runtime:
         with self.store.family_lock(family):
             if binding:binding=self._binding(p,record,op)
             return envelope('ok','Read completed',self._send(record,op,args,binding))
-
-    def _verify(self,p):
-        from .verification import verify
-        return verify(self,p)
 
     def _with_variables(self,record,op,args):
         """Fill arguments backed by a Blink variable (tenant, workspace, login, user ID) from this user's private Blink
@@ -753,9 +723,8 @@ class Runtime:
         record,op=self._operation(p)
         if op['effect'] in ('read','maintenance'):raise BlinkError('effect_denied','Prepare accepts only business mutations')
         args=self._with_variables(record,op,p.get('arguments',{}))
-        from .control import schema_issue
-        issue=schema_issue(op['inputSchema'],args,'arguments')
-        if issue:return issue
+        try:Draft202012Validator(op['inputSchema']).validate(args)
+        except Exception:raise BlinkError('invalid_arguments','Arguments do not match the reviewed schema') from None
         binding=self._binding(p,record,op,write=True);grant=self._current_grant(binding,op)
         self._validate_argument_values(args,binding)
         amount,currency=self._money(op,args)
@@ -937,9 +906,7 @@ class Runtime:
                 with self.store.transaction() as db:
                     db.execute("UPDATE intents SET state='outcome_unknown',outcome='request_or_response_ambiguous' WHERE id=?",(intent,))
                     db.execute("UPDATE reservations SET state='pending_unknown' WHERE intent_id=?",(intent,))
-                if isinstance(exc,BlinkError) and exc.http_status is None:exc.dispatched=None
-                return failure(exc,'execute',data={'intentId':intent},status='outcome_unknown',
-                               summary='Mutation outcome requires reconciliation; no automatic retry',dispatched=None)
+                return envelope('outcome_unknown','Mutation outcome requires reconciliation; no automatic retry',{'intentId':intent})
             with self.store.transaction() as db:
                 db.execute("UPDATE intents SET state='succeeded',result_json=? WHERE id=?",(encoded(data),intent))
                 db.execute("UPDATE reservations SET state='consumed' WHERE intent_id=? AND state IN ('held','pending_unknown')",(intent,))
@@ -1007,13 +974,6 @@ class Runtime:
 
     def _admin(self,p):
         action=p.get('action','status')
-        if action=='control_action':
-            from .control import action_contract
-            return action_contract(self,p)
-        if action=='verification':
-            result=self.store.get('verification',p.get('id'))
-            if not result:raise BlinkError('invalid_arguments','Verification record not found')
-            return envelope('ok','Stored expected-versus-observed verification',result)
         if action=='status':
             with self.store.transaction() as db:
                 counts={row['state']:row['n'] for row in db.execute('SELECT state,COUNT(*) AS n FROM intents GROUP BY state')}
@@ -1044,7 +1004,7 @@ class Runtime:
             if not binding:
                 raise BlinkError('unknown_binding', 'Account binding not found')
             return envelope('ok', 'Binding routing metadata', {'binding': binding['id'], 'service': binding['service'],
-                                                             'state': binding['state'], 'browser': binding.get('browser') or {'mode': 'shared'}})
+                                                             'state': binding['state']})
         raise BlinkError('forbidden','Administrative action is not exposed to the model')
 
     def _doctor(self,p):

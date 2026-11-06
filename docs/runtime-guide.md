@@ -12,16 +12,17 @@ Extract it and load the directory with Claude Code:
 claude --plugin-dir /absolute/path/to/web-blink
 ```
 
-The MCP entry requires Node. Browser/profile choice is shown as a numbered table, and “use #6” selects
-that row. A requested connection or recording prepares missing Python/browser components automatically
-through the native tool action. Ordinary startup stays offline; no session hook installs or checks anything.
-Host tool permissions and browser consent remain in force. Restarts require their own native confirmation.
-See [browser connections](browser-sessions.md) for modes, the metadata index and concrete fallback actions.
+The MCP entry requires Node and starts diagnostic tools without Python. Before using the runtime, prepare
+the pinned Python dependencies through an explicit native command:
 
-For native CLI maintenance, dependencies may also be prepared explicitly by the operator. The plugin's
-`runtime_setup` action manages its own cache under `~/.web-blink/runtime`, avoiding a blocked global uv
-cache. Windows uses named pipes; macOS/Linux use Unix sockets. Git/OpenSSL remain optional source/signature
-capabilities.
+```sh
+uv run --no-project --with-requirements /absolute/path/to/web-blink/requirements.lock python -c "import jsonschema"
+```
+
+The MCP launcher then uses the dependency cache offline. It never starts a model session or installs tools
+from an unattended job. Python 3.11 or later is required. The current daemon transport supports POSIX
+hosts; Windows has diagnostics only. Git and OpenSSL are needed only for their respective optional source
+and signature features.
 
 ## Where your data lives
 
@@ -47,7 +48,7 @@ that run keeps using the old folder, `blink doctor` warns, and the move happens 
 daemon has stopped. An explicit `BLINK_HOME`, state or configuration folder never triggers the move.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.11.0-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.8.4-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -58,8 +59,7 @@ blink schemas export ./blink-schemas
 
 Claude tools expose catalog, search, describe, read, prepare, execute and read-only administration. They
 cannot issue grants, custody authorization or intent receipts. Host-confirmed CLI commands use a separate
-private control channel with one-time permits. Blink registers no host session/lifecycle hooks; status and
-profile checks run only when requested.
+private control channel with one-time permits. SessionStart is advisory and never opens a browser.
 
 ## Configure defaults and script operations
 
@@ -93,13 +93,9 @@ contract, never replayed with a new execution mode or freshly minted intent.
 
 ## Learn and review an integration
 
-Choose an existing signed-in Chrome, Edge or Brave profile with `blink browser list` and
-`blink browser select`, or use the normal shared Playwright MCP. See [browser sessions](browser-sessions.md)
-for personal/admin profiles, setup, remembered logins and Firefox/platform limits.
-The workspace adapter defaults to the workspace's shared-browser
+Use the existing shared Playwright MCP. The workspace adapter defaults to the workspace's shared-browser
 proxy when present; on another host set `BLINK_PLAYWRIGHT_COMMAND` to a JSON argument array for an existing
-Playwright MCP provider. Shared and attached modes reuse that provider; managed mode starts only the
-explicitly selected persistent Blink profile. Blink does not silently replace a failed connection.
+Playwright MCP provider. Blink does not launch a replacement or headless browser.
 
 Live capture is held by the singleton daemon so separate CLI invocations share the same recording.
 In Claude Code, ask Claude to learn a site: it requests `learn_start` and `learn_stop` through an
@@ -256,13 +252,3 @@ require an existing provider that can prove isolated profile ownership; the shar
 silently repurposed for broker custody. Actual website eligibility, multi-day soaks, Windows transport and
 Cowork's desktop bridge remain deployment-specific validation gates. See the shipped compatibility and
 execution-profile documents for exact limits.
-
-## Action failure metadata
-
-Failures include `data.error` with a sanitized stage/code, optional field path, correlation ID, known
-HTTP status (otherwise null), dispatch state (true, false or null for unknown), and a bounded recovery
-action. No raw response body, credentials or traceback is included. Remote error responses retain their
-HTTP status; uncertain writes retain their original intent and held budget. Inspect/reconcile that intent,
-never create another mutation because of a timeout or slow UI. Recording status continuations preserve
-the original binding and browser. A correlation ID identifies an error occurrence, not proof of a remote
-effect or a promise that private diagnostic logs exist.
