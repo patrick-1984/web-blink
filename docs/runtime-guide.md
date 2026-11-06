@@ -133,6 +133,11 @@ requires a new context name, so another account cannot inherit its storage. Expl
 conflicts stop before opening a browser. Multiple eligible accounts require a choice; successful uses
 remember which context serves an operation.
 
+Login destinations default to the reviewed `appOrigin`. To use an identity provider, explicitly list its
+HTTPS origin in the manifest's `x-blink-service.loginOrigins` before review and activation. Contexts cannot
+expand that scope. Login checks the destination again after navigation and before entering credentials;
+a password is scoped to the context's exact login origin.
+
 Public direct reads run immediately without login. Existing broker custody retains its reviewed direct
 execution and refresh rules. C1/C2 account execution tries a short-lived, Blink-owned headless Playwright
 profile first. It checks the bound identity before dispatch and, if needed, attempts the locally configured
@@ -188,6 +193,10 @@ correlated read-back. Arbitrary steps, shell snippets and secret inputs are refu
 pins all steps to one existing account. A saved routine freezes arguments, manifest and account identity;
 changes require fresh verification and saving it again. History appends save/step outcomes. Inspect it
 with `blink routine show team --service local:acme`, or `blink_admin` action `routine` with `service`/`name`.
+Verification also freezes the account, tenant, owner epoch, service and execution mode, and keeps its
+`maxAttempts` / `intervalSeconds` policy. Old account evidence must be verified again after rebinding.
+Until reviewed references to earlier results are supported, any mutation must be the final routine step;
+its correlated read-back still runs. This also blocks dependent routines saved by older versions.
 
 ```sh
 blink routine run team
@@ -203,6 +212,9 @@ The generated Python script lives under `$BLINK_HOME/scripts/<source--blink>/<na
 only Blink CLI JSON calls, pacing and result handling, with no recorded values or credential literals.
 The CLI checks its hash before running it. Each call goes through `blink routine step` and the existing
 control permit, grant and intent checks. MCP uses the same durable step runner without a daemon callback.
+Scripts invoke the parent's Python interpreter and resolved Blink module without requiring `blink` on
+`PATH`. Under opt-in `approvals=dialog`, approve the initial run with `--yes`; child steps carry that
+approval and retain the daemon's run/digest checks.
 
 `delayMs` defaults to 100 and must be an integer from 50 to 500. It applies between operations; safe
 429 failures receive up to three backoff waits, each capped at 500 ms. Reads or proven-unsent requests
@@ -210,10 +222,21 @@ can be retried. Dispatched/unknown writes are never retried, including a write t
 Verification must pass before the next step. Each run has stable mutation IDs; repeating its `runId`
 returns completed results without redispatch. A crash during a step requires journal inspection.
 Inspect it using `blink_admin` action `routine_run`, `runId`.
+Proven-unsent login waits return a `routine_step` continuation with the original run, index, request ID
+and visible-browser selection. Complete login and invoke that continuation; it updates the same journal
+so repeating the original run can continue. Dispatched unknown outcomes remain stopped.
+
+Scoped forget and full purge remove execution profiles (including session storage), contexts, routines,
+scripts and verification/run records. Failed credential deletion returns `cleanup_pending`. Unknown
+mutation intents retain reconciliation evidence and explicit routine links, without executable scripts.
 
 **Learn while doing:** missing operations hand off to the existing guided recorder with `executionGoal`,
 the chosen browser/account and a continuation checklist. Perform the ordered task while capture is on,
 then `learn_stop`, `learn_propose` and `activate_blink` as usual. Reads can be verified immediately.
+`learn_propose` extends an active Blink by default, preserving existing operations, notes, authentication,
+execution policy and variables. It rejects conflicting endpoints or account selectors. Full replacement
+requires `replace:true`; changing authentication, execution policy or application origin requires that
+explicit replacement request too.
 For an already-performed browser mutation, never replay it to create evidence. Perform a reviewed
 read-back with `blink_verify`, checking the genuine object ID and desired state. Call `execution_observe`
 through the control bridge with the same `service`/`operation`/`binding`, exact `arguments`, `session`,

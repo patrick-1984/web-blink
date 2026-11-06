@@ -23,6 +23,7 @@ BINDING_OBJECTS = {"binding", "grant", "maintenance_last", "reharvest_authorizat
 SERVICE_OBJECTS = REGISTRY_OBJECTS | BINDING_OBJECTS | {
     "jobs", "occurrences", "workflow_runs", "canaries", "captures", "notifications", "op_quarantine", "rate"}
 GLOBAL_OBJECTS = {"source_config", "source_observation", "source_publisher", "human_permit"}
+EXECUTION_OBJECTS = {"verification", "verified_call", "routine_run"}
 
 
 def _service(value):
@@ -171,6 +172,36 @@ class CleanupManager:
         self.store.delete("cleanup_profile", binding["id"])
         return True
 
+    def _execution_inventory(self):
+        from .home import home_dir
+        inventory = []
+        for kind in ('contexts', 'routines', 'scripts'):
+            root = _safe_path(home_dir() / kind, self.runtime.plugin_root)
+            if not root.exists():
+                continue
+            for path in root.iterdir():
+                service = path.name.replace('--', ':')
+                if _service(service):
+                    inventory.append((service, path))
+        return inventory
+
+    def _execution_remove(self, path):
+        """Walk only owned artifact directories; never trust a context's profileDir."""
+        # Chromium leaves singleton symlinks in its owned profile. Remove the link,
+        # never follow it to another profile or host resource.
+        _safe_path(path.parent, self.runtime.plugin_root)
+        if path.is_symlink():
+            path.unlink()
+            return
+        path = _safe_path(path, self.runtime.plugin_root)
+        if path.is_dir():
+            for child in path.iterdir():
+                self._execution_remove(child)
+            path.rmdir()
+        else:
+            private_file(path)
+            path.unlink()
+
     def forget(self, service=None, *, include_settings=False, config_dir=None):
         if service is not None and not _service(service):
             raise BlinkError("invalid_arguments", "Use an exact source:integration ID; only explicit None purges all services")
@@ -180,11 +211,13 @@ class CleanupManager:
         private_dir(self.store.path)
         failures, removed = [], Counter()
         with self.runtime._lock:
+            artifacts = self._execution_inventory()
             with self.store.transaction() as db:
                 objects = self._objects(db)
                 known = {name for kind, key, value in objects
                          if (name := self._record_service(kind, key, value)) is not None}
                 known.update(row["service"] for row in db.execute("SELECT DISTINCT service FROM intents") if _service(row["service"]))
+                known.update(name for name, _ in artifacts)
                 if service is not None and service not in known and include_settings:
                     configuration = self._configuration(config_dir)
                     if service in configuration.load()["blinks"]:
@@ -272,6 +305,14 @@ class CleanupManager:
                 except Exception as exc:
                     failed_services.add(name)
                     self._failure(failures, "anonymous_dispatch_drain", name, exc)
+            for name, path in artifacts:
+                if name in selected:
+                    try:
+                        self._execution_remove(path)
+                        removed['executionDirectories'] += 1
+                    except Exception as exc:
+                        failed_services.add(name)
+                        self._failure(failures, 'execution_artifact_cleanup', name, exc)
 
             with self.store.transaction() as db:
                 retained_ids, cleaned_ids = set(), set()
@@ -310,6 +351,7 @@ class CleanupManager:
                         self.store.delete("recovery_tombstone", intent, connection=db)
                         removed["intents"] += 1
 
+                retained_execution = []
                 for kind, key, value in self._objects(db):
                     selected_service = self._record_service(kind, key, value) in selected
                     by_binding = key in binding_ids or isinstance(value, dict) and value.get("binding") in binding_ids
@@ -341,6 +383,23 @@ class CleanupManager:
                         if scoped and isinstance(value, dict) and (value.get("intent") in retained_ids or value.get("state") == "outcome_unknown"):
                             continue
                         delete = scoped
+                    elif kind in EXECUTION_OBJECTS:
+                        if service is None or selected_service or by_binding:
+                            references = {value.get('intentId')} if isinstance(value, dict) else set()
+                            if kind == 'routine_run' and isinstance(value, dict):
+                                from .storage import digest
+                                references.update(value.get('intentIds', []))
+                                references.update('routine-' + digest({'run': key, 'index': index})[:40]
+                                                  for index, _ in enumerate(value.get('steps', [])))
+                            ambiguous = references & retained_ids
+                            if ambiguous:
+                                retained_execution.append({'kind': kind, 'id': key, 'intentIds': sorted(ambiguous)})
+                                if kind == 'routine_run':
+                                    # Keep reconciliation links, never an executable routine or script.
+                                    self.store.put(kind, key, {'id': key, 'service': value['service'],
+                                        'state': 'awaiting_reconciliation', 'intentIds': sorted(ambiguous)}, connection=db)
+                            else:
+                                delete = True
                     elif kind in ("canaries", "notifications", "op_quarantine"):
                         delete = service is None or selected_service or by_binding or any(key.startswith(name + ":") for name in selected)
                     elif kind == "rate":
@@ -397,6 +456,7 @@ class CleanupManager:
                     "data": {"service": service, "services": sorted(selected), "removed": dict(removed),
                              "retainedUnknown": len(retained_evidence), "tombstones": len(tombstones),
                              "retainedIntentIds": sorted(retained_evidence), "failures": failures,
+                             "retainedExecutionEvidence": retained_execution,
                              "settingsIncluded": include_settings,
                              "remainingState": {"objectsByKind": dict(remaining_objects),
                                                 "scope": "whole_runtime",

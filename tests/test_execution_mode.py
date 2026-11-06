@@ -45,7 +45,7 @@ class Browser:
         self.events, self.logged, self.account = events, logged, account
     def open(self, binding, url, navigate=True):
         self.events.append('open')
-    def login(self, binding, url, login_name, recipe, password=None, *, submit=False):
+    def login(self, binding, url, login_name, recipe, password=None, *, submit=False, allowed_origins=()):
         self.events.append(('login', submit, login_name, password))
         if submit:
             self.logged = True
@@ -317,7 +317,7 @@ class ExecutionTests(unittest.TestCase):
         tree = ast.parse(source)
         imports = [n.names[0].name for n in tree.body if isinstance(n, ast.Import)]
         self.assertEqual(imports, ['json', 'subprocess', 'sys', 'time'])
-        self.assertIn("['blink', '--output', 'json', 'routine', 'step'", source)
+        self.assertIn("[sys.executable, '-c', CLI_CODE, '--output', 'json', 'routine', 'step', '--yes'", source)
         self.assertIn('DELAY = 100', source)
         for delay in (49, 501, True):
             with self.assertRaises(BlinkError):
@@ -407,7 +407,7 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(call.call_count, 3)
         self.assertEqual([a.args[0] for a in sleep.call_args_list], [0.2, 0.1])
         self.assertEqual(json.loads(output.getvalue())['status'], 'outcome_unknown')
-        self.assertTrue(all(c.args[0][0] == 'blink' for c in call.call_args_list))
+        self.assertTrue(all(c.args[0][0] == sys.executable and '--yes' in c.args[0] for c in call.call_args_list))
 
     def test_changed_instructions_invalidate_confirmation_and_new_secrets_are_refused(self):
         self.save_routine()
@@ -534,14 +534,20 @@ class HeadlessCleanupTests(unittest.TestCase):
     def test_visible_bridge_login_never_passes_a_password_or_submits(self):
         bridge = BrowserBridge(mock.Mock()); bridge.owners['work'] = 'owned'
         with mock.patch.object(bridge, 'open'), mock.patch.object(bridge, '_run_owned', return_value={'prefilled': True}) as run:
-            bridge.login('work', URL + '/login', 'jdoe', {}, 'do-not-send', submit=False)
+            bridge.login('work', URL + '/login', 'jdoe', {}, 'do-not-send', submit=False, allowed_origins=[URL])
         self.assertIsNone(run.call_args.args[2]['password'])
         self.assertFalse(run.call_args.args[2]['submit'])
 
 
 @unittest.skipUnless(os.name == 'posix', 'Daemon integration uses a Unix socket')
 class RoutineCLIIntegrationTests(unittest.TestCase):
-    def test_generated_script_runs_through_the_actual_cli_and_daemon_with_a_stable_run_id(self):
+    def test_generated_script_runs_without_blink_executable(self):
+        self.run_cli_routine('none')
+
+    def test_dialog_approval_reaches_child_steps(self):
+        self.run_cli_routine('dialog')
+
+    def run_cli_routine(self, approval_mode):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from blink.client import control_request
         requests = []
@@ -558,15 +564,13 @@ class RoutineCLIIntegrationTests(unittest.TestCase):
             root = Path(temp)
             repo = Path(__file__).resolve().parents[1]
             binaries = root / 'bin'; binaries.mkdir()
-            shim = binaries / 'blink'
-            shim.write_text('#!' + sys.executable + '\nimport sys\nsys.path.insert(0, ' + repr(str(repo / 'src')) +
-                            ')\nfrom blink.cli import main\nraise SystemExit(main())\n')
-            shim.chmod(0o700)
             state = root / 'state'
             environment = {**os.environ, 'BLINK_HOME': str(root / 'home'), 'BLINK_STATE_DIR': str(state),
                 'BLINK_CONFIG_DIR': str(root / 'config'), 'BLINK_ALLOW_HTTP_LOOPBACK': '1',
-                'BLINK_PLUGIN_ROOT': str(repo), 'PYTHONPATH': str(repo / 'src'), 'PATH': str(binaries) + os.pathsep + os.environ['PATH']}
+                'BLINK_PLUGIN_ROOT': str(repo), 'PYTHONPATH': str(repo / 'src'), 'PATH': str(binaries)}
             with mock.patch.dict(os.environ, environment):
+                from blink.config import ConfigStore
+                ConfigStore(root / 'config').set('approvals', approval_mode)
                 daemon = subprocess.Popen([sys.executable, '-m', 'blink.daemon', '--state-dir', str(state)],
                                            env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 try:
@@ -589,15 +593,25 @@ class RoutineCLIIntegrationTests(unittest.TestCase):
                         'verificationIds': [verified['verification']['id']]})
                     self.assertEqual(saved['status'], 'ok', saved)
                     def cli(*args):
-                        return subprocess.run([str(shim), *args], env=environment, capture_output=True, text=True, timeout=20)
+                        cli_environment = dict(environment)
+                        cli_environment.pop('PYTHONPATH', None)  # bundled launcher must preserve its own imports
+                        return subprocess.run([sys.executable, str(repo / 'scripts/blink.py'), *args], env=cli_environment, capture_output=True, text=True, timeout=20)
                     pending = cli('routine', 'run', 'team')
                     self.assertEqual(json.loads(pending.stdout)['status'], 'confirmation_required', pending.stdout)
                     self.assertNotIn('preview', json.loads(pending.stdout)['data'])
-                    result = cli('routine', 'run', 'team', '--confirmed', '--run-id', 'cli-run')
+                    if approval_mode == 'dialog':
+                        count = len(requests)
+                        denied = cli('routine', 'run', 'team', '--confirmed')
+                        self.assertNotEqual(denied.returncode, 0)
+                        self.assertEqual(len(requests), count)
+                    arguments = ['routine', 'run', 'team', '--confirmed', '--run-id', 'cli-run']
+                    if approval_mode == 'dialog':
+                        arguments.append('--yes')
+                    result = cli(*arguments)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertEqual(json.loads(result.stdout)['status'], 'ok')
                     count = len(requests)
-                    result = cli('routine', 'run', 'team', '--confirmed', '--run-id', 'cli-run')
+                    result = cli(*arguments)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertEqual(len(requests), count)
                 finally:

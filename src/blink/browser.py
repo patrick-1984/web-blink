@@ -317,27 +317,41 @@ class BrowserBridge:
           return {cookies:selected,storage};
         ''', {'cookies': list(cookie_names), 'storage': list(storage_keys)})
 
-    def login(self, binding, url, login_name, recipe, password=None, *, submit=False):
+    def login(self, binding, url, login_name, recipe, password=None, *, submit=False, allowed_origins=()):
         """Fill an owned login page. Visible login never receives a password or submits."""
+        from urllib.parse import urlsplit
+        from .profile import origin
+        parts = urlsplit(url)
+        destination = origin(f'{parts.scheme}://{parts.netloc}')
+        if destination not in allowed_origins:
+            raise BlinkError('origin_denied', 'Login requires a reviewed credential destination')
         self.open(binding, url)
         return self._run_owned(self.owners[binding], r'''
           await p.goto(v.payload.url);
+          const approved=()=>v.payload.allowedOrigins.includes(new URL(p.url()).origin);
+          if(!approved()) return {prefilled:false,submitted:false};
           const r=v.payload.recipe;
-          if (r.usernameSelector) await p.locator(r.usernameSelector).fill(v.payload.loginName);
+          if (r.usernameSelector) {
+            await p.locator(r.usernameSelector).waitFor();
+            if(!approved()) return {prefilled:false,submitted:false};
+            await p.locator(r.usernameSelector).fill(v.payload.loginName);
+          }
           else {
             const field=p.locator('input[autocomplete="username"], input[type="email"], input[name="username"]');
-            if(await field.count()===1) await field.fill(v.payload.loginName);
+            if(await field.count()===1 && approved()) await field.fill(v.payload.loginName);
             else return {prefilled:false, submitted:false};
           }
           if(v.payload.submit && v.payload.password && r.passwordSelector && r.submitSelector){
-            if(new URL(p.url()).origin !== new URL(v.payload.url).origin) return {prefilled:true,submitted:false};
+            await p.locator(r.passwordSelector).waitFor();
+            if(!approved() || new URL(p.url()).origin !== v.payload.credentialOrigin) return {prefilled:true,submitted:false};
             await p.locator(r.passwordSelector).fill(v.payload.password);
+            if(!approved() || new URL(p.url()).origin !== v.payload.credentialOrigin) return {prefilled:true,submitted:false};
             await p.locator(r.submitSelector).click();
             await p.waitForLoadState('domcontentloaded');
             return {prefilled:true,submitted:true};
           }
           return {prefilled:true,submitted:false};
-        ''', {'url': url, 'loginName': login_name, 'recipe': recipe,
+        ''', {'url': url, 'loginName': login_name, 'recipe': recipe, 'allowedOrigins': list(allowed_origins), 'credentialOrigin': destination,
               'password': password if submit else None, 'submit': bool(submit)})
 
     def save_execution_state(self, binding, path):

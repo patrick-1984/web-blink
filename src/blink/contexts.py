@@ -64,6 +64,17 @@ class Contexts:
     def list(self, service):
         return [read(p) for p in sorted(directory('contexts', service).glob('*.json'))]
 
+    def login_scope(self, service, url):
+        from .profile import origin
+        record = self.runtime.active_manifest(service)
+        operation = next(iter(record['compiled']['operations'].values()))
+        reviewed = operation.get('loginOrigins', [operation['appOrigin']])
+        parts = urlsplit(url)
+        destination = origin(f'{parts.scheme}://{parts.netloc}')
+        if destination not in reviewed:
+            raise BlinkError('origin_denied', 'Login destination is outside the reviewed login origins')
+        return list(reviewed)
+
     def save(self, p):
         allowed = {'service', 'name', 'binding', 'loginName', 'loginUrl', 'browser', 'login', 'uses'}
         if set(p) - allowed:
@@ -80,6 +91,7 @@ class Contexts:
             valid = False
         if not valid:
             raise BlinkError('invalid_arguments', 'Login URL must be HTTPS without credentials, query or fragment')
+        login_origins = self.login_scope(service, url)
         login_name = p.get('loginName', binding['account'])
         if not isinstance(login_name, str) or not 1 <= len(login_name) <= 500:
             raise BlinkError('invalid_arguments', 'A login name is required')
@@ -108,7 +120,7 @@ class Contexts:
         profile = private_dir(private_dir(path.parent / 'profiles') / key)
         value = {'name': key, 'service': service, 'account': binding['account'], 'binding': binding['id'],
                  'bindingIdentity': identity, 'loginName': login_name, 'loginUrl': url, 'browser': browser,
-                 'login': copy.deepcopy(login), 'uses': uses, 'profileDir': str(profile),
+                 'login': copy.deepcopy(login), 'loginOrigins': login_origins, 'uses': uses, 'profileDir': str(profile),
                  'lastSuccess': (old or {}).get('lastSuccess')}
         write(path, value)
         return value
@@ -133,6 +145,7 @@ class Contexts:
         identity = {k: (current or {}).get(k) for k in ('id', 'service', 'account', 'tenant', 'ownerEpoch')}
         if identity != value['bindingIdentity'] or current.get('state') == 'revoked':
             raise BlinkError('account_mismatch', 'Execution context no longer matches its binding')
+        self.login_scope(service, value['loginUrl'])
         expected = directory('contexts', service) / 'profiles' / value['name']
         if value['profileDir'] != str(expected):
             raise BlinkError('unsafe_state', 'Execution context profile path changed')

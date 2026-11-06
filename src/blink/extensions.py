@@ -585,7 +585,7 @@ class Extensions:
                     source=params.get('source', 'local'), auth=params.get('auth'),
                     execution=params.get('execution'), app_origin=params.get('appOrigin'),
                     version_note=params.get('versionNote'), parameterize=params.get('parameterize', True),
-                    specifics=params.get('specifics'))
+                    specifics=params.get('specifics'), replace=params.get('replace', False))
                 return reply(data, 'Untested Blink proposal staged in quarantine', 'quarantined')
             elif method == 'jobs_create':
                 data = self.scheduler.create(params)

@@ -426,7 +426,8 @@ def run_routine(args):
         raise ValueError('Generated routine script changed; save the routine again')
     # Child CLI calls inherit the invoking client's state/config selection and always emit JSON.
     environment = dict(os.environ, BLINK_STATE_DIR=str(args.state_dir or os.environ.get('BLINK_STATE_DIR', '')),
-                       BLINK_PLUGIN_ROOT=str(args.plugin_root), BLINK_OUTPUT='json')
+                       BLINK_PLUGIN_ROOT=str(args.plugin_root), BLINK_OUTPUT='json',
+                       PYTHONPATH=os.pathsep.join(str(path) for path in sys.path))
     if getattr(args, '_config_directory', None):
         environment['BLINK_CONFIG_DIR'] = str(args._config_directory)
     response = subprocess.run([sys.executable, str(script), run['id']], env=environment, capture_output=True, text=True)

@@ -1,6 +1,7 @@
 """Private learned routines, generated CLI-only scripts and durable per-step execution."""
 import copy
 import json
+from pathlib import Path
 import time
 import uuid
 
@@ -8,6 +9,17 @@ from .contexts import directory, name, read, write
 from .errors import BlinkError
 from .runtime import envelope
 from .storage import digest
+from .verification import binding_identity, proof_identity
+
+
+def reject_dependencies(steps, operations):
+    """Until reviewed result references exist, no step may follow a mutation.
+
+    Inferring dependencies from literal equality misses embedded or transformed IDs.
+    Reads may precede a final mutation; its correlated read-back remains supported.
+    """
+    if any(operations[step['operation']]['effect'] != 'read' for step in steps[:-1]):
+        raise BlinkError('unsupported_dependency', 'Steps after a mutation require reviewed result references; save the mutation as the final step')
 
 
 def normalized(phrase):
@@ -46,7 +58,7 @@ def main():
             time.sleep(DELAY / 1000)
         params = {'service': SERVICE, 'name': ROUTINE, 'runId': run_id, 'index': index}
         for attempt in range(4):
-            response = subprocess.run(['blink', '--output', 'json', 'routine', 'step', '--input', json.dumps(params)],
+            response = subprocess.run([sys.executable, '-c', CLI_CODE, '--output', 'json', 'routine', 'step', '--yes', '--input', json.dumps(params)],
                                       capture_output=True, text=True, check=False)
             try:
                 result = json.loads(response.stdout)
@@ -64,12 +76,15 @@ def main():
     return 0
 
 SERVICE = SERVICE_VALUE
+CLI_CODE = CLI_CODE_VALUE
 ROUTINE = ROUTINE_VALUE
 COUNT = COUNT_VALUE
 DELAY = DELAY_VALUE
 if __name__ == '__main__':
     raise SystemExit(main())
-'''.replace('SERVICE_VALUE', repr(service)).replace('ROUTINE_VALUE', repr(routine)).replace('COUNT_VALUE', str(count)).replace('DELAY_VALUE', str(delay))
+'''.replace('SERVICE_VALUE', repr(service)).replace('ROUTINE_VALUE', repr(routine)).replace('COUNT_VALUE', str(count)).replace('DELAY_VALUE', str(delay)).replace(
+    'CLI_CODE_VALUE', repr('import sys; sys.path.insert(0, ' + repr(str(Path(__file__).resolve().parents[1])) +
+                          '); from blink.cli import main; raise SystemExit(main())'))
 
 
 class Routines:
@@ -124,6 +139,7 @@ class Routines:
             if event in executed:
                 raise BlinkError('verification_required', 'Each demonstrated execution may supply only one routine step')
             executed.add(event)
+            binding = proof_identity(self.runtime, proof)
             verify = copy.deepcopy(proof['verification'])
             if verify.get('correlation'):
                 response_path = verify['correlation'].get('responsePath', verify['correlation']['path'])
@@ -136,6 +152,9 @@ class Routines:
                     row = db.execute('SELECT * FROM intents WHERE id=?', (proof['intentId'],)).fetchone()
                 if not row or row['state'] not in ('succeeded', 'resolved_done'):
                     raise BlinkError('outcome_unknown', 'Reconcile the original mutation before saving a routine')
+                if row['binding'] != proof.get('binding') or row['service'] != service or row['digest'] != active['digest']:
+                    raise BlinkError('account_mismatch', 'Use verification for the original intent account and manifest')
+                self.runtime._intent_identity(row, binding)
                 operation, arguments = row['operation'], json.loads(row['args_json'])
             op = active['compiled']['operations'][operation]
             if op['effect'] != 'read' and not (proof.get('intentId') or proof.get('observed')):
@@ -143,10 +162,10 @@ class Routines:
             self.runtime._validate_argument_values(arguments)
             # Credential field names/values are rejected rather than copied or silently redacted.
             self.runtime._validate_argument_values({'verification': verify})
-            binding = self.runtime.store.get('binding', proof.get('binding')) if proof.get('binding') else None
             steps.append({'operation': operation, 'arguments': copy.deepcopy(arguments), 'binding': proof.get('binding'),
                           'operationDigest': op['digest'], 'verification': verify, 'proofId': proof_id,
-                          'bindingIdentity': {k: binding.get(k) for k in ('service', 'account', 'tenant', 'ownerEpoch')} if binding else None})
+                          'bindingIdentity': copy.deepcopy(proof.get('bindingIdentity'))})
+        reject_dependencies(steps, active['compiled']['operations'])
         if p.get('context'):
             context = self.extensions.execution.contexts.choose(service, context=p['context'])
             if any(s['binding'] != context['binding'] for s in steps):
@@ -172,10 +191,11 @@ class Routines:
         record = self.runtime.active_manifest(value['service'])
         if value['manifestDigest'] != record['digest']:
             raise BlinkError('approval_stale', 'The Blink changed; verify and save this routine again')
+        reject_dependencies(value['steps'], record['compiled']['operations'])
         for step in value['steps']:
             binding = self.runtime.store.get('binding', step['binding']) if step['binding'] else None
-            identity = {k: binding.get(k) for k in ('service', 'account', 'tenant', 'ownerEpoch')} if binding else None
-            if identity != step['bindingIdentity']:
+            identity = binding_identity(binding)
+            if identity != step['bindingIdentity'] or binding and binding.get('state') == 'revoked':
                 raise BlinkError('account_mismatch', 'A routine account changed; verify and save the routine again')
         return record
 
@@ -224,7 +244,7 @@ class Routines:
             raise BlinkError('invalid_arguments', 'Invalid routine step')
         if index < len(run['steps']):
             prior = run['steps'][index]
-            if prior['status'] != 'retryable':
+            if prior['status'] not in ('retryable', 'login_wait'):
                 return prior['result'] if 'result' in prior else envelope('outcome_unknown', 'Inspect this interrupted step; its mutation will not be replayed', {'runId': run['id'], 'index': index})
         elif index != len(run['steps']):
             raise BlinkError('invalid_arguments', 'Run routine steps in order')
@@ -239,6 +259,11 @@ class Routines:
         if value.get('context'):
             params['context'] = value['context']
         params['requestId'] = 'routine-' + digest({'run': run['id'], 'index': index})[:40]
+        if p.get('requestId', params['requestId']) != params['requestId']:
+            raise BlinkError('intent_conflict', 'Resume the original routine step request ID')
+        if index < len(run['steps']) and run['steps'][index]['status'] == 'login_wait':
+            params['visible'] = True
+            params['context'] = run['steps'][index]['resumeContext']
         journal = {'status': 'dispatching'}
         if index < len(run['steps']):
             run['steps'][index] = journal
@@ -254,8 +279,19 @@ class Routines:
         if status in ('ok', 'succeeded', 'resolved_done') and not verified:
             status = 'unverified'
         output = {**result, 'status': status, 'retrySafe': retry, 'runId': run['id'], 'index': index}
-        journal.update(status='retryable' if retry else status, result=output)
-        run['state'] = 'succeeded' if status == 'ok' and index == len(value['steps']) - 1 else 'running' if status == 'ok' or retry else 'stopped'
+        action = (result.get('data') or {}).get('nextAction', {}) if isinstance(result.get('data'), dict) else {}
+        login_wait = status == 'login_required' and action.get('method') == 'execution_run' and action.get('params', {}).get('requestId') == params['requestId']
+        if login_wait:
+            with self.runtime.store.transaction() as db:
+                intent = db.execute('SELECT state FROM intents WHERE id=?', (params['requestId'],)).fetchone()
+            login_wait = not intent or intent['state'] in ('prepared', 'approved')
+        if login_wait:
+            journal['resumeContext'] = action['params']['context']
+            output['data']['nextAction'] = {'method': 'routine_step', 'params': {
+                'service': run['service'], 'name': run['name'], 'runId': run['id'], 'index': index,
+                'requestId': params['requestId'], 'visible': True}}
+        journal.update(status='login_wait' if login_wait else 'retryable' if retry else status, result=output)
+        run['state'] = 'waiting_for_login' if login_wait else 'succeeded' if status == 'ok' and index == len(value['steps']) - 1 else 'running' if status == 'ok' or retry else 'stopped'
         self.runtime.store.put('routine_run', run['id'], run)
         current = self.load(value['service'], value['name'])
         current['history'].append({'event': 'step', 'runId': run['id'], 'index': index, 'status': status, 'at': time.time()})

@@ -35,7 +35,7 @@ def validate_action(method, params):
     elif method in ('routine_run', 'routine_begin'):
         fields.update(confirmed={'type': 'boolean'}, planDigest=TEXT, runId=TEXT)
     elif method == 'routine_step':
-        fields.update(runId=TEXT, index={'type': 'integer', 'minimum': 0, 'maximum': 99})
+        fields.update(runId=TEXT, index={'type': 'integer', 'minimum': 0, 'maximum': 99}, requestId=TEXT, visible={'type': 'boolean'})
         required += ['runId', 'index']
     return schema_issue(closed(fields, required), params)
 
@@ -131,6 +131,8 @@ class Execution:
                 or proof['service'] != p['service'] or proof['binding'] != binding['id']
                 or proof['manifestDigest'] != record['digest']):
             raise BlinkError('verification_required', 'Use a verified read-back from the same current account')
+        from .verification import proof_identity
+        proof_identity(self.runtime, proof)
         corr = p['correlation']
         source = json.loads(raw['responseBody']) if corr['source'] == 'result' else args
         target = pointer(source, corr['path'])
@@ -152,7 +154,11 @@ class Execution:
         """Only missing operations enter learning. Keep the original goal and selected account."""
         record = self.runtime.active_manifest(p['service'])
         context = self.contexts.choose(p['service'], context=p.get('context'), binding=p.get('binding'), use=p['operation'])
+        if context and p.get('binding') and p['binding'] != context['binding']:
+            raise BlinkError('account_mismatch', 'Explicit binding differs from the execution context')
         binding = self.runtime.store.get('binding', (context or {}).get('binding') or p.get('binding'))
+        if p.get('binding') and (not binding or binding.get('state') == 'revoked'):
+            raise BlinkError('unknown_binding', 'Choose an existing account binding before learning')
         if binding and binding['service'] != p['service']:
             raise BlinkError('account_mismatch', 'Learning must use the same Blink account')
         if not context and not binding:
@@ -186,20 +192,16 @@ class Execution:
             return issue
         self.runtime._validate_argument_values(args)
         if p.get('verification'):
-            from .verification import SCHEMA, _path
+            from .verification import preflight
             check = copy.deepcopy(p['verification'])
             check.pop('correlatedExpectedPaths', None)
             check['service'] = p['service']
             if op['effect'] == 'read':
                 check.setdefault('operation', p['operation'])
-            issue = schema_issue(SCHEMA, check, 'verification')
+                check.setdefault('arguments', args)
+            issue = preflight(self.runtime, check)
             if issue:
                 return issue
-            for condition in check['expected']:
-                _path(condition['path'])
-            for key in ('path', 'argumentPath', 'responsePath'):
-                if key in check.get('correlation', {}):
-                    _path(check['correlation'][key])
             if op['effect'] != 'read' and not check.get('correlation'):
                 raise BlinkError('invalid_arguments', 'Write verification needs a correlated read-back', field_path='verification.correlation')
             self.runtime._validate_argument_values(check)
@@ -255,7 +257,8 @@ class Execution:
                     recipe = context.get('login', {})
                     password = _secrets(blink_name(record['service'])).get(recipe.get('passwordSecret'))
                     if password and all(recipe.get(k) for k in ('usernameSelector', 'passwordSelector', 'submitSelector')):
-                        browser.login(binding_id, context['loginUrl'], context['loginName'], recipe, password, submit=True)
+                        browser.login(binding_id, context['loginUrl'], context['loginName'], recipe, password, submit=True,
+                                      allowed_origins=self.contexts.login_scope(record['service'], context['loginUrl']))
                         browser.visit(binding_id, op['appOrigin'])
                         auth = self.probe(record, binding, browser, context)
                 if auth['status'] == 'ok':
@@ -332,7 +335,8 @@ class Execution:
                     return result
                 if auth['status'] != 'login_required':
                     return auth
-            filled = bridge.login(binding['id'], context['loginUrl'], context['loginName'], context.get('login', {}), submit=False)
+            filled = bridge.login(binding['id'], context['loginUrl'], context['loginName'], context.get('login', {}), submit=False,
+                                  allowed_origins=self.contexts.login_scope(context['service'], context['loginUrl']))
             return envelope('login_required', 'Sign in in the visible browser using the displayed login name, then resume this task',
                             {'context': context['name'], 'binding': binding['id'], 'loginName': context['loginName'],
                              'prefilled': filled['prefilled'], 'submitted': False, 'recording': False,
@@ -365,29 +369,40 @@ class Execution:
             result = self.runtime.dispatch('execute', {'intentId': intent})
             result['intentId'] = intent
         if result['status'] in ('ok', 'succeeded', 'resolved_done') and p.get('verification'):
-            verify = copy.deepcopy(p['verification'])
-            correlated_paths = verify.pop('correlatedExpectedPaths', [])
-            verify.update(service=p['service'])
-            if binding:
-                verify['binding'] = binding
-            if intent:
-                from .workflows import pointer
-                verify['intentId'] = intent
-                correlation = verify.get('correlation')
-                if correlation:
-                    source = result.get('data', {}).get('result') if correlation['source'] == 'result' else args
-                    try:
-                        target = pointer(source, correlation['path'])
-                    except (KeyError, IndexError, TypeError, ValueError):
-                        target = None
-                    if target is not None:
-                        verify['arguments'] = set_pointer(verify.get('arguments', {}), correlation['argumentPath'], target)
-                        for condition in verify.get('expected', []):
-                            if condition['path'] in correlated_paths:
-                                condition['equals'] = target
-            else:
-                verify.setdefault('operation', p['operation'])
-                verify.setdefault('arguments', args)
-            checked = self.runtime.dispatch('verify', verify)
-            result['verification'] = checked.get('data', checked)
+            try:
+                result['verification'] = self.check_result(p, args, binding, intent, result)
+            except Exception:
+                # Dispatch has already completed. Never turn its outcome into a request error.
+                result['verification'] = {'verification': 'unverified', 'reason': 'Read-back failed; inspect the original result and intent before reconciling'}
+                result.setdefault('warnings', []).append('Mutation/read result retained; verification could not complete')
         return result
+
+    def check_result(self, p, args, binding, intent, result):
+        verify = copy.deepcopy(p['verification'])
+        correlated_paths = verify.pop('correlatedExpectedPaths', [])
+        verify.update(service=p['service'])
+        if binding:
+            verify['binding'] = binding
+        if intent:
+            from .workflows import pointer
+            verify['intentId'] = intent
+            correlation = verify.get('correlation')
+            if correlation:
+                source = result.get('data', {}).get('result') if correlation['source'] == 'result' else args
+                try:
+                    target = pointer(source, correlation['path'])
+                except (KeyError, IndexError, TypeError, ValueError):
+                    target = None
+                if target is not None:
+                    verify['arguments'] = set_pointer(verify.get('arguments', {}), correlation['argumentPath'], target)
+                    for condition in verify.get('expected', []):
+                        if condition['path'] in correlated_paths:
+                            condition['equals'] = target
+        else:
+            verify.setdefault('operation', p['operation'])
+            verify.setdefault('arguments', args)
+        checked = self.runtime.dispatch('verify', verify)
+        if checked['status'] != 'ok':
+            return {'verification': 'unverified', 'state': 'pending', 'reason': 'Read-back could not complete',
+                    **(checked.get('data') or {})}
+        return checked.get('data', checked)
