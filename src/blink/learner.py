@@ -1286,10 +1286,13 @@ class Learner:
             possible_auth = bool({'cookie', 'authorization'} & set(record.get('headerNames') or []))
             check = selection.get('anonymousCheck')
             if auth['kind'] == 'none' and (possible_auth or check is not None):
+                from .errors import BlinkError
                 if effect != 'read' or record['method'] not in ('GET', 'HEAD'):
                     raise ValueError('Captured authentication cannot be downgraded for writes or unconfirmed POST reads')
                 if not isinstance(check, dict) or set(check) != {'arguments'} or not isinstance(check['arguments'], dict):
-                    raise ValueError('Anonymous classification requires operations[].anonymousCheck.arguments for each selected public read')
+                    raise BlinkError('anonymous_check_required',
+                                     'Anonymous classification requires an explicit credential-free check for each selected public read',
+                                     stage='validation',field_path=f'operations.{len(operation_ids)}.anonymousCheck.arguments')
                 anonymous_checks[operation_id] = copy.deepcopy(check['arguments'])
             endpoint = (path, record['method'].lower())
             if endpoint in endpoints:

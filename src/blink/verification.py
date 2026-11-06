@@ -89,7 +89,9 @@ def verify(runtime, p):
         raise BlinkError('invalid_arguments', 'Correlation requires the original intentId', field_path='intentId')
     result = {'id': uuid.uuid4().hex, 'service': record['service'], 'operation': operation['operationId'],
               'intentId': p.get('intentId'), 'intentState': intent_state, 'binding': binding,
-              'state': 'pending', 'verification': 'unverified', 'checks': [], 'evidence': [], 'createdAt': time.time()}
+              'state': 'pending', 'verification': 'unverified',
+              'checks': [{'path': c['path'], 'expected': c['equals'], 'observed': None, 'present': False, 'matched': False}
+                         for c in p['expected']], 'evidence': [], 'createdAt': time.time()}
     if unavailable:
         result['reason'] = 'correlation_unavailable; inspect and reconcile the original intent, never repeat the mutation'
     else:

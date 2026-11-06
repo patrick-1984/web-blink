@@ -83,6 +83,8 @@ class ResultVerificationTests(unittest.TestCase):
         result = self.verify('error', {}, [{'path': '/ok', 'equals': True}])
         self.assertEqual(result['data']['verification'], 'unverified', result)
         self.assertEqual(result['data']['evidence'][0]['error']['httpStatus'], 500)
+        self.assertEqual(result['data']['checks'][0]['expected'], True)
+        self.assertIsNone(result['data']['checks'][0]['observed'])
         self.assertNotIn('private-response', str(result))
 
     def create(self):

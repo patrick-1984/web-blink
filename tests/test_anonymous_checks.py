@@ -51,8 +51,10 @@ class AnonymousCheckTests(unittest.TestCase):
         self.assertEqual(result['manifest']['x-blink-service']['auth'], {'kind': 'none'})
 
     def test_captured_cookie_without_explicit_check_still_rejects(self):
-        with self.assertRaises((ValueError, BlinkError)):
+        with self.assertRaises(BlinkError) as raised:
             self.propose(checks=False)
+        self.assertEqual(raised.exception.code, 'anonymous_check_required')
+        self.assertEqual(raised.exception.field_path, 'operations.0.anonymousCheck.arguments')
         self.assertEqual(self.received, [])
 
     def test_failed_public_check_does_not_stage_a_candidate(self):
