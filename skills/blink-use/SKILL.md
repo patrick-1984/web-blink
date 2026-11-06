@@ -72,6 +72,10 @@ switch it on first with one `activate_blink` call (see blink-learn) and continue
 Unknown outcomes require reconciliation: never prepare a replacement intent to work around an unknown result,
 and never retry an execution whose outcome is unknown.
 
+For a learned idempotency header the runtime generates and stores the key per intent. Never supply a
+captured key or invent a header argument. Reconciliation and an explicitly authorized `retry_intent`
+must retain the original intent and stored key; preparing a replacement would defeat deduplication.
+
 **Verify every task result.** Before acting, state the expected object/value or state from the user's order.
 After dispatch, record the observed result and evidence, and explicitly report **verified** or **unverified**.
 `ok` / `accepted` only establishes transport acceptance. Use `blink_verify` with the reviewed read operation,
