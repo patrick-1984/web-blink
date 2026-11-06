@@ -70,4 +70,5 @@ class ActionErrorTests(unittest.TestCase):
         self.assertEqual(result['data']['error']['code'], 'transport_error')
         self.assertIn('reconcile', result['data']['error']['recovery'].lower())
         self.assertEqual(again['status'], 'outcome_unknown')
+        self.assertIsNone(again['data']['error']['dispatched'])
         self.assertEqual(send.call_count, 1)

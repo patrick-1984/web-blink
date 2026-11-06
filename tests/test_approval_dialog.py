@@ -194,7 +194,9 @@ class ApprovalDialogTests(BridgeFixture):
         self.assertEqual(result['status'], 'approval_unavailable')
         injected = session.tool('blink_request_approval', {'method': '--help; echo INJECTED #', 'params': {}})
         self.assertEqual(injected['status'], 'forbidden')
-        self.assertNotIn('data', injected)
+        self.assertEqual(set(injected['data']), {'error'})
+        self.assertEqual(injected['data']['error']['code'], 'forbidden')
+        self.assertIs(injected['data']['error']['dispatched'], False)
         self.assertEqual(session.dialogs, [])
 
     def test_local_actions_the_user_asked_for_run_immediately_without_a_dialog(self):

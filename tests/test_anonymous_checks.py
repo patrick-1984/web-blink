@@ -56,8 +56,10 @@ class AnonymousCheckTests(unittest.TestCase):
         self.assertEqual(self.received, [])
 
     def test_failed_public_check_does_not_stage_a_candidate(self):
-        with self.assertRaises((ValueError, BlinkError)):
+        with self.assertRaises(BlinkError) as raised:
             self.propose(path='/private')
+        self.assertEqual(raised.exception.code, 'anonymous_check_failed')
+        self.assertEqual(raised.exception.http_status, 401)
         self.assertEqual(self.runtime.store.list('manifest_candidate'), [])
 
     def test_captured_authenticated_write_cannot_be_downgraded(self):

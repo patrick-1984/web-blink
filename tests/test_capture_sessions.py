@@ -629,9 +629,16 @@ class ProposeEverythingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             settings = Path(temp) / 'settings'
             ConfigStore(settings).set('approvals', 'dialog')  # the opt-in dialog policy
-            shown = describe('activate_blink', {'manifest': {'service': 'own:x', 'digest': 'd'}, 'bind': {'binding': 'x'},
-                                                'grant': {'binding': 'x', 'operations': ['a'], 'origins': ['https://x.example']}},
-                             state_dir=temp, config_dir=settings)
+            # Activation now preflights the real candidate before constructing a dialog.
+            from blink import client
+            from test_runtime_core import manifest
+            from unittest import mock
+            runtime = Runtime(temp)
+            candidate = runtime.install_manifest(manifest('https://api.example', kind='none'), 'own', 'fixture')['data']
+            with mock.patch.object(client, 'request', side_effect=lambda method, params, **kw: runtime.dispatch(method, params)):
+                shown = describe('activate_blink', {'manifest': candidate,
+                    'bind': {'binding': 'x', 'service': candidate['service'], 'account': 'anonymous'},
+                    'grant': {'binding': 'x', 'operations': ['products']}}, state_dir=temp, config_dir=settings)
             self.assertEqual(shown['status'], 'ok')
             for part in ('approve', 'bind', 'grant'):
                 self.assertIn(part, shown['data']['text'])

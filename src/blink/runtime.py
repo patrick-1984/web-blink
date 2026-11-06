@@ -124,6 +124,9 @@ class Runtime:
                 if method in ('call_read','execute') and result['status'] in ('ok','succeeded','resolved_done'):
                     result['verification']={'state':'accepted','verification':'unverified',
                                             'reason':'Compare explicit expectations with a read or correlated write read-back.'}
+                if method=='execute' and result['status'] in ('outcome_unknown','dispatching') and not result.get('data',{}).get('error'):
+                    result=failure(BlinkError('outcome_unknown','Original mutation outcome remains unknown',dispatched=None),
+                                   'execute',data=result.get('data'),status=result['status'],summary=result['summary'])
             # Public data cannot contain raw credentials even when a service reflects them.
             return result
         except BlinkError as exc:return failure(exc,method)

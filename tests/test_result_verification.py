@@ -16,6 +16,7 @@ class ResultVerificationTests(unittest.TestCase):
         self.writes = 0
         self.reads = 0
         self.lose_reply = False
+        self.response_id = 'created-7'
         owner = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_): pass
@@ -32,7 +33,7 @@ class ResultVerificationTests(unittest.TestCase):
                 owner.reads += 1
                 if self.path == '/error': return self.reply(500, {'password': 'private-response'})
                 if self.path.startswith('/objects/'):
-                    return self.reply(200, {'id': 'created-7', 'state': 'ready' if owner.reads >= 2 else 'pending'})
+                    return self.reply(200, {'id': owner.response_id, 'state': 'ready' if owner.reads >= 2 else 'pending'})
                 items = [] if 'empty' in self.path else ['new-input' if 'new-input' in self.path else 'other']
                 self.reply(200, {'items': items})
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
@@ -128,6 +129,12 @@ class ResultVerificationTests(unittest.TestCase):
         result = self.verify('create', {}, [{'path': '/id', 'equals': 'created-7'}])
         self.assertEqual(result['status'], 'effect_denied')
         self.assertEqual(self.reads, 0)
+        self.assertEqual(self.writes, 1)
+        self.response_id = 'other-object'
+        result = self.verify('getObject', {'id': 'created-7'}, [{'path': '/state', 'equals': 'pending'}],
+            intentId=intent, correlation={'source': 'result', 'path': '/id', 'argumentPath': '/id'})
+        self.assertEqual(result['data']['verification'], 'unverified', result)
+        self.assertFalse(result['data']['correlation']['matched'])
         self.assertEqual(self.writes, 1)
 
     @unittest.skipUnless(shutil.which('node'), 'Node is required for the MCP check')

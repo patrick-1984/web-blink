@@ -234,6 +234,7 @@ function actionError(result,stage,dispatched=null){
  if(['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large','waiting_for_browser'].includes(result.status)||result.data?.error)return result;
  const safeStage=typeof stage==='string'&&/^[a-z_]{1,100}$/.test(stage)?stage:'tool_action';
  const code=typeof result.status==='string'&&/^[a-z_]{1,100}$/.test(result.status)?result.status:'internal_error';
+ if(['forbidden','invalid_arguments','configuration_error'].includes(code))dispatched=false;
  return {...result,data:{...(result.data&&typeof result.data==='object'&&!Array.isArray(result.data)?result.data:{}),error:{stage:safeStage,code,fieldPath:null,
   correlationId:randomBytes(16).toString('hex'),httpStatus:null,dispatched,
   recovery:'Inspect current status; reconcile the original intent for a write. Do not repeat the mutation.'}}};

@@ -1421,7 +1421,10 @@ class Learner:
                 # must work without credentials. Never run a mutation to test anonymous access.
                 response = self.runtime.executor.send(operation, arguments)
                 if not 200 <= response['status'] < 300 or response.get('validation_error'):
-                    raise ValueError('Credential-free public read failed; keep authenticated classification and a genuine identity probe')
+                    from .errors import BlinkError
+                    raise BlinkError('anonymous_check_failed',
+                                     'Credential-free public read failed; keep authenticated classification and a genuine identity probe',
+                                     stage='anonymous_check',http_status=response['status'],dispatched=True)
                 evidence.append({'operation': opid, 'operationDigest': operation['digest'],
                                  'argumentsDigest': digest(arguments), 'httpStatus': response['status'],
                                  'responseDigest': digest(response['data']), 'credentialFree': True, 'checkedAt': time.time()})
