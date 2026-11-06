@@ -126,4 +126,11 @@ def verify(runtime, p):
                 time.sleep(delay)  # At most two waits of two seconds, reads only.
     result = redact(result, list(runtime.broker.known_secrets()))
     runtime.store.put('verification', result['id'], result)
+    if result['verification'] == 'verified':
+        # Private replay evidence: routines may only be built from calls that actually passed read-back.
+        # Keep the exact inputs separately from the bounded public verification record.
+        request = {k: p[k] for k in ('operation', 'expected', 'correlation') if k in p}
+        request['arguments'] = args
+        runtime.store.put('verified_call', result['id'], {'service': record['service'], 'manifestDigest': record['digest'],
+            'binding': binding, 'verification': request, 'intentId': p.get('intentId')})
     return envelope('ok', 'Result checked against explicit expectations; no mutation dispatched', result)

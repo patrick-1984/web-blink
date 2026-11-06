@@ -178,6 +178,10 @@ class Extensions:
         self.workflows = WorkflowEngine(runtime)
         self.sources = SourceManager(runtime)
         self.custody = CustodyManager(runtime, self.browser)
+        from .execution import Execution
+        from .routines import Routines
+        self.execution = Execution(self)
+        self.routines = Routines(self)
         runtime._custody_manager = self.custody
         self.started = False
         self.last_maintenance = 0
@@ -418,6 +422,18 @@ class Extensions:
     def dispatch(self, method, params, *, human=False):
         if method == 'admin':
             action = params.get('action')
+            if action == 'contexts':
+                return reply(self.execution.contexts.list(params['service']), 'Private execution contexts')
+            if action == 'routines':
+                return reply(self.routines.list(params['service']), 'Private learned routines')
+            if action == 'routine':
+                return reply(self.routines.load(params['service'], params['name']), 'Private routine and history')
+            if action == 'routine_lookup':
+                return self.routines.lookup(params)
+            if action == 'routine_plan':
+                return self.routines.plan(params)
+            if action == 'routine_run':
+                return reply(self.store.get('routine_run', params['runId']), 'Routine run journal')
             if action == 'browser_connection':
                 data = self.browser_status(params)
                 return reply(data, data['guidance']['message'])
@@ -474,13 +490,26 @@ class Extensions:
                     'custody_recover', 'custody_forget', 'forget_service', 'purge_state'}
         methods |= {'browser_select', 'browser_setup'}
         methods |= {'browser_connect', 'browser_restart', 'browser_restore', 'browser_permission_open', 'browser_extension_open'}
+        methods |= {'execution_run', 'execution_observe', 'context_save', 'routine_save', 'routine_run', 'routine_begin', 'routine_step'}
         if method not in methods:
             return None
         if not human:
             # Permit-gated control action: reachable through the CLI or the blink_request_approval bridge.
             return reply({}, 'This action needs an exact-command control permit: use blink_request_approval or the CLI', 'forbidden')
         try:
-            if method == 'learn_import_har':
+            if method in ('execution_run', 'execution_observe', 'context_save', 'routine_save', 'routine_run', 'routine_begin', 'routine_step'):
+                from .execution import validate_action
+                issue = validate_action(method, params)
+                if issue:
+                    return issue
+                if method == 'execution_run':
+                    return self.execution.run(params)
+                if method == 'execution_observe':
+                    return self.execution.observe(params)
+                if method == 'context_save':
+                    return reply(self.execution.contexts.save(params), 'Execution context saved')
+                return getattr(self.routines, method.removeprefix('routine_'))(params)
+            elif method == 'learn_import_har':
                 data = self.learner.import_har(params['path'], params['origins'])
             elif method == 'learn_start_guided':
                 data = self.start_recording(params)

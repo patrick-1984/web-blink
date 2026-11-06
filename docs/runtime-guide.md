@@ -32,6 +32,9 @@ All Web Blink user data is in one private folder (mode 0700) in your home:
 | `~/.web-blink/state/` | daemon state: `blink.sqlite3`, sockets, `runtime.lock`, `captures/<session>` folders, secrets |
 | `~/.web-blink/config/` | `settings.json` and other CLI preferences |
 | `~/.web-blink/private/` | your private Blinks |
+| `~/.web-blink/contexts/` | per-Blink account contexts and private headless profiles/storage state |
+| `~/.web-blink/routines/` | learned phrases, verified steps, preview preference and history |
+| `~/.web-blink/scripts/` | generated Python scripts that call only the Blink CLI |
 
 `BLINK_HOME` selects another home folder; `BLINK_STATE_DIR` / `--state-dir` and `BLINK_CONFIG_DIR` /
 `--config-dir` still select a single state or configuration folder. `blink doctor` reports `homeDir`,
@@ -47,7 +50,7 @@ that run keeps using the old folder, `blink doctor` warns, and the move happens 
 daemon has stopped. An explicit `BLINK_HOME`, state or configuration folder never triggers the move.
 
 From a source checkout, use `uv run --project plugin blink ...` at workspace level, or install the built
-CLI wheel with `uv tool install /path/to/web_blink-0.11.0-py3-none-any.whl` to obtain the `blink` command.
+CLI wheel with `uv tool install /path/to/web_blink-0.13.0-py3-none-any.whl` to obtain the `blink` command.
 
 ```sh
 blink doctor
@@ -90,6 +93,136 @@ or reviewed setting mappings; they never change credential destinations. See [CL
 a provider-side permissions simulation. `--request-id` preserves a mutation's intent across a lost CLI
 response. An unknown result must be reconciled or explicitly retried under the original idempotency
 contract, never replayed with a new execution mode or freshly minted intent.
+
+## Execution mode
+
+An order to use an existing Blink starts execution, without recording. Use MCP `blink_execution_run`
+with the exact `service`, `operation`, `arguments`, optional `context`/`binding`, and a `verification`
+read with explicit expectations. CLI callers use `blink human execution_run --input task.json`.
+The returned `instructions` includes the existing shared `x-blink-notes`, field notes, private
+preferences and process notes. Private operation defaults are applied before dispatch; explicit values
+win. Notes remain instructions for the agent; the runtime does not interpret prose as code.
+
+Account contexts are plural and private to the OS user under `$BLINK_HOME/contexts/<source--blink>/`.
+`blink_admin` action `contexts` with `service` lists them. Save one using `context_save` through
+`blink_request_approval`, or `blink human context_save --input context.json`:
+
+```json
+{
+  "service": "local:acme",
+  "name": "work",
+  "binding": "work",
+  "loginName": "jdoe",
+  "loginUrl": "https://app.example.com/login",
+  "uses": ["listPeople"],
+  "login": {
+    "usernameSelector": "input[name=username]",
+    "passwordSelector": "input[type=password]",
+    "submitSelector": "button[type=submit]",
+    "passwordSecret": "login"
+  }
+}
+```
+
+The binding must already belong to this exact reviewed Blink/account. The context remembers the binding
+identity, login name/URL, selected visible browser, private profile directory and last success. Files are
+0600 and profile directories 0700. `passwordSecret` is a name in the existing private secret store, set
+with `private_secret_set`; a context never holds a password. Browser storage contains session credentials
+and stays in the private profile, never in tool output or generated scripts. Changing a context's account
+requires a new context name, so another account cannot inherit its storage. Explicit context/binding
+conflicts stop before opening a browser. Multiple eligible accounts require a choice; successful uses
+remember which context serves an operation.
+
+Public direct reads run immediately without login. Existing broker custody retains its reviewed direct
+execution and refresh rules. C1/C2 account execution tries a short-lived, Blink-owned headless Playwright
+profile first. It checks the bound identity before dispatch and, if needed, attempts the locally configured
+login recipe using the stored secret. Headless launch uses the existing pinned Playwright components;
+missing components lead to the visible provider, without installing system packages. The owned process
+group is killed in `finally`, including on initialization failure. Private pidfiles plus process-start
+identity/token checks let daemon startup reap orphan groups without targeting unrelated browsers.
+Owned headless process groups currently require POSIX; other hosts use the visible provider.
+
+When login is needed, headless cleanup finishes first. Blink uses the existing selected visible browser
+and its owned work tab, checks its current session, and fills the login name if sign-in is still needed.
+It never supplies a password or clicks submit in this visible handoff. If the page has several possible
+username fields, save `usernameSelector`; `prefilled:false` honestly reports an ambiguous form. Ask the
+user to sign in in that tab, rather than asking for just a password. The returned `nextAction` preserves
+the task and uses `visible:true` to resume after sign-in. A broker-owned binding still requires its
+existing custody/reseed flow; visible login does not silently change credential ownership. Identity
+mismatch stops execution and never switches to another account. The shared browser's tab zero and
+other sessions' tabs remain outside Blink ownership.
+
+Execution keeps the existing approval policy (`none` by default), exact plans, digests, grants, budgets
+and unknown-outcome rules. `ok` means accepted until verification confirms expectations. Pass
+`verification` with `operation`, `arguments`, `expected`, and for writes `correlation` as documented in
+[result verification](result-verification.md). Invalid verification shapes fail before mutation dispatch.
+Unknown writes retain the original intent; headless failure never authorizes retrying them.
+
+## Routines and scripts
+
+For a known phrase such as “blink acme for me”, use `blink_admin` action `routine_lookup` with
+`service` and `phrase`. Phrases and aliases use case-insensitive, whitespace-normalized exact lookup.
+An unknown phrase requires learning its rules. A known phrase returns **one explicit question**:
+“Should I do this according to the last rules?” This confirmation is deliberately requested even with
+`approvals:none`. It includes current instructions and a `planDigest`; the step/argument preview appears
+only when `previewBeforeCommit` is true. After the user agrees, call `blink_routine_run` with `service`,
+`name`, `confirmed:true` and that digest. Changed routines or instructions invalidate stale confirmation.
+
+Save a routine using `routine_save` through the control bridge or `blink routine save --input routine.json`:
+
+```json
+{
+  "service": "local:acme",
+  "name": "team",
+  "phrase": "blink acme for me",
+  "aliases": ["show my team"],
+  "previewBeforeCommit": false,
+  "delayMs": 100,
+  "verificationIds": ["<verified-call-id>"]
+}
+```
+
+The IDs must come from successful, current `blink_verify` / execution verification records. Steps and
+inputs are derived from that evidence. A write additionally needs its succeeded/reconciled intent and
+correlated read-back. Arbitrary steps, shell snippets and secret inputs are refused. Optional `context`
+pins all steps to one existing account. A saved routine freezes arguments, manifest and account identity;
+changes require fresh verification and saving it again. History appends save/step outcomes. Inspect it
+with `blink routine show team --service local:acme`, or `blink_admin` action `routine` with `service`/`name`.
+
+```sh
+blink routine run team
+# Interactive terminal: answer the one routine question.
+# A script whose caller already answered it:
+blink routine run team --service local:acme --confirmed --run-id team-2026-11-06
+```
+
+When names collide across Blinks, supply `--service`. `--yes` only handles opt-in host action dialogs;
+it does not answer the routine question. JSON/noninteractive callers first receive `confirmation_required`;
+they may pass its `--plan-digest` with `--confirmed` after the user's answer. `--dry-run` suppresses execution.
+The generated Python script lives under `$BLINK_HOME/scripts/<source--blink>/<name>-<digest>.py`; it contains
+only Blink CLI JSON calls, pacing and result handling, with no recorded values or credential literals.
+The CLI checks its hash before running it. Each call goes through `blink routine step` and the existing
+control permit, grant and intent checks. MCP uses the same durable step runner without a daemon callback.
+
+`delayMs` defaults to 100 and must be an integer from 50 to 500. It applies between operations; safe
+429 failures receive up to three backoff waits, each capped at 500 ms. Reads or proven-unsent requests
+can be retried. Dispatched/unknown writes are never retried, including a write that returns 429.
+Verification must pass before the next step. Each run has stable mutation IDs; repeating its `runId`
+returns completed results without redispatch. A crash during a step requires journal inspection.
+Inspect it using `blink_admin` action `routine_run`, `runId`.
+
+**Learn while doing:** missing operations hand off to the existing guided recorder with `executionGoal`,
+the chosen browser/account and a continuation checklist. Perform the ordered task while capture is on,
+then `learn_stop`, `learn_propose` and `activate_blink` as usual. Reads can be verified immediately.
+For an already-performed browser mutation, never replay it to create evidence. Perform a reviewed
+read-back with `blink_verify`, checking the genuine object ID and desired state. Call `execution_observe`
+through the control bridge with the same `service`/`operation`/`binding`, exact `arguments`, `session`,
+recorded request `seq`, read-back `verificationId`, and `correlation` (`source`, `path`, `argumentPath`,
+`responsePath`). It checks the activated proposal's capture, exact method/URL/body, successful response,
+same bound browser, and correlated verified read-back, without sending a mutation. Use its returned
+verification ID in `routine_save`. Incomplete/truncated recordings, different accounts, unmatched IDs
+and unknown outcomes remain blocked. The agent still curates effect classifications and activation;
+recorded browser traffic alone cannot confer execution authority.
 
 ## Learn and review an integration
 

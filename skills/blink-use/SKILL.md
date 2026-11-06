@@ -3,6 +3,34 @@ name: blink-use
 description: Use Web Blink operations through the MCP catalog: reads, and writes the user orders, executed at once.
 ---
 
+An order to do business/manual steps on a site with an existing Blink is **execution mode**. Do not start
+recording or learning unless an operation is missing. Use `blink_execution_run` with the exact service,
+operation, arguments and expected-result `verification`. It surfaces shared notes plus private process notes,
+preferences and defaults; apply those instructions, respecting explicit values in the current order.
+
+Behind the scenes, inspect `blink_admin` action `contexts` for this service. Reuse the remembered context
+for this operation; choose among accounts only when ambiguous. Contexts retain account/login name, binding,
+login URL, selected visible browser, private headless profile and last success. Save corrections with
+`blink_request_approval` method `context_save`; passwords belong only in `private_secret_set`, referenced
+by `login.passwordSecret`. Never put secrets in contexts, notes, logs or scripts. Do not silently rebind an
+existing context to a different account.
+
+Let execution mode try the known login in its owned headless session. A `login_required` handoff means that
+session has been cleaned up and the selected visible browser shows the login name, without submitting.
+Ask the user to sign in there, not to provide just a password. If `prefilled:false`, save the correct username
+selector before continuing. Preserve and resume the complete returned `nextAction` after sign-in; do not
+replace it with a fresh mutation. An account mismatch must never trigger another account/profile fallback.
+
+**Known routines are the explicit confirmation exception.** For a phrase such as “blink acme for me”, use
+`blink_admin` action `routine_lookup` with service/phrase. If known, ask its one question: “Should I do this
+according to the last rules?” Show the operation/argument preview only when `previewBeforeCommit` is true.
+After agreement call `blink_routine_run` with service/name, `confirmed:true` and the returned `planDigest`.
+Do not ask for each step. Current instructions are included; changed instructions require current confirmation.
+For repeatable tasks prefer the generated CLI script (`blink routine run <name>`). Save routines through
+`routine_save` with phrase, aliases, preview preference and the actual verified call IDs, in execution order.
+Never invent evidence, copy secrets into scripts or retry an unknown write. See
+[routines and scripts](../../docs/runtime-guide.md#routines-and-scripts) for inputs and pacing.
+
 Browser account bindings retain the selector from their recording. To use a personal or admin login,
 reuse the matching binding; changing the recording default does not switch an existing account. Read
 `blink_admin` with `action: binding` for its `browser` selector, or `action: browsers` to discover local

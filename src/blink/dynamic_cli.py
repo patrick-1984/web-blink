@@ -15,7 +15,7 @@ from .errors import BlinkError
 
 LEGACY = {'doctor', 'services', 'search', 'describe', 'read', 'prepare', 'execute', 'verify', 'status',
           'human', 'install', 'approve-manifest', 'approve-intent', 'sources', 'schemas', 'tools',
-          'account', 'custody', 'learn', 'jobs', 'health', 'trust', 'forget', 'purge', 'browser'}
+          'account', 'custody', 'learn', 'jobs', 'health', 'trust', 'forget', 'purge', 'browser', 'routine'}
 VALUE_FLAGS = {'--output': 'output', '-o': 'output', '--region': 'region', '--language': 'language',
                '--binding': 'binding', '--config-dir': 'config_dir', '--state-dir': 'state_dir',
                '--plugin-root': 'plugin_root'}
@@ -143,6 +143,10 @@ def _target_scope(args, supplied, flags):
     """Resolve the resource actually changed, not an advisory --service setting selector."""
     method = _management_method(args)
     claimed = getattr(args, 'service', None) or supplied.get('service')
+    if args.command == 'routine' and not claimed and (args.name or supplied.get('name')):
+        from .routines import resolve_service
+        claimed = resolve_service(args.name or supplied['name'])
+        args.service = claimed
     if args.command == 'install':
         return args.source + ':' + args.id, None
     if args.command == 'sources' and args.source_action == 'install':
@@ -151,6 +155,8 @@ def _target_scope(args, supplied, flags):
     intent = getattr(args, 'intent_id', None) or supplied.get('intentId')
     if method in {'execute', 'approve_intent', 'retry_intent', 'reconcile'} and intent:
         lookup = {'action': 'intent', 'intentId': intent}
+    elif args.command == 'routine' and supplied.get('runId'):
+        lookup = {'action': 'routine_run', 'runId': supplied['runId']}
     elif method in {'jobs_run', 'jobs_pause', 'jobs_resume'} and supplied.get('job'):
         lookup = {'action': 'job', 'job': supplied['job']}
     elif method == 'workflow_run' and supplied.get('runId'):
@@ -530,7 +536,7 @@ def _legacy(tokens, flags, store):
                           'intentId': args.intent_id or supplied.get('intentId')},
                          'Execution suppressed; no receipt or journal was changed'), settings
     if settings.get('dry_run') and (
-            args.command in {'human', 'install', 'approve-manifest', 'approve-intent', 'forget', 'purge'}
+            args.command in {'human', 'install', 'approve-manifest', 'approve-intent', 'forget', 'purge', 'routine'}
             or (args.command == 'browser' and args.browser_action in {'select', 'setup'})
             or (args.command in cli.MANAGEMENT and args.management_action != 'list')
             or (args.command == 'sources' and args.source_action != 'list')

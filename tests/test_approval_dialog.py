@@ -310,6 +310,15 @@ def bridge_actions(staged):
         ('install_manifest', {'document': FIXTURE, 'source': 'own', 'integration': 'fixture'}),
         ('private_set', {'blink': 'fixture', 'patch': {'preferences': {'colour': 'blue'}}}),
         ('private_secret_set', {'blink': 'fixture', 'name': 'pin', 'value': SECRET}),
+        ('execution_run', {'service': 'own:fixture', 'operation': 'mutate'}),
+        ('execution_observe', {'service': 'own:fixture', 'operation': 'mutate', 'arguments': {}, 'binding': 'missing',
+                              'session': 'missing', 'seq': 1, 'verificationId': 'missing',
+                              'correlation': {'source': 'result', 'path': '/id', 'argumentPath': '/id', 'responsePath': '/id'}}),
+        ('context_save', {'service': 'own:fixture', 'name': 'work', 'binding': 'missing'}),
+        ('routine_save', {'service': 'own:fixture', 'name': 'team', 'phrase': 'show my team', 'verificationIds': ['missing']}),
+        ('routine_run', {'service': 'own:fixture', 'name': 'team'}),
+        ('routine_begin', {'service': 'own:fixture', 'name': 'team'}),
+        ('routine_step', {'service': 'own:fixture', 'name': 'team', 'runId': 'missing', 'index': 0}),
         ('purge_state', {}),
     ]
 
