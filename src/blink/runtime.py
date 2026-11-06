@@ -13,7 +13,7 @@ import uuid
 
 from jsonschema import Draft202012Validator
 from .broker import Broker,at_path,secret_values
-from .errors import BlinkError
+from .errors import BlinkError,failure
 from .executor import HTTPExecutor
 from .profile import compile_manifest,origin,SENSITIVE
 from .storage import Store,digest,encoded
@@ -123,8 +123,8 @@ class Runtime:
                 result=getattr(self,'_'+method)(params)
             # Public data cannot contain raw credentials even when a service reflects them.
             return result
-        except BlinkError as exc:return envelope(exc.code,exc.message)
-        except Exception:return envelope('error','Runtime operation could not complete')
+        except BlinkError as exc:return failure(exc,method)
+        except Exception as exc:return failure(exc,method,status='error',dispatched=None)
 
     def _services(self,p):
         active={row['service']:row for row in self.store.list('active_manifest')}
@@ -333,15 +333,17 @@ class Runtime:
         auth=next(iter(record['compiled']['operations'].values()))['auth']
         if auth['kind']!='none':
             if not isinstance(identity,dict) or not isinstance(identity.get('accountPath'),str):
-                raise BlinkError('invalid_arguments','Authenticated bindings require an identity accountPath')
+                raise BlinkError('invalid_arguments','Authenticated bindings require an identity accountPath',
+                                 field_path='identity.accountPath',stage='validation')
             probe=identity.get('operation',auth.get('probe'))
             if probe not in record['compiled']['operations'] or record['compiled']['operations'][probe]['effect']!='read':
                 raise BlinkError('invalid_arguments','Identity probe must be a reviewed read operation')
             probe_operation=record['compiled']['operations'][probe]
             self._assert_read_verified(record,probe_operation)
             probe_arguments=identity.get('arguments',{})
-            try:Draft202012Validator(probe_operation['inputSchema']).validate(probe_arguments)
-            except Exception:raise BlinkError('invalid_arguments','Identity arguments do not match the reviewed probe schema') from None
+            from .control import schema_issue
+            issue=schema_issue(probe_operation['inputSchema'],probe_arguments,'identity.arguments')
+            if issue:return issue
             self._validate_argument_values(probe_arguments)
             identity={**identity,'arguments':copy.deepcopy(probe_arguments)}
             identity={**identity,'operation':probe}
@@ -613,17 +615,20 @@ class Runtime:
             if result['validation_error'] == 'drift_suspected':
                 self.store.put('op_quarantine', record['service'] + ':' + operation['operationId'],
                                {'digest': operation['digest'], 'at': time.time(), 'state': 'quarantined'})
-            raise BlinkError(result['validation_error'],'Response does not match the execution contract')
+            raise BlinkError(result['validation_error'],'Response does not match the execution contract',
+                             stage='remote_response',http_status=result['status'],dispatched=True)
         status=result['status']
         if not 200<=status<300:
             if status==401:
                 if binding:self.broker.park(binding,'login_required')
-                raise BlinkError('login_required','Service requires a fresh login; the business request was not retried')
+                raise BlinkError('login_required','Service requires a fresh login; the business request was not retried',
+                                 stage='remote_response',http_status=status,dispatched=True)
             if status==403:
                 if binding:self.broker.park(binding,'challenge_required')
-                raise BlinkError('challenge_required','Service requires human attention; the business request was not retried')
-            if status==429:raise BlinkError('rate_limited','Service rate limit reached')
-            raise BlinkError('service_error','Service returned an error response')
+                raise BlinkError('challenge_required','Service requires human attention; the business request was not retried',
+                                 stage='remote_response',http_status=status,dispatched=True)
+            if status==429:raise BlinkError('rate_limited','Service rate limit reached',stage='remote_response',http_status=status,dispatched=True)
+            raise BlinkError('service_error','Service returned an error response',stage='remote_response',http_status=status,dispatched=True)
         return result['data'] if private else redact(result['data'],secrets+list(self.broker.known_secrets()))
 
     def _call_read(self,p):
@@ -738,8 +743,9 @@ class Runtime:
         record,op=self._operation(p)
         if op['effect'] in ('read','maintenance'):raise BlinkError('effect_denied','Prepare accepts only business mutations')
         args=self._with_variables(record,op,p.get('arguments',{}))
-        try:Draft202012Validator(op['inputSchema']).validate(args)
-        except Exception:raise BlinkError('invalid_arguments','Arguments do not match the reviewed schema') from None
+        from .control import schema_issue
+        issue=schema_issue(op['inputSchema'],args,'arguments')
+        if issue:return issue
         binding=self._binding(p,record,op,write=True);grant=self._current_grant(binding,op)
         self._validate_argument_values(args,binding)
         amount,currency=self._money(op,args)
@@ -921,7 +927,9 @@ class Runtime:
                 with self.store.transaction() as db:
                     db.execute("UPDATE intents SET state='outcome_unknown',outcome='request_or_response_ambiguous' WHERE id=?",(intent,))
                     db.execute("UPDATE reservations SET state='pending_unknown' WHERE intent_id=?",(intent,))
-                return envelope('outcome_unknown','Mutation outcome requires reconciliation; no automatic retry',{'intentId':intent})
+                if isinstance(exc,BlinkError) and exc.http_status is None:exc.dispatched=None
+                return failure(exc,'execute',data={'intentId':intent},status='outcome_unknown',
+                               summary='Mutation outcome requires reconciliation; no automatic retry',dispatched=None)
             with self.store.transaction() as db:
                 db.execute("UPDATE intents SET state='succeeded',result_json=? WHERE id=?",(encoded(data),intent))
                 db.execute("UPDATE reservations SET state='consumed' WHERE intent_id=? AND state IN ('held','pending_unknown')",(intent,))

@@ -229,15 +229,23 @@ async function prepareRuntime(params,callId){
  });
 }
 function rpcError(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
+function actionError(result,stage,dispatched=null){
+ if(['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large','waiting_for_browser'].includes(result.status)||result.data?.error)return result;
+ const safeStage=typeof stage==='string'&&/^[a-z_]{1,100}$/.test(stage)?stage:'tool_action';
+ const code=typeof result.status==='string'&&/^[a-z_]{1,100}$/.test(result.status)?result.status:'internal_error';
+ return {...result,data:{...(result.data&&typeof result.data==='object'&&!Array.isArray(result.data)?result.data:{}),error:{stage:safeStage,code,fieldPath:null,
+  correlationId:randomBytes(16).toString('hex'),httpStatus:null,dispatched,
+  recovery:'Inspect current status; reconcile the original intent for a write. Do not repeat the mutation.'}}};
+}
 function toolFailure(message,error){
  const tool=tools.find(t=>t.name===message?.params?.name);
  if(message?.method!=='tools/call'||!tool)return rpcError(message?.id??null,-32603,'Internal error');
  const kinds=['TypeError','RangeError','SyntaxError','ReferenceError','Error'];
  const operation=message.params?.arguments?.method??message.params?.arguments?.action??methods.get(tool.name);
- return {jsonrpc:'2.0',id:message.id,result:{isError:true,content:[{type:'text',text:JSON.stringify({
+ return {jsonrpc:'2.0',id:message.id,result:{isError:true,content:[{type:'text',text:JSON.stringify(actionError({
   status:'internal_error',summary:'Blink could not finish this tool action. Inspect its current state before retrying an action that may have changed anything.',
   data:{tool:tool.name,operation:typeof operation==='string'&&/^[a-z_]{1,100}$/.test(operation)?operation:'tool_action',
-        errorType:kinds.includes(error?.name)?error.name:'Error'},warnings:[]})}]}};
+        errorType:kinds.includes(error?.name)?error.name:'Error'},warnings:[]},operation))}]}};
 }
 function validArguments(tool,args){
  if(!args||typeof args!=='object'||Array.isArray(args))return false;
@@ -290,7 +298,7 @@ async function handle(message){
    :process.platform==='win32'&&p.name==='blink_admin'&&args.action==='browsers'
     ?{status:'ok',summary:'Local profile names and aliases (no Python or daemon required)',data:(await import('./browsers.mjs')).discoverWindows(args.browser,{refresh:args.refresh===true}),warnings:[]}
     :await backend(methods.get(p.name),args);
-  return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large','waiting_for_browser'].includes(result.status)}};
+  return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(actionError(result,methods.get(p.name)))}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large','waiting_for_browser'].includes(result.status)}};
  }
  return rpcError(id,-32601,'Method not found');
 }

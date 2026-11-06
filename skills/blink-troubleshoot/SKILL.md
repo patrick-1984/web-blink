@@ -84,3 +84,10 @@ Use a supportive factual handoff: “Recording is off; I’m starting it now” 
    submit themselves. Share the resulting issue link.
 
 Never include anything the user asked to leave out, and never anything the anonymization rules exclude.
+
+For a failed action, use `data.error`: sanitized `stage`, `code`, `fieldPath`, `correlationId`,
+`httpStatus` and `dispatched` (true/false/null for unknown). Follow its bounded `recovery`.
+A missing HTTP status means none is known. Keep the original intent for uncertain writes; inspect
+its journal and perform correlated read-back/reconciliation. Never repeat the mutation to diagnose it.
+For uncertain recording starts, follow the returned `blink_browser_status` continuation with its exact
+binding/browser. Keep credentials, response bodies and tracebacks out of problem reports.

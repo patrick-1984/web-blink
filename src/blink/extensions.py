@@ -5,7 +5,7 @@ import time
 import re
 
 from .browser import BrowserBridge
-from .errors import BlinkError
+from .errors import BlinkError,failure
 from .learner import Learner
 from .scheduler import Scheduler
 from .sources import SourceManager
@@ -679,16 +679,21 @@ class Extensions:
                                 'agentInstruction': 'Explain the blocker briefly in plain language, then ask one next-step question. '
                                     'Do not use shell port/process commands or require setup instructions. Keep the app URL and '
                                     'resume blink_start_recording after the browser choice; do not stop at connection only.'})
-            return reply(data, exc.message, exc.code)
-        except Exception:
+            return failure(exc,method,data=data)
+        except Exception as exc:
             if method == 'learn_start_guided':
-                return reply({'recording': None, 'recordingRequested': True,
-                    'nextActions': [{'tool': 'blink_browser_status', 'params': {}, 'label': 'Check what actually started'}],
+                from .learner import blink_name
+                status_params = {k: params[k] for k in ('browser', 'binding') if k in params}
+                if 'binding' not in status_params and params.get('url'):
+                    status_params['binding'] = blink_name(params['url'])
+                return failure(exc,method,data={'recording': None, 'recordingRequested': True,
+                    'nextActions': [{'tool': 'blink_browser_status', 'params': status_params, 'label': 'Check what actually started'}],
                     'guidance': {'stage': 'check_recording_state',
                         'agentInstruction': 'Check blink_browser_status before retrying or claiming recording is off/on. '
                                             'Explain the result and guide one next step; never use shell diagnostics.'}},
-                    'Blink could not finish this step. Check recording status before retrying.', 'recording_state_unknown')
-            return reply({}, 'Action parameters, prerequisite or capability is unavailable', 'invalid_request')
+                    summary='Blink could not finish this step. Check recording status before retrying.',
+                    status='recording_state_unknown',dispatched=None)
+            return failure(exc,method,status='invalid_request',summary='Action parameters, prerequisite or capability is unavailable',dispatched=None)
 
     def notify(self, binding, reason):
         key = binding + ':' + reason
