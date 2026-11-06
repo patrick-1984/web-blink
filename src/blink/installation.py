@@ -59,11 +59,11 @@ def current_root(selected):
     from .home import home_dir
     selected = Path(selected).resolve()
     try:
-        registered = json.loads(_registry().read_text())
+        registered = json.loads(_registry().read_text(encoding='utf-8'))
         candidate = Path(registered['pluginRoot'])
         version = _version(registered['version'])
-        manifest = json.loads((candidate / '.claude-plugin/plugin.json').read_text())
-        own = json.loads((selected / '.claude-plugin/plugin.json').read_text()) if selected.is_dir() else {}
+        manifest = json.loads((candidate / '.claude-plugin/plugin.json').read_text(encoding='utf-8'))
+        own = json.loads((selected / '.claude-plugin/plugin.json').read_text(encoding='utf-8')) if selected.is_dir() else {}
         if (candidate.is_dir() and manifest.get('version') == registered['version'] and version is not None
                 and version >= (_version(own.get('version')) or (0, 0, 0))):
             return candidate.resolve()
@@ -83,13 +83,13 @@ def register_root(root):
     from .home import home_dir
     root = current_root(root)
     try:
-        manifest = json.loads((root / '.claude-plugin/plugin.json').read_text())
+        manifest = json.loads((root / '.claude-plugin/plugin.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return
     record = _registry(create=True)
     fd, temporary = tempfile.mkstemp(dir=record.parent, prefix='.current-plugin-')
     try:
-        with os.fdopen(fd, 'w') as stream:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
             json.dump({'version': manifest['version'], 'pluginRoot': str(root)}, stream)
         os.replace(temporary, record)
     finally:
@@ -108,6 +108,9 @@ def external_python(root):
     root = Path(root).resolve()
     roots = {root, plugin_root()}
     executable = Path(sys.executable).absolute()
+    # Resolve parent aliases (including Windows 8.3 names), but preserve a POSIX
+    # venv's final python symlink: launching its base would bypass the venv.
+    location = executable.parent.resolve() / executable.name
     prefixes = [Path(sys.base_prefix).resolve(), Path(sys.prefix).resolve()]
     for prefix in prefixes:
         roots.update(p for p in (prefix, *prefix.parents) if (p / '.claude-plugin/plugin.json').is_file())
@@ -115,6 +118,9 @@ def external_python(root):
     embedded = [p for p in prefixes if contained(p)]
     if not contained(executable.resolve()) and not embedded:
         return str(executable)
+    # An external venv can still load DLLs/stdlib from a plugin-local base.
+    # Copy it as well so its pyvenv.cfg can point at the relocated base.
+    relocate = [contained(prefixes[0]), contained(prefixes[1]) or contained(prefixes[0])]
     base = work_dir(home_dir() / 'runtime' / 'interpreters')
     from . import __version__
     key = hashlib.sha256((str(executable) + sys.version + __version__).encode()).hexdigest()[:24]
@@ -123,12 +129,20 @@ def external_python(root):
         temporary = Path(tempfile.mkdtemp(dir=base, prefix='.python-'))
         try:
             for index, prefix in enumerate(prefixes):
-                if contained(prefix):
+                if relocate[index]:
                     shutil.copytree(prefix, temporary / str(index), symlinks=False,
                                     ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
             config = temporary / '1' / 'pyvenv.cfg'
             if config.is_file() and contained(prefixes[0]):
-                config.write_text(config.read_text().replace(str(prefixes[0]), str(target / '0')))
+                lines = []
+                for line in config.read_text(encoding='utf-8').splitlines(keepends=True):
+                    name, separator, value = line.partition('=')
+                    if separator and name.strip() in ('home', 'executable'):
+                        original = Path(value.strip()).resolve()
+                        if original.is_relative_to(prefixes[0]):
+                            line = f'{name}= {target / "0" / original.relative_to(prefixes[0])}\n'
+                    lines.append(line)
+                config.write_text(''.join(lines), encoding='utf-8')
             try:
                 temporary.rename(target)
             except OSError:
@@ -137,8 +151,8 @@ def external_python(root):
         finally:
             shutil.rmtree(temporary, ignore_errors=True)
     for index in (1, 0):
-        if contained(prefixes[index]) and executable.is_relative_to(prefixes[index]):
-            return str(target / str(index) / executable.relative_to(prefixes[index]))
+        if relocate[index] and location.is_relative_to(prefixes[index]):
+            return str(target / str(index) / location.relative_to(prefixes[index]))
     raise ValueError('embedded Python could not be relocated')
 
 

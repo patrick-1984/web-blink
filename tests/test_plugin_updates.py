@@ -81,6 +81,47 @@ class UpdateTests(unittest.TestCase):
         with patch.object(sys, 'executable', str(executable)), patch.object(sys, 'prefix', str(venv)), patch.object(sys, 'base_prefix', str(base)):
             self.assertFalse(Path(external_python(newer)).is_relative_to(self.plugin))
 
+    @unittest.skipIf(os.name == 'nt', 'Windows aliases are exercised by the native venv test')
+    def test_python_parent_alias_and_venv_home_are_resolved_without_following_executable(self):
+        base, venv = self.plugin / 'python', self.plugin / 'venv'
+        (base / 'bin').mkdir(parents=True); (venv / 'bin').mkdir(parents=True)
+        (base / 'bin/python').write_bytes(b'base python')
+        (venv / 'bin/python').symlink_to(base / 'bin/python')
+        alias = self.base / 'plugin-alias'; alias.symlink_to(self.plugin, target_is_directory=True)
+        (venv / 'pyvenv.cfg').write_text('home = ' + str(alias / 'python/bin') + '\n', encoding='utf-8')
+        with patch.object(sys, 'executable', str(alias / 'venv/bin/python')), patch.object(sys, 'prefix', str(venv)), patch.object(sys, 'base_prefix', str(base)):
+            relocated = Path(external_python(self.plugin))
+        self.assertEqual(relocated.parent.name, 'bin')
+        self.assertEqual(relocated.parents[1].name, '1', 'must launch the venv, not its base interpreter')
+        self.assertEqual(relocated.read_bytes(), b'base python')
+        home = (relocated.parents[1] / 'pyvenv.cfg').read_text(encoding='utf-8').split('=', 1)[1].strip()
+        self.assertFalse(Path(home).is_relative_to(self.plugin))
+        self.assertEqual((Path(home) / 'python').read_bytes(), b'base python')
+
+    def test_embedded_distribution_without_venv_is_copied(self):
+        base = self.plugin / 'python'; (base / 'DLLs').mkdir(parents=True)
+        executable = base / 'python.exe'; executable.write_bytes(b'embedded python')
+        (base / 'DLLs/native.pyd').write_bytes(b'native extension')
+        with patch.object(sys, 'executable', str(executable)), patch.object(sys, 'prefix', str(base)), patch.object(sys, 'base_prefix', str(base)):
+            relocated = Path(external_python(self.plugin))
+        self.assertFalse(relocated.is_relative_to(self.plugin))
+        self.assertEqual(relocated.read_bytes(), b'embedded python')
+        self.assertEqual((relocated.parent / 'DLLs/native.pyd').read_bytes(), b'native extension')
+
+    def test_external_venv_with_plugin_local_base_is_relocated_together(self):
+        base, venv = self.plugin / 'python', self.base / 'external-venv'
+        base.mkdir(); (venv / 'Scripts').mkdir(parents=True)
+        executable = venv / 'Scripts/python.exe'; executable.write_bytes(b'venv python')
+        (base / 'python312.dll').write_bytes(b'base dll')
+        (venv / 'pyvenv.cfg').write_text('home = ' + str(base) + '\n', encoding='utf-8')
+        with patch.object(sys, 'executable', str(executable)), patch.object(sys, 'prefix', str(venv)), patch.object(sys, 'base_prefix', str(base)):
+            relocated = Path(external_python(self.plugin))
+        self.assertFalse(relocated.is_relative_to(venv))
+        self.assertEqual(relocated.read_bytes(), b'venv python')
+        home = (relocated.parents[1] / 'pyvenv.cfg').read_text(encoding='utf-8').split('=', 1)[1].strip()
+        self.assertFalse(Path(home).is_relative_to(self.plugin))
+        self.assertEqual((Path(home) / 'python312.dll').read_bytes(), b'base dll')
+
     def test_snapshot_never_imports_replacement_module(self):
         source = self.plugin / 'package'
         source.mkdir()
@@ -156,14 +197,44 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(handler.retire(dict(params, connector='b'))['status'], 'ok')
         self.assertTrue(server.retiring.is_set())
 
+    def test_idle_tick_retires_dead_connectors_after_recording_and_preserves_live_peers(self):
+        server = self.server(recording=True)
+        server.connectors = {'dead': 0, 'live': os.getpid()}
+        idle_tick(server)
+        self.assertFalse(server.retiring.is_set())
+        server.extensions.learner.running.clear()
+        idle_tick(server)
+        self.assertFalse(server.retiring.is_set())
+        server.extensions.learner.running['b'] = True
+        handler = Handler.__new__(Handler); handler.server = server
+        self.assertEqual(handler.retire({'ifIdle': True, 'pluginRoot': str(self.plugin), 'connector': 'live'})['status'], 'recording')
+        idle_tick(server)
+        self.assertFalse(server.retiring.is_set())
+        server.extensions.learner.running.clear(); server.extensions.tick.reset_mock()
+        idle_tick(server)
+        self.assertTrue(server.retiring.is_set())
+        server.extensions.tick.assert_not_called()
+
+    def test_daemon_without_registered_connectors_keeps_serving_cli_requests(self):
+        server = self.server()
+        idle_tick(server)
+        self.assertFalse(server.retiring.is_set())
+        server.extensions.tick.assert_called_once()
+
     def test_registering_the_plugin_works_when_the_blink_home_is_not_private(self):
         from blink.installation import register_root
         home = self.base / 'home'; home.mkdir(exist_ok=True); os.chmod(home, 0o755)
         (self.plugin / '.claude-plugin').mkdir(parents=True, exist_ok=True)
         (self.plugin / '.claude-plugin/plugin.json').write_text(json.dumps({'version': __version__}))
-        register_root(self.plugin)  # 0.13.1 candidate failed here: 'state directory must have mode 0700'
+        if os.name == 'nt':
+            from blink.windows import protect
+            with patch('blink.windows.protect', wraps=protect) as protected:
+                register_root(self.plugin)
+            protected.assert_any_call(home / 'installation')
+        else:
+            register_root(self.plugin)  # The Blink home itself may be 0755.
+            self.assertEqual(oct(os.stat(home / 'installation').st_mode & 0o777), '0o700')
         self.assertEqual(current_root(self.plugin), self.plugin.resolve())
-        self.assertEqual(oct(os.stat(home / 'installation').st_mode & 0o777), '0o700')
 
     def test_restart_resolves_current_registered_root(self):
         newer = self.base / 'current'
@@ -172,11 +243,11 @@ class UpdateTests(unittest.TestCase):
         home = self.base / 'home'; home.mkdir(mode=0o700, exist_ok=True)
         (home / 'installation').mkdir(mode=0o700, exist_ok=True)
         (home / 'installation' / 'current-plugin.json').write_text(json.dumps({'pluginRoot': str(newer), 'version': '99.0.0'}))
-        self.assertEqual(current_root(self.plugin), newer)
+        self.assertEqual(current_root(self.plugin), newer.resolve())
         with patch('blink.client._probe', return_value=None), patch('blink.client.request', return_value={'status': 'ok', 'data': {}}) as request:
             result = client.restart_legacy_daemon(self.state, self.plugin)
         self.assertEqual(result['status'], 'ok')
-        self.assertEqual(Path(request.call_args.kwargs['plugin_root']), newer)
+        self.assertEqual(Path(request.call_args.kwargs['plugin_root']), newer.resolve())
         self.assertTrue(Installation(self.plugin, __version__).stale())
 
     def test_old_daemon_diagnostic_gives_exact_one_time_remedy(self):
@@ -189,14 +260,35 @@ class UpdateTests(unittest.TestCase):
 
     def test_real_daemon_releases_exact_folder_and_retires_without_a_client(self):
         shutil.copytree(ROOT / 'src/blink', self.plugin / 'src/blink', ignore=shutil.ignore_patterns('__pycache__'))
-        result = client.request('doctor', state_dir=self.state, plugin_root=self.plugin)
+        proc = subprocess.Popen([sys.executable, '-m', 'blink.daemon', '--state-dir', str(self.state),
+            '--plugin-root', str(self.plugin)], cwd=self.plugin,
+            env=dict(os.environ, PYTHONPATH=str(self.plugin / 'src'), PYTHONDONTWRITEBYTECODE='1'),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        def stop():
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=8)
+        self.addCleanup(stop)
+        deadline = time.monotonic() + 12
+        while True:
+            try:
+                result = client.request('doctor', state_dir=self.state, plugin_root=self.plugin, autostart=False)
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                self.assertIsNone(proc.poll(), 'copied plugin daemon failed startup')
+                self.assertLess(time.monotonic(), deadline, 'copied plugin daemon startup timed out')
+                time.sleep(.05)
         self.assertEqual(result['status'], 'ok', result)
         identity = result['data']['daemon']
         for field in ('cwd', 'codeRoot', 'executable'):
             self.assertFalse(Path(identity[field]).resolve().is_relative_to(self.plugin), (field, identity))
         # This very rename fails on Windows when a process holds cwd, .exe, .pyd or a file handle there.
-        self.plugin.rename(self.base / 'removed')
+        self.assertIsNone(proc.poll())
+        removed = self.base / 'removed'
+        self.plugin.rename(removed)
+        shutil.rmtree(removed)
         self.assertTrue(client._wait_lock_free(self.state, 8), 'daemon must detect removal without a new client')
+        self.assertEqual(proc.wait(timeout=8), 0)
 
     def test_real_daemon_retires_when_version_changes_on_disk(self):
         self.assertEqual(client.request('doctor', state_dir=self.state, plugin_root=self.plugin)['status'], 'ok')
@@ -230,7 +322,7 @@ class McpShutdownTests(unittest.TestCase):
     setUp = UpdateTests.setUp
     stop = UpdateTests.stop
     def test_eof_and_sigterm_retire_the_idle_daemon(self):
-        for signal_shutdown in (False, True):
+        for shutdown in ('eof', 'terminate', 'kill'):
             env = dict(os.environ, BLINK_PLUGIN_ROOT=str(ROOT), BLINK_PYTHON=sys.executable)
             proc = subprocess.Popen(['node', str(ROOT / 'mcp/server.mjs')], cwd=ROOT, env=env,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
@@ -243,12 +335,17 @@ class McpShutdownTests(unittest.TestCase):
             result = json.loads(json.loads(proc.stdout.readline())['result']['content'][0]['text'])
             self.assertEqual(result['status'], 'ok', result)
             self.assertFalse(Path(result['data']['daemon']['cwd']).is_relative_to(ROOT))
-            if signal_shutdown:
+            if shutdown == 'kill':
+                proc.kill()
+            elif shutdown == 'terminate':
                 proc.terminate()
             else:
                 proc.stdin.close()
             proc.wait(timeout=15)
-            self.assertEqual(proc.returncode, 0, proc.stderr.read())
+            if shutdown == 'eof' or shutdown == 'terminate' and os.name != 'nt':
+                self.assertEqual(proc.returncode, 0, proc.stderr.read())
+            else:
+                self.assertNotEqual(proc.returncode, 0, 'OS process termination must be abrupt')
             self.assertTrue(client._wait_lock_free(self.state, 8))
             proc.stdout.close(); proc.stderr.close()
             if not proc.stdin.closed: proc.stdin.close()
@@ -257,7 +354,7 @@ class McpShutdownTests(unittest.TestCase):
 class SpawnAuditTests(unittest.TestCase):
     def test_all_python_subprocess_sites_choose_a_cwd(self):
         for path in (ROOT / 'src/blink').glob('*.py'):
-            for node in ast.walk(ast.parse(path.read_text())):
+            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
                 if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                         and isinstance(node.func.value, ast.Name) and node.func.value.id == 'subprocess'
                         and node.func.attr in ('Popen', 'run', 'check_output')):

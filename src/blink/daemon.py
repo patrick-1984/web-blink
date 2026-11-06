@@ -78,6 +78,9 @@ def consume_permit(runtime, method, params, permit_id):
             return False
         permit['state'] = 'consumed'
         runtime.store.put('human_permit', permit_id, permit, connection=db)
+        # Authority expires after 60 seconds; dispatch evidence must survive its cleanup.
+        db.execute('INSERT INTO audit(at,event,reference,status) VALUES(?,?,?,?)',
+                   (now, 'control_permit', method + ':' + permit_id, 'consumed'))
     return True
 
 
@@ -93,6 +96,12 @@ def check_installation(server):
 def idle_tick(server):
     with server.call_lock:
         stale = check_installation(server)
+        connectors = getattr(server, 'connectors', {})
+        if connectors and not getattr(getattr(server.extensions, 'learner', None), 'running', None):
+            from .browser_process import _alive
+            if not any(_alive(pid) for pid in connectors.values()) and not server.retiring.is_set():
+                server.retiring.set()
+                threading.Thread(target=server.stop_all, daemon=True).start()
         if not stale and not server.retiring.is_set() and server.extensions:
             server.extensions.tick()
 
@@ -156,7 +165,10 @@ class Handler(socketserver.StreamRequestHandler):
                 return error('different_installation', 'A different installation owns this daemon')
             from .browser_process import _alive
             connectors = getattr(self.server, 'connectors', {})
-            connectors.pop(params.get('connector'), None)
+            if params.get('connector') in connectors:
+                # Keep a tombstone so the idle tick can retire after a recording ends,
+                # even when the last connector disconnected while it was recording.
+                connectors[params['connector']] = 0
             if any(_alive(pid) for pid in connectors.values()):
                 return error('in_use', 'Another connector still uses this daemon')
         elif wanted is None or current is None or current >= wanted:
