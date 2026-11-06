@@ -256,3 +256,13 @@ require an existing provider that can prove isolated profile ownership; the shar
 silently repurposed for broker custody. Actual website eligibility, multi-day soaks, Windows transport and
 Cowork's desktop bridge remain deployment-specific validation gates. See the shipped compatibility and
 execution-profile documents for exact limits.
+
+## Action failure metadata
+
+Failures include `data.error` with a sanitized stage/code, optional field path, correlation ID, known
+HTTP status (otherwise null), dispatch state (true, false or null for unknown), and a bounded recovery
+action. No raw response body, credentials or traceback is included. Remote error responses retain their
+HTTP status; uncertain writes retain their original intent and held budget. Inspect/reconcile that intent,
+never create another mutation because of a timeout or slow UI. Recording status continuations preserve
+the original binding and browser. A correlation ID identifies an error occurrence, not proof of a remote
+effect or a promise that private diagnostic logs exist.

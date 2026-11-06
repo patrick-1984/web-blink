@@ -39,10 +39,27 @@ reconcile its outcome first.
 **Writes the user orders** (submit, create, update, delete, also financial): `blink_prepare` every write the
 order needs, then immediately one `blink_request_approval` with `approve_intents` and `{"intentIds": [...]}`
 (or `approve_intent` for one), then `blink_execute` each intent, all in the same turn. If `blink_prepare`
-already returns `approved`, execute it directly. Report the results. If the Blink is not switched on yet,
+already returns `approved`, execute it directly. Check the intended result as described below. If the Blink is not switched on yet,
 switch it on first with one `activate_blink` call (see blink-learn) and continue.
 Unknown outcomes require reconciliation: never prepare a replacement intent to work around an unknown result,
 and never retry an execution whose outcome is unknown.
+
+**Verify every task result.** Before acting, state the expected object/value or state from the user's order.
+After dispatch, record the observed result and evidence, and explicitly report **verified** or **unverified**.
+`ok` / `accepted` only establishes transport acceptance. Use `blink_verify` with the reviewed read operation,
+its actual arguments and `expected: [{"path":"/field", "equals": <expected value>}]`. Use new inputs and
+check empty/error results rather than assuming a populated response. Its private record retains expected
+versus observed values and bounded evidence; retrieve it with `blink_admin` `action: verification`, `id`.
+For writes, prefer a correlated read-back of the created/changed object: pass the original `intentId`, the
+read-back operation/arguments, and `correlation` with `source: result` (or `arguments`), `path` for the original
+object/request ID, `argumentPath` for that ID in the read-back arguments, and `responsePath` for the ID in the
+read response. Use the genuine service identifier; never invent one. For delayed updates use at most three
+read attempts (`maxAttempts`, `intervalSeconds` 0–2), then report pending/unverified if unmatched. Never repeat
+a mutation because the API/page is slow; keep and reconcile its original intent when the outcome is unknown.
+When page visibility matters, inspect the owned page in the same browser/account and compare the actual
+visible object/state. API confirmation alone does not establish UI visibility. Without read-back, usable
+correlation or page evidence, report the precise gap as unverified. A confirmed read-back does not itself
+reconcile an unknown intent. See [result verification](../../docs/result-verification.md).
 
 **The user's private Blink.** Per-user data that is never part of the shared Blink: `identity` (login name,
 hints), `defaults` per operation (e.g. `{"addEntry": {"body.task": "Development"}}`), `preferences`

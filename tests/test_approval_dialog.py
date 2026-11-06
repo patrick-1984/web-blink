@@ -194,7 +194,9 @@ class ApprovalDialogTests(BridgeFixture):
         self.assertEqual(result['status'], 'approval_unavailable')
         injected = session.tool('blink_request_approval', {'method': '--help; echo INJECTED #', 'params': {}})
         self.assertEqual(injected['status'], 'forbidden')
-        self.assertNotIn('data', injected)
+        self.assertEqual(set(injected['data']), {'error'})
+        self.assertEqual(injected['data']['error']['code'], 'forbidden')
+        self.assertIs(injected['data']['error']['dispatched'], False)
         self.assertEqual(session.dialogs, [])
 
     def test_local_actions_the_user_asked_for_run_immediately_without_a_dialog(self):
@@ -340,7 +342,10 @@ class NoDialogPolicyTests(BridgeFixture):
                         self.assertNotIn(result['status'], ('forbidden', 'approval_unavailable', 'approval_too_large',
                                                             'declined', 'configuration_error'), result)
                         self.assertNotIn(SECRET, json.dumps(result))
-                        if method != 'purge_state':
+                        if method == 'activate_blink':
+                            self.assertEqual(result['status'], 'quarantined')
+                            self.assertEqual(self.consumed_permits(), before, 'invalid activation must stop at preflight')
+                        elif method != 'purge_state':
                             self.assertGreater(self.consumed_permits(), before, 'the action was not dispatched')
 
     def test_ordered_activation_runs_end_to_end_without_any_dialog(self):
