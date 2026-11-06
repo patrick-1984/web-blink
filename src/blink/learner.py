@@ -1017,7 +1017,7 @@ class Learner:
         self.store.put('captures', session, capture)
         return capture
 
-    def _expand_selections(self, capture, operations, auth):
+    def _expand_selections(self, capture, operations, auth, *, include_probe=True):
         """Selections may name an endpoint from the session's endpoint list; names, effects, path templates,
         schemas and statuses come from the recording, and a missing login recipe from the suggestion (with its
         identity read added). Explicit fields in a selection always win."""
@@ -1074,7 +1074,7 @@ class Learner:
             expanded.append(selection)
         probe = auth.get('probe') if isinstance(auth, dict) else None
         group = groups.get(suggestion['probe']) if suggestion['probe'] else None
-        if probe and group and not any(isinstance(x, dict) and x.get('operationId') == probe for x in expanded):
+        if include_probe and probe and group and not any(isinstance(x, dict) and x.get('operationId') == probe for x in expanded):
             origins = {records[x['index']]['origin'] for x in expanded if isinstance(x, dict) and isinstance(x.get('index'), int)
                        and 0 <= x['index'] < len(records)}
             if not origins or origins == {group['origin']}:
@@ -1250,11 +1250,26 @@ class Learner:
         return rewritten, hosts, values, findings, renames
 
     def propose(self, session, service, operations, *, source='local', auth=None, execution=None, app_origin=None,
-                version_note=None, parameterize=True, specifics=None):
+                version_note=None, parameterize=True, specifics=None, replace=False):
+        if type(replace) is not bool:
+            raise ValueError('replace must be an explicit boolean')
+        active = self.runtime.store.get('active_manifest', f'{source}:{service}')
+        base = copy.deepcopy(active['document']) if active and not replace else None
+        if base:
+            self.runtime.active_manifest(f'{source}:{service}')
+            meta = base['x-blink-service']
+            if auth is not None and auth != meta['auth']:
+                raise ValueError('Delta learning preserves authentication; request replace explicitly to change it')
+            if execution is not None and execution != meta['exec']:
+                raise ValueError('Delta learning preserves execution policy; request replace explicitly to change it')
+            if app_origin is not None and app_origin != meta.get('appOrigin', base['servers'][0]['url']):
+                raise ValueError('Delta learning preserves the application origin; request replace explicitly to change it')
+            auth = copy.deepcopy(meta['auth'])
+            execution = copy.deepcopy(meta['exec'])
         capture = self.review(session)
         if capture['status'] == 'incomplete':
             raise ValueError('Resolve incomplete capture scope before proposing an executable Blink')
-        operations, auth = self._expand_selections(capture, operations, auth)
+        operations, auth = self._expand_selections(capture, operations, auth, include_probe=not bool(base))
         hosts, values, findings = {}, {}, []
         if parameterize and isinstance(operations, list):
             operations, hosts, values, findings, renames = self._parameterize(capture, service, operations, specifics)
@@ -1401,8 +1416,26 @@ class Learner:
                                           'note': 'The Blink name holds a specific value; propose again under the suggested '
                                                   'name unless the user chose this name'}} if name_hits else {}),
                       'findings': [f for f in findings if not f['exact']][:50]}
+        if base:
+            if origin not in active['compiled']['requestedOrigins']:
+                raise ValueError('Delta learning must stay within the active reviewed origins')
+            existing_ids = set(active['compiled']['operations'])
+            for path, methods in document['paths'].items():
+                for method, operation in methods.items():
+                    if operation['operationId'] in existing_ids or method in base['paths'].get(path, {}):
+                        raise ValueError('Delta learning cannot replace an existing operation; request replace explicitly')
+                    base['paths'].setdefault(path, {})[method] = copy.deepcopy(operation)
+            additions = document['x-blink-service']
+            meta = base['x-blink-service']
+            for key, declaration in additions.get('variables', {}).items():
+                if key in meta.get('variables', {}) and meta['variables'][key] != declaration:
+                    raise ValueError('Delta variable conflicts with an existing declaration')
+                meta.setdefault('variables', {})[key] = copy.deepcopy(declaration)
+            meta.update(version=version, history=copy.deepcopy(additions['history']))
+            base['info']['version'] = version
+            document = base
         stored, new_values = {}, {}
-        if values:
+        if values or base and document['x-blink-service'].get('variables'):
             from . import private
             stored = private.variables(private.blink_name(service))
             # A value the user already keeps wins (an active Blink may use it); a different recorded value is
@@ -1416,7 +1449,7 @@ class Learner:
             from .profile import compile_manifest
             from .storage import digest
             compiled = compile_manifest(document, allow_http=self.runtime.allow_http,
-                                        variables={**stored, **new_values} if values else None)
+                                        variables={**stored, **new_values} if stored or new_values else None)
             for opid, arguments in anonymous_checks.items():
                 operation = compiled['operations'][opid]
                 self.runtime._validate_argument_values(arguments)

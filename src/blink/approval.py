@@ -27,6 +27,7 @@ METHODS = frozenset({
     'custody_authorize', 'custody_harvest', 'custody_reharvest_authorize', 'custody_handback', 'custody_recover',
     'custody_forget', 'forget_service', 'purge_state', 'restart_daemon', 'activate_blink', 'approve_intents',
     'install_manifest', 'private_set', 'private_secret_set',
+    'execution_run', 'execution_observe', 'context_save', 'routine_save', 'routine_run', 'routine_begin', 'routine_step',
 })
 # Under the opt-in dialog policy: local, reversible actions with no effect on any web service still run as
 # soon as the user asks for them (no dialog). Recording stays limited to the exact origins given; proposals
@@ -64,6 +65,9 @@ def validate(method, params):
         return _forbidden('This action is not supported by the Web Blink control bridge')
     if not isinstance(params, dict):
         return _forbidden('Parameters must be an object')
+    if method in ('execution_run', 'execution_observe', 'context_save', 'routine_save', 'routine_run', 'routine_begin', 'routine_step'):
+        from .execution import validate_action
+        return validate_action(method, params)
     if '_flowId' in params:
         import re
         if (method not in ('browser_connect', 'learn_start_guided', 'learn_start', 'learn_stop')

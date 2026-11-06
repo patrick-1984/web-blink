@@ -41,9 +41,9 @@
       {
         "id": "urn:web-blink:schema:execution:1",
         "path": "execution-v1/openapi.schema.json",
-        "version": "1.2.0",
-        "released": "2026-10-30",
-        "sha256": "8b80c363766665c276a52f9ef890bd3c3824e6eab11c8a88e1f886ccf266edd5"
+        "version": "1.3.0",
+        "released": "2026-11-06",
+        "sha256": "1941c4fd0500b6b1337f12aff34f2ab3b49f0693e3f9619467585d811fa13c89"
       },
       {
         "id": "urn:web-blink:schema:arazzo-execution:1",

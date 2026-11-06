@@ -3,6 +3,26 @@ name: blink-learn
 description: Learn a web app from a recording of the user's work and turn it into a Blink, switched on and ready to use.
 ---
 
+Existing Blink + ordered action means **execution mode** first (blink-use); no recording is needed when
+the operations already exist. An unknown routine phrase requires the user's full process once. Preserve
+private process notes, preferences, defaults and shared `x-blink-notes`; do not create another instruction store.
+
+For a missing operation during execution, reuse the existing guided/hybrid recorder with the same account
+and browser. The user may authorize the agent to perform the task while recording, so the API is captured
+behind the scenes. Keep `executionGoal` and the returned handoff steps. Finish the requested task, stop,
+review, propose and activate the observed operations. Do not replay an already-performed browser mutation.
+Use reviewed read-back to verify the actual created/changed object and call `execution_observe` with the
+exact capture request, operation/arguments, account and correlation. Its verified record can become a routine
+step without another mutation. A gap or uncertain outcome stays unverified and requires reconciliation.
+
+After successful verification, create a local routine with `routine_save`: service/name, phrase, aliases,
+`previewBeforeCommit` (the user's preference), ordered `verificationIds`, optional context and `delayMs`
+(default 100; 50–500 ms). The runtime derives steps from actual evidence and generates a private script that
+calls only the Blink CLI with JSON input/output. It supplies bounded safe 429 backoff and stable intent IDs;
+never insert shell/API calls, secret values or one-second pacing. Next time the same phrase asks one explicit
+“according to the last rules?” question and executes after agreement; preview only when enabled. See
+[routines and scripts](../../docs/runtime-guide.md#routines-and-scripts).
+
 **The user's order authorizes Web Blink.** Execute the requested chain without asking for approval in chat or
 announcing dialogs. Continue through activation, exact-plan authorization and execution. Never change the
 approval setting (`approvals`; it is the user's, set only by them in the CLI). Ask only for missing information

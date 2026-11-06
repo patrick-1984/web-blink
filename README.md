@@ -94,6 +94,12 @@ It lives in `$BLINK_HOME/private/<blink>.json` (default `~/.web-blink`, files 06
 shared with the Blink, and Claude reads it before preparing writes. Tell Claude your preference and it saves it
 (`private_set`); `blink admin --input '{"action": "private", "service": "local:<blink>"}'` shows it without secret values.
 
+An order to use an existing Blink starts **execution mode** without recording: it remembers private account
+contexts, tries the known login headlessly and cleans up before a visible, prefilled login handoff when needed.
+Learned phrases can become private, verified routines backed by deterministic CLI scripts with millisecond
+pacing. A known routine asks once whether to follow its last rules; previews appear only when requested.
+See [Execution mode and routines](docs/runtime-guide.md#execution-mode).
+
 - [Result verification](docs/result-verification.md): expected versus observed checks, correlated write read-back and pending outcomes.
 - [Runtime guide](docs/runtime-guide.md): setup, accounts, learning, execution and schedules.
 - [Use existing browser logins](docs/browser-sessions.md): select Chrome, Edge or Brave profiles, keep personal/admin accounts separate, and discover Firefox profiles.
@@ -123,5 +129,5 @@ root. The checkout also contains tests and tools. Release builds exclude tests, 
 Run a synthetic local CLI/MCP demonstration (no real account or external service):
 
 ```sh
-python scripts/demo.py
+uv run -q --project . python scripts/demo.py
 ```

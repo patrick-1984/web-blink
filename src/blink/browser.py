@@ -22,7 +22,7 @@ class BrowserUnavailable(BlinkError):
 class PlaywrightMCP:
     """A private stdio MCP client; no browser executable or CDP connection is started."""
 
-    def __init__(self, command=None, timeout=30, *, environment=None, cwd=None):
+    def __init__(self, command=None, timeout=30, *, environment=None, cwd=None, spawn=None):
         if command is None:
             encoded = os.environ.get('BLINK_PLAYWRIGHT_COMMAND')
             command = json.loads(encoded) if encoded else None
@@ -32,13 +32,13 @@ class PlaywrightMCP:
             raise BrowserUnavailable('Configure an existing shared Playwright MCP command')
         self.timeout, self.sequence = timeout, 0
         self.lock, self.messages = threading.RLock(), queue.Queue()
-        self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        self.process = (spawn or subprocess.Popen)(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.DEVNULL, text=True, encoding='utf-8',
                                         bufsize=1, env=environment, cwd=cwd)
         threading.Thread(target=self._read, daemon=True).start()
         try:
             self.rpc('initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
-                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.12.1'}})
+                                   'clientInfo': {'name': 'web-blink-browser', 'version': '0.13.0'}})
             self._write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
             names = [x['name'] for x in self.rpc('tools/list', {})['tools']]
             self.tool_names = names
@@ -316,6 +316,65 @@ class BrowserBridge:
           const storage=await p.evaluate(keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)])),v.payload.storage);
           return {cookies:selected,storage};
         ''', {'cookies': list(cookie_names), 'storage': list(storage_keys)})
+
+    def login(self, binding, url, login_name, recipe, password=None, *, submit=False, allowed_origins=()):
+        """Fill an owned login page. Visible login never receives a password or submits."""
+        from urllib.parse import urlsplit
+        from .profile import origin
+        parts = urlsplit(url)
+        destination = origin(f'{parts.scheme}://{parts.netloc}')
+        if destination not in allowed_origins:
+            raise BlinkError('origin_denied', 'Login requires a reviewed credential destination')
+        self.open(binding, url)
+        return self._run_owned(self.owners[binding], r'''
+          await p.goto(v.payload.url);
+          const approved=()=>v.payload.allowedOrigins.includes(new URL(p.url()).origin);
+          if(!approved()) return {prefilled:false,submitted:false};
+          const r=v.payload.recipe;
+          if (r.usernameSelector) {
+            await p.locator(r.usernameSelector).waitFor();
+            if(!approved()) return {prefilled:false,submitted:false};
+            await p.locator(r.usernameSelector).fill(v.payload.loginName);
+          }
+          else {
+            const field=p.locator('input[autocomplete="username"], input[type="email"], input[name="username"]');
+            if(await field.count()===1 && approved()) await field.fill(v.payload.loginName);
+            else return {prefilled:false, submitted:false};
+          }
+          if(v.payload.submit && v.payload.password && r.passwordSelector && r.submitSelector){
+            await p.locator(r.passwordSelector).waitFor();
+            if(!approved() || new URL(p.url()).origin !== v.payload.credentialOrigin) return {prefilled:true,submitted:false};
+            await p.locator(r.passwordSelector).fill(v.payload.password);
+            if(!approved() || new URL(p.url()).origin !== v.payload.credentialOrigin) return {prefilled:true,submitted:false};
+            await p.locator(r.submitSelector).click();
+            await p.waitForLoadState('domcontentloaded');
+            return {prefilled:true,submitted:true};
+          }
+          return {prefilled:true,submitted:false};
+        ''', {'url': url, 'loginName': login_name, 'recipe': recipe, 'allowedOrigins': list(allowed_origins), 'credentialOrigin': destination,
+              'password': password if submit else None, 'submit': bool(submit)})
+
+    def save_execution_state(self, binding, path):
+        return self._run_owned(self.owners[binding],
+                               'await p.context().storageState({path:v.payload}); return true;', str(path))
+
+    def current_url(self, binding):
+        return self._run_owned(self.owners[binding], 'return p.url();')
+
+    def visit(self, binding, url):
+        self.open(binding, url)
+        return self._run_owned(self.owners[binding], 'await p.goto(v.payload); return true;', url)
+
+    def restore_execution_state(self, binding, state):
+        """Restore only into an owned headless profile; never used on the shared visible browser."""
+        return self._run_owned(self.owners[binding], r'''
+          if(v.payload.cookies?.length) await p.context().addCookies(v.payload.cookies);
+          const origin=new URL(p.url()).origin;
+          const entry=(v.payload.origins||[]).find(x=>x.origin===origin);
+          if(entry) await p.evaluate(values=>{for(const x of values) localStorage.setItem(x.name,x.value);},entry.localStorage||[]);
+          if(entry || v.payload.cookies?.length) await p.reload();
+          return true;
+        ''', state)
 
     def capture_start(self, binding, url=None):
         """Install the recorder, then navigate to url (so startup and SSO redirects are recorded too)."""

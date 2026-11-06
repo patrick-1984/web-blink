@@ -319,6 +319,9 @@ def compile_manifest(document, *, allow_http=False, variables=None, require_vari
     if base not in requested:raise BlinkError('invalid_manifest','Server origin is outside requested origins')
     if 'appOrigin' in service:
         origin(service['appOrigin'],allow_http=allow_http)
+    for login_origin in service.get('loginOrigins', []):
+        if origin(login_origin) != login_origin:
+            raise BlinkError('invalid_manifest','Login origins must use canonical exact HTTPS origins')
     if service['exec']['preferred'] not in service['exec']['allowed']:
         raise BlinkError('invalid_manifest','Preferred execution mode is not allowed')
     if auth['kind']=='api-key' and not TOKEN.fullmatch(auth.get('name',auth.get('header',''))):
@@ -440,6 +443,7 @@ def compile_manifest(document, *, allow_http=False, variables=None, require_vari
                       'settingsSchema':settings,'settingMap':copy.deepcopy(setting_map),
                       'policy':service.get('policy',{})}
             # Structural authoring notes are reviewed content; added only when present so older digests stay stable.
+            if 'loginOrigins' in service:compiled['loginOrigins']=copy.deepcopy(service['loginOrigins'])
             if 'x-blink-notes' in operation:compiled['notes']=_note(operation['x-blink-notes'])
             if notes_by_field:compiled['fieldNotes']=notes_by_field
             if variable_map:compiled['variables']=variable_map
