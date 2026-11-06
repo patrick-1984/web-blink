@@ -28,6 +28,13 @@ Check `blink_doctor.data.activeComponent.version` after restarting. Installing n
 an MCP process already loaded in a conversation. A catalog being current does not prove the loaded
 component is current.
 
+`plugin_changed` is an expected safety stop when a loaded connector's plugin folder or manifest has been
+replaced during an update. Every tool call from that connector, including `blink_doctor`, is blocked before
+dispatch. Restart the Web Blink connector in the host app (or restart Claude/Codex), then call `blink_doctor`
+to verify the loaded component and daemon. Updating installed files alone cannot replace the loaded MCP
+process. Do not repeat a write or prepare a new intent to work around this status; retain its original
+intent if one was already created. A blocked prepare that returned no intent dispatched no write.
+
 `python tools/check_codex_updates.py` exercises the actual local Codex CLI against synthetic Git repositories
 served on loopback, with a separate child-process CODEX_HOME. It installs no real plugins, copies no user
 credentials and starts no model session or browser. On Linux with codex-cli 0.166.0, marketplace upgrade

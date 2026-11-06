@@ -12,7 +12,7 @@ import {inside,stagePackage,externalPython} from './process-paths.mjs';
 import {discoverWindows} from './browsers.mjs';
 
 const root = path.resolve(process.env.BLINK_PLUGIN_ROOT || path.dirname(path.dirname(fileURLToPath(import.meta.url))));
-const VERSION='0.13.1';
+const VERSION='0.13.2';
 const home=path.resolve(process.env.BLINK_HOME||path.join(os.homedir(),'.web-blink'));
 if(inside(home,root))throw Error('Blink home must be outside the plugin directory');
 const cwd=path.join(home,'processes');
@@ -117,7 +117,7 @@ function doctor() {
   hostPermission:'The host may ask to authorize this preparation tool. Explain that it downloads local components, not access to browser logins. Do not change host permission or sandbox settings.'};
  return {status:runtimeAvailable?'ok':'degraded',summary:'Host bootstrap capabilities',data:{
   capabilities:{diagnostics:true,browserDiscovery:true,runtime:runtimeAvailable,windowsRuntime:!unix&&runtimeAvailable},
-  activeComponent:{version:'0.13.1',pluginRoot:root},
+  activeComponent:{version:'0.13.2',pluginRoot:root},
   checks:{node:{available:true,version:process.versions.node},runtimeDependencies:{available:runtimeAvailable},
    launcher:{kind:launch.kind},unixTransport:{available:unix},localTransport:{available:true,kind:unix?'unix-socket':'named-pipe'}},homeDir,
   ...(runtimeAvailable?{}:{runtimeSetup:setup}),
@@ -312,7 +312,7 @@ async function handle(message){
   initialized=true;
   const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
   canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
-  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.13.1'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask. For every handoff state whether recording is ON/OFF and follow guidance with one next action or a plain next-step question in the user’s language. For learn/record goals use blink_start_recording to connect AND record; browser changes preserve that original goal. Never stop at browser connected or answer only “No, I only opened it”. Use blink_browser_status for diagnostics; do not run shell HTTP, port-owner or process commands, and never infer failure from HTTP 404 alone. For browser choice, show data.profileTable and accept #numbers. Prepare local components through the native tool action; never hand the user setup commands or copied profile paths. Follow nextActions and explain the exact browser confirmation. Discovery alone is not connection. Shared-profile browser restart is blocked. Use the narrow blink_connect_browser tool for ordinary connection; proactively offer safe alternatives if native access fails. For waiting_for_browser, explain userSteps and immediately call its bounded wait nextAction while the user clicks, at most twice; never ask for done or claim a connection before connected:true. For recovery use blink_restore_browser, which closes nothing and reports restore requests honestly.'}};
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.13.2'},instructions:'The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask only for missing information required to perform the task. Tell the user what you started. While recording, the browser belongs to the user: do not act in it unless they ask. For every handoff state whether recording is ON/OFF and follow guidance with one next action or a plain next-step question in the user’s language. For learn/record goals use blink_start_recording to connect AND record; browser changes preserve that original goal. Never stop at browser connected or answer only “No, I only opened it”. Use blink_browser_status for diagnostics; do not run shell HTTP, port-owner or process commands, and never infer failure from HTTP 404 alone. For browser choice, show data.profileTable and accept #numbers. Prepare local components through the native tool action; never hand the user setup commands or copied profile paths. Follow nextActions and explain the exact browser confirmation. Discovery alone is not connection. Shared-profile browser restart is blocked. Use the narrow blink_connect_browser tool for ordinary connection; proactively offer safe alternatives if native access fails. For waiting_for_browser, explain userSteps and immediately call its bounded wait nextAction while the user clicks, at most twice; never ask for done or claim a connection before connected:true. For recovery use blink_restore_browser, which closes nothing and reports restore requests honestly.'}};
  }
  if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
  if(!initialized)return rpcError(id,-32002,'Server is not initialized');
@@ -321,7 +321,7 @@ async function handle(message){
   return {jsonrpc:'2.0',id,result:{tools}};
  }
  if(message.method==='tools/call'){
-  if(pluginChanged())return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify({status:'plugin_changed',summary:'Web Blink was updated. Restart its connector in Claude Desktop before using it again.',warnings:[]})}],isError:true}};
+  if(pluginChanged())return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify({status:'plugin_changed',summary:'Web Blink was updated. Restart its connector in your host app before using it again.',warnings:[]})}],isError:true}};
   const p=message.params;
   if(!p||typeof p!=='object'||typeof p.name!=='string')return rpcError(id,-32602,'Invalid tool call');
   const tool=tools.find(t=>t.name===p.name);

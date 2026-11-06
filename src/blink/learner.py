@@ -17,7 +17,8 @@ from .schemaver import bump_minor, parse as parse_version
 
 MAX_HAR = 32 * 1024 * 1024
 METHODS = {'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'}
-HEADERS = {'accept', 'content-type', 'authorization', 'cookie', 'x-csrf-token', 'x-xsrf-token'}
+IDEMPOTENCY_HEADERS = {'idempotency-key': 'Idempotency-Key', 'x-idempotency-key': 'X-Idempotency-Key'}
+HEADERS = {'accept', 'content-type', 'authorization', 'cookie', 'x-csrf-token', 'x-xsrf-token'} | IDEMPOTENCY_HEADERS.keys()
 RESOURCE_TYPES = {'document', 'xhr', 'fetch', 'websocket', 'eventsource', 'other', 'ping', 'prefetch'}
 STATIC_TYPES = {'image', 'font', 'stylesheet', 'media', 'script', 'manifest', 'texttrack'}
 MAX_SHOTS, MAX_SHOT_BYTES = 1000, 2 * 1024 * 1024
@@ -107,7 +108,8 @@ def endpoint_groups(records, limit=300):
                                    'resourceType': record.get('resourceType'), 'queryNames': [],
                                    'requiredQueryNames': list(record.get('queryNames') or []),
                                    'requestMediaType': record.get('requestMediaType'), 'requestSchema': {},
-                                   'authenticated': False, 'suggestedEffect': EFFECTS.get(record['method'], 'write')}
+                                   'authenticated': False, 'idempotencyHeaders': [],
+                                   'suggestedEffect': EFFECTS.get(record['method'], 'write')}
             order.append(key)
         group['count'] += 1
         if record.get('status') and record['status'] not in group['statuses']:
@@ -116,6 +118,10 @@ def endpoint_groups(records, limit=300):
         group['requiredQueryNames'] = [name for name in group['requiredQueryNames']
                                        if name in (record.get('queryNames') or [])]
         group['requestSchema'] = _merge_shapes(group['requestSchema'], record.get('requestSchema'))
+        for name in record.get('headerNames') or []:
+            header = IDEMPOTENCY_HEADERS.get(str(name).lower())
+            if header and header not in group['idempotencyHeaders']:
+                group['idempotencyHeaders'].append(header)
         group['authenticated'] |= bool({'cookie', 'authorization'} & set(record.get('headerNames') or []))
     used, result = set(), []
     for key in order[:limit]:
@@ -853,7 +859,7 @@ class Learner:
             view['more'] = 'blink_admin review with session, offset and limit shows the next records'
         groups = endpoint_groups(records)
         view['endpoints'] = [{k: g[k] for k in ('endpoint', 'count', 'statuses', 'inScope', 'suggestedOperationId',
-                                                'suggestedEffect', 'queryNames', 'requestMediaType')} for g in groups]
+                                                'suggestedEffect', 'queryNames', 'requestMediaType', 'idempotencyHeaders')} for g in groups]
         view['suggestedAuth'] = suggest_auth(records, groups)
         return view
 
@@ -1270,6 +1276,7 @@ class Learner:
         if capture['status'] == 'incomplete':
             raise ValueError('Resolve incomplete capture scope before proposing an executable Blink')
         operations, auth = self._expand_selections(capture, operations, auth, include_probe=not bool(base))
+        captured_endpoints = {g['endpoint']: g for g in endpoint_groups(capture['records'], limit=100000)}
         hosts, values, findings = {}, {}, []
         if parameterize and isinstance(operations, list):
             operations, hosts, values, findings, renames = self._parameterize(capture, service, operations, specifics)
@@ -1332,6 +1339,15 @@ class Learner:
                   'summary': selection.get('summary', operation_id),
                   'parameters': copy.deepcopy(selection.get('parameters', parameters)),
                   'responses': {'200': {'description': 'Response shape requires verification'}}, 'x-blink-verified': []}
+            if effect != 'read' and record['method'] not in ('GET', 'HEAD', 'OPTIONS'):
+                endpoint_key = f"{record['method']} {record['origin']}{record.get('pathTemplate', record['path'])}"
+                headers = captured_endpoints[endpoint_key]['idempotencyHeaders']
+                if len(headers) > 1:
+                    raise ValueError('Conflicting idempotency headers for this endpoint; record the write with one header')
+                if headers:
+                    # Only the header name is evidence. The runtime generates and journals the value per intent;
+                    # it is neither a captured literal, a user argument nor a credential.
+                    op['x-blink-idempotency'] = {'mechanism': 'header:' + headers[0]}
             observed = sorted({c for c in selection.get('statuses') or [] if isinstance(c, int) and 200 <= c < 300})
             if observed:  # the success statuses actually seen, not a fixed 200
                 op['responses'] = {str(c): {'description': 'Observed in the recording'} for c in observed}

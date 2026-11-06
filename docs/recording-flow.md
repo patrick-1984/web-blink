@@ -49,3 +49,9 @@ or a successful component download do not establish recording. Browser consent s
 
 Optional `waitSeconds` (0–30) waits for browser consent only for native Chrome/Edge profile connections.
 Other connection modes ignore the consent wait and connect normally, including guided recording.
+
+Captured writes that send `Idempotency-Key` or `X-Idempotency-Key` learn a generated per-intent header.
+The proposal keeps the header name, never the demonstrated value. The runtime stores one fresh key for
+each intent and reuses it for an explicit same-intent retry after an unknown outcome, even after restart.
+Approval and reconciliation rules still apply. Existing operations need a reviewed replacement proposal
+from header-bearing capture evidence; installing an update does not silently change their contract.
