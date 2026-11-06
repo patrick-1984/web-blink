@@ -6,6 +6,7 @@ import math
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -85,6 +86,19 @@ class GitSnapshotReader:
             shutil.rmtree(self.directory, ignore_errors=True)
             self.directory = None
 
+    def _repository_size(self):
+        size = 0
+        for file in self.directory.rglob("*"):
+            try:
+                info = file.stat()
+            except FileNotFoundError:
+                # Git renames/removes temporary pack and lock files while fetch runs. The
+                # final scan after child exit still enforces the stable snapshot's size.
+                continue
+            if stat.S_ISREG(info.st_mode):
+                size += info.st_size
+        return size
+
     def _run(self, arguments, *, fetch=False):
         env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         env.update(GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0")
@@ -112,13 +126,13 @@ class GitSnapshotReader:
             deadline = time.monotonic() + self.limits.seconds
             try:
                 while process.poll() is None:
-                    size = sum(file.stat().st_size for file in self.directory.rglob("*") if file.is_file())
+                    size = self._repository_size()
                     if time.monotonic() > deadline or size > self.limits.repository_bytes:
                         raise _error("source_limit", "Git fetch exceeded its time or storage limit")
                     time.sleep(0.02)
                 if process.returncode:
                     raise _error("source_fetch", "Could not fetch the configured Git snapshot")
-                size = sum(file.stat().st_size for file in self.directory.rglob("*") if file.is_file())
+                size = self._repository_size()
                 if size > self.limits.repository_bytes:
                     raise _error("source_limit", "Git snapshot exceeds the storage limit")
             finally:

@@ -10,6 +10,8 @@
   without header evidence unchanged. Existing Blinks need a reviewed replacement proposal to learn it.
 - Clarify that `plugin_changed` requires restarting the connector in its host app, including Codex;
   the update guard still blocks all old-connector tool calls, including diagnostics.
+- Tolerate Git removing temporary pack/lock files during snapshot size scans. Preserve fetch time/storage
+  limits, the final scan after Git exits, and errors other than a disappearing file.
 
 ## 0.13.1 — 2026-11-06
 
