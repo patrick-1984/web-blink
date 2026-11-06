@@ -17,7 +17,7 @@ import time
 from .doctor import secure_state_directory
 
 MAX_MESSAGE = 1_048_576
-PUBLIC_METHODS = frozenset({'services', 'search', 'describe', 'call_read', 'prepare', 'execute', 'admin', 'doctor'})
+PUBLIC_METHODS = frozenset({'services', 'search', 'describe', 'call_read', 'prepare', 'execute', 'verify', 'admin', 'doctor'})
 
 
 def error(code, summary):

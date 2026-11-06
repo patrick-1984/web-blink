@@ -190,10 +190,25 @@ Python libraries are a preparation step, not a reason to tell the user Windows i
    Full request details, values included, are in `requestsFile`; read it only for a specific question.
    An `interrupted` session: call `learn_accept_partial` with the factual reason from the result (for example
    "the tab was closed at stop; all saved requests are kept") and continue.
-6. Switch the Blink on in the same turn, unless the user said only to record or propose: one
+   Cookies are evidence of possible authentication, including analytics/preferences cookies. For an explicitly
+   public API, select each public GET/HEAD read with `anonymousCheck: {"arguments": {...}}` and `auth: {"kind":"none"}`.
+   Blink tests that exact input without browser cookies, Authorization or broker credentials and records the
+   operation/input/response digests and HTTP status in candidate provenance. A successful check proves only
+   that selected input was publicly readable at that time. Missing/failed checks keep the proposal blocked.
+   Never use this to downgrade a captured authenticated write or POST, and never invent an identity from
+   an unrelated stable field. Authenticated APIs still require a genuine read-only account probe.
+6. Before activation, call `blink_admin` with `action: control_action`, `method: activate_blink` and the
+   proposal's `candidate`. Follow its candidate-specific JSON Schema and examples. Authenticated binding
+   selectors belong under `bind.identity.accountPath` / `tenantPath`; the probe's required inputs belong
+   under `bind.identity.arguments` (including `body` for POST). Use a genuine account field, never an
+   unrelated stable value. Anonymous reads can activate with only `manifest`, without a fabricated account.
+   Supplying `params` to this admin action validates the whole activation without changes. Fix its exact
+   `data.error.fieldPath` before proceeding. This validation does not verify the remote account.
+   Switch the Blink on in the same turn, unless the user said only to record or propose: one
    `blink_request_approval` `activate_blink` with `manifest` (the `learn_propose` result's approval data),
-   `bind` (`binding` = Blink name, `service`, `account`, `mode` `C1`, identity from the suggested probe) and
-   `grant` (`binding`; operations and origins are filled in by the plugin). `browser` in `bind` must be the
+   optional `bind` when authentication or writes require it (`binding` = Blink name, `service`, `account`,
+   `mode` `C1`, genuine identity from the suggested probe for authenticated services), and `grant` when
+   using a binding (`binding`; operations and origins are filled in by the plugin). `browser` in `bind` must be the
    selector returned by the recording/proposal when present (the runtime also inherits it from the source
    recording). Use distinct binding IDs for personal and admin accounts. Then carry out whatever the user
    ordered with the Blink (see blink-use).

@@ -12,7 +12,7 @@ from .doctor import report
 from .config import SECRET_KEY, approval_mode
 
 PUBLIC = {'services': 'services', 'search': 'search', 'describe': 'describe', 'read': 'call_read',
-          'prepare': 'prepare', 'execute': 'execute', 'status': 'admin'}
+          'prepare': 'prepare', 'execute': 'execute', 'verify': 'verify', 'status': 'admin'}
 MANAGEMENT = {
     'account': {'bind': 'bind', 'grant': 'grant', 'revoke': 'revoke'},
     'custody': {'authorize': 'custody_authorize', 'harvest': 'custody_harvest',

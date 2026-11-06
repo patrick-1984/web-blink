@@ -46,3 +46,6 @@ still succeed; a 404 response is never treated as proof that the service is Edge
 
 Connection and recording remain separate facts. Browser banners, an open port, a requested permission page,
 or a successful component download do not establish recording. Browser consent stays with the user.
+
+Optional `waitSeconds` (0–30) waits for browser consent only for native Chrome/Edge profile connections.
+Other connection modes ignore the consent wait and connect normally, including guided recording.
