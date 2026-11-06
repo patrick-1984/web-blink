@@ -73,7 +73,7 @@ class UpdateTests(unittest.TestCase):
         self.assertFalse(relocated.is_relative_to(self.plugin))
         self.assertEqual(relocated.read_bytes(), b'synthetic exe')
         self.assertTrue((relocated.parents[1] / 'native.pyd').is_file())
-        home = (relocated.parents[1] / 'pyvenv.cfg').read_text().split('=', 1)[1].strip()
+        home = (relocated.parents[1] / 'pyvenv.cfg').read_text(encoding='utf-8').split('=', 1)[1].strip()
         self.assertTrue((Path(home) / 'python312.dll').is_file())
         self.assertFalse(Path(home).is_relative_to(self.plugin))
         # Restarting from a new installation must also relocate the old interpreter.
