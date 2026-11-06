@@ -99,7 +99,7 @@ else:
 print(json.dumps(result))
 ''')
             executable.chmod(0o700)
-            params = {'url': 'https://app.example/', 'browser': {'mode': 'playwright', 'browser': 'chromium', 'name': 'work'}}
+            params = {'url': 'https://app.example/', 'browser': {'mode': 'shared'}, 'waitSeconds': 20}
             messages = node_messages([INIT,
                 {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'blink_start_recording', 'arguments': params}},
                 {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'blink_browser_status', 'arguments': {}}}],

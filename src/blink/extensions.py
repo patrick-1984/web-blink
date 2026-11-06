@@ -356,8 +356,13 @@ class Extensions:
         wait = params.get('waitSeconds', 0)
         if type(wait) is not int or not 0 <= wait <= 30:
             raise BlinkError('invalid_arguments', 'Connection wait must be between 0 and 30 seconds.')
+        selector = resolve_selection(params['browser'])
+        # Consent endpoint waits belong only to native Chrome/Edge profiles.
+        # Other connection providers connect normally and ignore this optional wait.
+        if selector['mode'] != 'native' or selector.get('browser') not in ('chrome', 'edge'):
+            wait = 0
+            params = {**params, 'waitSeconds': 0}
         if params.get('automatic') is True:
-            selector = resolve_selection(params['browser'])
             binding = params.get('binding') or 'connection-' + selector.get('profile', selector.get('name', selector['mode']))
             if isinstance(self.browser, LazyBrowser):
                 previous = self.browser.reusable_selection(binding, selector)
@@ -366,8 +371,6 @@ class Extensions:
         if wait:
             from .browsers import selected_profile, wait_for_endpoint
             selector, _, profile = selected_profile(params['browser'])
-            if selector['mode'] != 'native' or selector['browser'] not in ('chrome', 'edge'):
-                raise BlinkError('invalid_arguments', 'Waiting for a browser choice requires a Chrome or Edge live connection.')
             if not wait_for_endpoint(profile['userDataDir'], wait):
                 return self.browser_permission_step(params, open_page=False)
             params = {**params, 'waitSeconds': 0}

@@ -45,6 +45,29 @@ class GuidedRecordingTests(unittest.TestCase):
     def connect(self, params):
         return self.ext.connection_ready(params['browser'], params['binding'], params)
 
+    def test_shared_guided_waits_use_the_actual_connection_path(self):
+        # Do not mock connect_browser: that hid KeyError('browser') for shared + wait.
+        for wait in (0, 20, 30):
+            with self.subTest(wait=wait), tempfile.TemporaryDirectory() as state:
+                runtime = Runtime(state)
+                ext = Extensions(runtime)
+                self.addCleanup(ext.close)
+                bridge = RecordingBrowser()
+                with mock.patch.object(browsers, 'ensure_tools'), \
+                        mock.patch.object(ext.browser, 'get', return_value=bridge), \
+                        mock.patch.object(ext.learner, '_ensure_collector'):
+                    result = ext.dispatch('learn_start_guided', {
+                        'url': URL, 'browser': {'mode': 'shared'}, 'waitSeconds': wait}, human=True)
+                self.assertEqual(result['status'], 'ok', result)
+                self.assertTrue(result['data']['recording'])
+                self.assertEqual(len(bridge.starts), 1)
+
+    def test_shared_wait_does_not_read_native_profile_fields(self):
+        ext = Extensions(Runtime(self.tmp.name))
+        self.addCleanup(ext.close)
+        with mock.patch.object(browsers, 'ensure_tools'), mock.patch.object(ext.browser, 'get', return_value=RecordingBrowser()):
+            self.assertTrue(ext.connect_browser({'browser': {'mode': 'shared'}, 'waitSeconds': 20})['connected'])
+
     def test_start_connects_and_really_starts_recording_in_one_call(self):
         with mock.patch.object(self.ext, 'connect_browser', side_effect=self.connect) as connect, \
                 mock.patch.object(self.ext.learner, '_ensure_collector'):
