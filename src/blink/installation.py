@@ -135,14 +135,21 @@ def external_python(root):
             config = temporary / '1' / 'pyvenv.cfg'
             if config.is_file() and contained(prefixes[0]):
                 lines = []
-                for line in config.read_text(encoding='utf-8').splitlines(keepends=True):
+                raw = config.read_bytes()
+                try:
+                    text, encoding = raw.decode('utf-8'), 'utf-8'  # what python -m venv writes
+                except UnicodeDecodeError:
+                    import locale
+                    encoding = locale.getpreferredencoding(False)  # older or hand-made configurations
+                    text = raw.decode(encoding)
+                for line in text.splitlines(keepends=True):
                     name, separator, value = line.partition('=')
                     if separator and name.strip() in ('home', 'executable'):
                         original = Path(value.strip()).resolve()
                         if original.is_relative_to(prefixes[0]):
                             line = f'{name}= {target / "0" / original.relative_to(prefixes[0])}\n'
                     lines.append(line)
-                config.write_text(''.join(lines), encoding='utf-8')
+                config.write_text(''.join(lines), encoding=encoding)
             try:
                 temporary.rename(target)
             except OSError:

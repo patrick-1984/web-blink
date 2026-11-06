@@ -67,7 +67,7 @@ class UpdateTests(unittest.TestCase):
         executable.write_bytes(b'synthetic exe')
         (venv / 'native.pyd').write_bytes(b'synthetic extension')
         (base / 'python312.dll').write_bytes(b'synthetic dll')
-        (venv / 'pyvenv.cfg').write_text('home = ' + str(base) + '\n')
+        (venv / 'pyvenv.cfg').write_text('home = ' + str(base) + '\n', encoding='utf-8')  # as python -m venv writes it
         with patch.object(sys, 'executable', str(executable)), patch.object(sys, 'prefix', str(venv)), patch.object(sys, 'base_prefix', str(base)):
             relocated = Path(external_python(self.plugin))
         self.assertFalse(relocated.is_relative_to(self.plugin))
