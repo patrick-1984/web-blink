@@ -21,6 +21,11 @@ Publish a new integration version for changes to an already released package.
 [com.banana/1.0.0](com.banana/1.0.0/weblink.json) is a fictional read-only example. Its
 [openapi.json](com.banana/1.0.0/openapi.json) persists the operation and response schema. Account sessions
 and account-specific grants belong to the runtime's per-user state.
+[ruddr-com/0.6.0](ruddr-com/0.6.0/weblink.json) is a real Blink for Ruddr time tracking (36 operations), learned from a
+recording. Your company slug, workspace ID, member ID and email are variables: save them once with `private_set`
+(`{"variables": {...}}`) and every call fills them in. No account data is included.
+[entra-microsoft/0.1.0](entra-microsoft/0.1.0/weblink.json) is an experimental Blink for Microsoft Entra through
+Microsoft Graph (73 operations). Its sign-in recipe is not configured yet: learn it from your own signed-in browser first.
 
 Distribution metadata uses [schemas/v1/weblink.schema.json](../schemas/v1/weblink.schema.json).
 The interaction execution-profile compiler and its schemas are implemented (see [schemas/index.json](../schemas/index.json)).

@@ -8,7 +8,7 @@
       "requestedRef": "main",
       "commit": "0123456789abcdef0123456789abcdef01234567",
       "catalogPath": "blink-catalog.json",
-      "catalogSha256": "d1b4c01931eddb438a071d7d3bef1415cbada7490b962b2d0b836b1c5a87a01f"
+      "catalogSha256": "2f67be8049f2e25530f85f843ea4b41117d51a37cf38552a48e7f9c855441f7d"
     }
   ],
   "installed": [
@@ -22,7 +22,7 @@
         "repository": "https://git.example/team/weblinks.git",
         "commit": "0123456789abcdef0123456789abcdef01234567",
         "catalogPath": "blink-catalog.json",
-        "catalogSha256": "d1b4c01931eddb438a071d7d3bef1415cbada7490b962b2d0b836b1c5a87a01f"
+        "catalogSha256": "2f67be8049f2e25530f85f843ea4b41117d51a37cf38552a48e7f9c855441f7d"
       }
     }
   ]
