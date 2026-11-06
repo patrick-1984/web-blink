@@ -17,7 +17,7 @@ import time
 from .doctor import secure_state_directory
 
 MAX_MESSAGE = 1_048_576
-PUBLIC_METHODS = frozenset({'services', 'search', 'describe', 'call_read', 'prepare', 'execute', 'admin', 'doctor'})
+PUBLIC_METHODS = frozenset({'services', 'search', 'describe', 'call_read', 'prepare', 'execute', 'verify', 'admin', 'doctor'})
 
 
 def error(code, summary):
@@ -142,25 +142,26 @@ class Handler(socketserver.StreamRequestHandler):
         return {'status': 'ok', 'summary': 'Daemon shutting down for an explicit restart',
                 'data': {'pid': self.server.identity.get('pid')}, 'warnings': []}
 
+    def response(self, raw):
+        if len(raw) > MAX_MESSAGE or not raw.endswith(b'\n'):
+            result = error('invalid_request', 'Request exceeds the message limit or is incomplete')
+        else:
+            try:
+                with self.server.call_lock:
+                    result = self.dispatch(raw)
+            except (ValueError, TypeError, json.JSONDecodeError):
+                result = error('invalid_request', 'Invalid runtime request')
+            except Exception as exc:
+                result = error(getattr(exc, 'code', 'error'), 'Runtime request failed; check its documented parameters')
+        wire = json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode() + b'\n'
+        if len(wire) > MAX_MESSAGE:
+            wire = json.dumps(error('response_too_large', 'Runtime response exceeds the transport limit')).encode() + b'\n'
+        return wire
+
     def handle(self):
         self.request.settimeout(35)
         try:
-            raw = self.rfile.readline(MAX_MESSAGE + 1)
-            if len(raw) > MAX_MESSAGE or not raw.endswith(b'\n'):
-                result = error('invalid_request', 'Request exceeds the message limit or is incomplete')
-            else:
-                try:
-                    with self.server.call_lock:
-                        result = self.dispatch(raw)
-                except (ValueError, TypeError, json.JSONDecodeError):
-                    result = error('invalid_request', 'Invalid runtime request')
-                except Exception as exc:
-                    # Stable domain codes only; never echo account material or arbitrary exception text.
-                    result = error(getattr(exc, 'code', 'error'), 'Runtime request failed; check its documented parameters')
-            wire = json.dumps(result, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode() + b'\n'
-            if len(wire) > MAX_MESSAGE:
-                wire = json.dumps(error('response_too_large', 'Runtime response exceeds the transport limit')).encode() + b'\n'
-            self.wfile.write(wire)
+            self.wfile.write(self.response(self.rfile.readline(MAX_MESSAGE + 1)))
         except (OSError, ValueError):
             pass
         finally:
@@ -173,7 +174,7 @@ class ControlHandler(Handler):
     control = True
 
 
-class Server(socketserver.ThreadingUnixStreamServer):
+class Server(getattr(socketserver, 'ThreadingUnixStreamServer', socketserver.ThreadingTCPServer)):
     daemon_threads = True
     request_queue_size = 32
 
@@ -187,18 +188,17 @@ def _remove_stale_socket(path):
 
 
 def serve(state_dir=None, plugin_root=None):
-    if os.name == 'nt':
-        raise RuntimeError('POSIX Unix daemon transport is required; diagnostics remain available on Windows')
-    import fcntl
+    from .filelock import acquire
     from .runtime import Runtime
     state = secure_state_directory(state_dir)
     lock_path = state / 'runtime.lock'
     socket_path, control_path = state / 'runtime.sock', state / 'control.sock'
     flags = os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0)
     fd = os.open(lock_path, flags, 0o600)
-    os.fchmod(fd, 0o600)
+    if os.name != 'nt':
+        os.fchmod(fd, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        acquire(fd)
     except BlockingIOError:
         os.close(fd)
         return 0
@@ -206,8 +206,9 @@ def serve(state_dir=None, plugin_root=None):
     stopping = threading.Event()
     worker = control_worker = None
     try:
-        for path in (socket_path, control_path):
-            _remove_stale_socket(path)
+        if os.name != 'nt':
+            for path in (socket_path, control_path):
+                _remove_stale_socket(path)
         runtime = Runtime(state_dir=state, plugin_root=plugin_root)
         if hasattr(runtime, 'recover_startup'):
             runtime.recover_startup()
@@ -220,8 +221,18 @@ def serve(state_dir=None, plugin_root=None):
         # Source approval hooks must be present even without an optional extension layer.
         from .sources import SourceManager
         SourceManager(runtime)
-        server = Server(str(socket_path), Handler)
-        control_server = Server(str(control_path), ControlHandler)
+        server_type = Server
+        if os.name == 'nt':
+            from .windows import PipeServer
+            server_type = PipeServer
+        # Unix endpoints must already be private when the autostart client first observes them.
+        mask = os.umask(0o177) if os.name != 'nt' else None
+        try:
+            server = server_type(str(socket_path), Handler)
+            control_server = server_type(str(control_path), ControlHandler)
+        finally:
+            if mask is not None:
+                os.umask(mask)
         retiring = threading.Event()
         def stop_all():
             server.shutdown()
@@ -231,7 +242,8 @@ def serve(state_dir=None, plugin_root=None):
                     'startedAt': time.time()}
         shared_lock = threading.RLock()
         for instance, path in ((server, socket_path), (control_server, control_path)):
-            os.chmod(path, 0o600)
+            if os.name != 'nt':
+                os.chmod(path, 0o600)
             instance.runtime, instance.extensions, instance.call_lock = runtime, extensions, shared_lock
             instance.identity = identity
             instance.retiring, instance.stop_all = retiring, stop_all
@@ -262,7 +274,7 @@ def serve(state_dir=None, plugin_root=None):
         for instance, path in ((server, socket_path), (control_server, control_path)):
             if instance:
                 instance.server_close()
-                if path.exists() and stat.S_ISSOCK(path.lstat().st_mode):
+                if os.name != 'nt' and path.exists() and stat.S_ISSOCK(path.lstat().st_mode):
                     path.unlink()
         if extensions:
             try:

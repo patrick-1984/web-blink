@@ -10,11 +10,12 @@ import re
 import sys
 
 from .config import CLIENT_CONTROLS, ConfigError, ConfigStore, GLOBAL_KEYS, SERVICE, boolean, json_value, normalize_key, strict_json
+from .errors import BlinkError
 
 
-LEGACY = {'doctor', 'services', 'search', 'describe', 'read', 'prepare', 'execute', 'status',
+LEGACY = {'doctor', 'services', 'search', 'describe', 'read', 'prepare', 'execute', 'verify', 'status',
           'human', 'install', 'approve-manifest', 'approve-intent', 'sources', 'schemas', 'tools',
-          'account', 'custody', 'learn', 'jobs', 'health', 'trust', 'forget', 'purge'}
+          'account', 'custody', 'learn', 'jobs', 'health', 'trust', 'forget', 'purge', 'browser'}
 VALUE_FLAGS = {'--output': 'output', '-o': 'output', '--region': 'region', '--language': 'language',
                '--binding': 'binding', '--config-dir': 'config_dir', '--state-dir': 'state_dir',
                '--plugin-root': 'plugin_root'}
@@ -468,9 +469,11 @@ def _legacy(tokens, flags, store):
     # The invoking client's selected store (--config-dir or environment) decides the policy for every gate below.
     mode = store.approval_mode()
     args._approval_mode = mode
+    args._config_directory = store.directory
     needs_confirmation = (args.command in {'human', 'install', 'approve-manifest', 'approve-intent', 'forget', 'purge'}
         or (args.command in cli.MANAGEMENT and not (args.management_action == 'list'))
-        or (args.command == 'sources' and args.source_action not in {'sync', 'list'}))
+        or (args.command == 'sources' and args.source_action not in {'sync', 'list'})
+        or (args.command == 'browser' and args.browser_action in {'select', 'setup'}))
     if mode == 'dialog' and needs_confirmation and not getattr(args, 'yes', False) and not sys.stdin.isatty():
         preliminary, _ = store.effective(cli=_settings_flags(flags))
         if not preliminary.get('dry_run'):
@@ -528,6 +531,7 @@ def _legacy(tokens, flags, store):
                          'Execution suppressed; no receipt or journal was changed'), settings
     if settings.get('dry_run') and (
             args.command in {'human', 'install', 'approve-manifest', 'approve-intent', 'forget', 'purge'}
+            or (args.command == 'browser' and args.browser_action in {'select', 'setup'})
             or (args.command in cli.MANAGEMENT and args.management_action != 'list')
             or (args.command == 'sources' and args.source_action != 'list')
             or (args.command == 'schemas' and (args.export or args.schema_action == 'export'))):
@@ -541,7 +545,9 @@ def _legacy(tokens, flags, store):
     except ImportError:
         return _envelope({}, 'Install the documented local runtime dependencies', 'env_unavailable'), settings
     except Exception as exc:
-        return _envelope({}, 'Command failed; check the action and its documented parameters',
+        message = (exc.message if args.command == 'browser' and isinstance(exc, BlinkError)
+                   else 'Command failed; check the action and its documented parameters')
+        return _envelope({}, message,
                          getattr(exc, 'code', 'invalid_request')), settings
 
 
