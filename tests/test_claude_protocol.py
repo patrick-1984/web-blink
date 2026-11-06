@@ -154,7 +154,8 @@ print(json.dumps(result))
     def test_paths_with_spaces_and_configured_executable_are_not_shell_parsed(self):
         with tempfile.TemporaryDirectory(prefix='blink path ') as tmp:
             root = Path(tmp)
-            (root / 'mcp').mkdir()
+            shutil.copytree(ROOT / 'mcp', root / 'mcp')
+            shutil.copytree(ROOT / 'src', root / 'src', ignore=shutil.ignore_patterns('__pycache__'))
             script = root / 'mcp/server.mjs'
             script.write_bytes((ROOT / 'mcp/server.mjs').read_bytes())
             marker = root / 'should-not-exist'
@@ -246,11 +247,17 @@ class PublicTransportTests(unittest.TestCase):
                     {'BLINK_PYTHON': sys.executable, 'BLINK_STATE_DIR': str(state),
                      'BLINK_PLUGIN_ROOT': str(ROOT), 'PYTHONPATH': str(ROOT / 'src')})
                 self.assertEqual(json.loads(messages[1]['result']['content'][0]['text'])['status'], 'ok')
+                # EOF retires the last connector's idle daemon. Start a fresh one
+                # before testing raw public-socket authorization below.
+                from blink.client import _wait_lock_free, stop_daemon
+                self.assertTrue(_wait_lock_free(state))
+                request('doctor', state_dir=state, plugin_root=ROOT)
                 with socket.socket(socket.AF_UNIX) as conn:
                     conn.connect(str(state / 'runtime.sock'))
                     conn.sendall(b'{"method":"grant","params":{},"human":true}\n')
                     denied = json.loads(conn.makefile('rb').readline())
                     self.assertEqual(denied['status'], 'invalid_request')
+                stop_daemon(state, ROOT)
             finally:
                 proc.terminate()
                 try:

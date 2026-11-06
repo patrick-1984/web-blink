@@ -50,21 +50,26 @@ def _own_identity(plugin_root):
 
 
 def _start_daemon(state, plugin_root):
-    command = [sys.executable, '-m', 'blink.daemon', '--state-dir', str(state)]
-    if plugin_root:
-        command += ['--plugin-root', str(plugin_root)]
+    from .installation import current_root, external_python, register_root, snapshot, work_dir
     from .paths import plugin_root as locate_root
-    trusted_root = locate_root(plugin_root)
+    trusted_root = current_root(locate_root(plugin_root))
+    if state.resolve().is_relative_to(trusted_root):
+        raise ValueError('state must be outside the plugin tree')
+    register_root(trusted_root)
+    source = trusted_root / 'src/blink'
+    code = snapshot(source if source.is_dir() else None)
+    command = [external_python(trusted_root), '-m', 'blink.daemon', '--state-dir', str(state),
+               '--plugin-root', str(trusted_root)]
     environment = dict(os.environ)
     environment['PYTHONUTF8'] = '1'
     environment['PYTHONIOENCODING'] = 'utf-8'
-    environment.pop('PYTHONPATH', None)
-    if (trusted_root / 'src').is_dir():
-        environment['PYTHONPATH'] = str(trusted_root / 'src')
+    environment.pop('PYTHONHOME', None)
+    environment['PYTHONPATH'] = str(code)
+    environment['PYTHONDONTWRITEBYTECODE'] = '1'
     options = ({'creationflags': subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP}
                if os.name == 'nt' else {'start_new_session': True})
     subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, cwd=trusted_root, env=environment,
+                     stderr=subprocess.DEVNULL, cwd=work_dir(state), env=environment,
                      close_fds=True, **options)
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
@@ -108,7 +113,7 @@ def _legacy_daemon_pids(state):
         return pids
     try:
         listing = subprocess.run(['ps', '-U', str(os.getuid()), '-o', 'pid=,args='], capture_output=True,
-                                 text=True, timeout=5).stdout
+                                 text=True, timeout=5, cwd=state).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     for line in listing.splitlines():
@@ -154,6 +159,8 @@ def _probe(state):
             sock.close()
     except Exception:
         return None
+    if doctor.get('status') == 'daemon_retiring':
+        return 'retiring'
     identity = doctor.get('data', {}).get('daemon') if isinstance(doctor.get('data'), dict) else None
     return identity if isinstance(identity, dict) else 'legacy'
 
@@ -177,6 +184,8 @@ def _replace_if_outdated(state, plugin_root):
     A newer daemon is kept, so two installed versions never take turns restarting each other."""
     own = _own_identity(plugin_root)
     identity = _probe(state)
+    if identity == 'retiring':
+        return 'restarted' if _wait_lock_free(state) else 'The daemon is still retiring; call again shortly.'
     if not _outdated(identity, own):
         return None
     if identity == 'legacy':
@@ -222,6 +231,13 @@ def restart_legacy_daemon(state_dir=None, plugin_root=None):
     resubmitted: the new daemon's startup recovery marks them outcome_unknown."""
     import signal
     state = secure_state_directory(state_dir)
+    # The caller is the current connector/CLI, never the old daemon's reported root.
+    from .paths import plugin_root as locate_root
+    from .installation import current_root
+    plugin_root = current_root(locate_root(plugin_root))
+    if not plugin_root.is_dir():
+        return {'status': 'not_restarted', 'summary': 'Current plugin root is missing; restart from the updated connector',
+                'warnings': []}
     own = _own_identity(plugin_root)
     identity = _probe(state)
     if identity is None:
@@ -300,6 +316,11 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
             notice = LEGACY_NOTICE if _probe(state) == 'legacy' else (
                 'An older Web Blink daemon answered after start; call blink_doctor again to replace it.')
     try:
+        connector = os.environ.get('BLINK_CONNECTOR_ID')
+        if connector:
+            _exchange(sock, 'connector', {'id': connector, 'pid': int(os.environ['BLINK_CONNECTOR_PID'])})
+            sock.close()
+            sock = connect(state / 'runtime.sock')
         result = _exchange(sock, method, params)
     finally:
         sock.close()
@@ -314,8 +335,44 @@ def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=
         from .home import home_dir
         result['data']['homeDir'] = str(home_dir())
         result['data']['daemonMatchesClient'] = isinstance(daemon, dict) and daemon.get('version') == own['version']
+        from .installation import update_diagnostic
+        diagnostic = update_diagnostic(daemon, own['pluginRoot'])
+        if diagnostic:
+            result['data']['updateBlocker'] = diagnostic
+            result.setdefault('warnings', []).append(diagnostic['remedy'])
         if restarted:
             result['data']['daemonRestarted'] = True
+    return result
+
+
+def retire_idle(state_dir=None, plugin_root=None):
+    """Connector shutdown: no autostart, no permit, no interruption of work or recordings."""
+    state = secure_state_directory(state_dir)
+    sock = connect(state / 'runtime.sock')
+    try:
+        return _exchange(sock, 'retire', {'ifIdle': True, 'pluginRoot': str(_own_identity(plugin_root)['pluginRoot']),
+                                         'connector': os.environ.get('BLINK_CONNECTOR_ID')})
+    finally:
+        sock.close()
+
+
+def stop_daemon(state_dir=None, plugin_root=None):
+    """Explicit local CLI stop, including deployed 0.12 daemons that lack ifIdle retirement."""
+    state = secure_state_directory(state_dir)
+    if _probe(state) is None:
+        return {'status': 'ok', 'summary': 'No Blink daemon is running', 'warnings': []}
+    try:
+        result = control_request('shutdown_daemon', {}, state_dir=state, plugin_root=plugin_root, autostart=False)
+    except (OSError, ValueError):
+        if _wait_lock_free(state, 20):
+            return {'status': 'ok', 'summary': 'Blink daemon stopped', 'warnings': []}
+        return {'status': 'not_stopped', 'summary': 'Blink daemon is not responding; restart Windows before updating',
+                'warnings': []}
+    if result.get('status') == 'ok':
+        if _wait_lock_free(state, 20):
+            return {'status': 'ok', 'summary': 'Blink daemon stopped', 'warnings': []}
+        return {'status': 'not_stopped', 'summary': 'Blink daemon has not stopped; restart Windows before updating',
+                'warnings': []}
     return result
 
 
@@ -392,8 +449,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-dir')
     parser.add_argument('--plugin-root')
+    parser.add_argument('--retire-idle', action='store_true')
     args = parser.parse_args(argv)
     try:
+        if args.retire_idle:
+            try:
+                retire_idle(args.state_dir, args.plugin_root)
+            except (OSError, ValueError):
+                pass  # Closing an unused connector must never start a daemon.
+            return 0
         raw = sys.stdin.buffer.readline(MAX_MESSAGE + 1)
         if len(raw) > MAX_MESSAGE:
             raise ValueError('request exceeds transport limit')

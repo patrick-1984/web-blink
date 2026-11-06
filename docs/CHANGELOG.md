@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.13.1 — 2026-11-06
+
+- Release Windows plugin folders before Claude Desktop updates: neutral working directories for all
+  components, immutable code/assets and relocated embedded Python runtimes in BLINK_HOME.
+- Retire stale daemons at idle boundaries and before scheduled work; preserve active recordings,
+  reject new work on a stale installation, and prevent lazy imports from replacement files.
+- Retire idle daemons when the last MCP connector closes; restart from the current installation.
+- Add `blink daemon stop`, update-blocker diagnostics and the one-time 0.12.0 Windows recovery steps.
+
 ## 0.13.0 — 2026-11-06
 
 - Execute existing Blinks without starting a recording. Remember multiple private account contexts,

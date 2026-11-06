@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 
 from .errors import BlinkError
+from .installation import work_dir
 
 
 def public_key_fingerprint(public_key_hex):
@@ -41,7 +42,7 @@ def verify_catalog_signature(public_key_hex, signature_hex, catalog_sha256):
                 "openssl", "pkeyutl", "-verify", "-pubin", "-keyform", "DER",
                 "-inkey", str(root / "key.der"), "-sigfile", str(root / "signature"),
                 "-rawin", "-in", str(root / "payload")], stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10, cwd=work_dir())
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise BlinkError("signature_unavailable", "OpenSSL Ed25519 verification is unavailable") from exc
     if result.returncode:

@@ -162,7 +162,7 @@ class Preflight:
                 try:
                     result = subprocess.run([check['executable'], *check['versionArgs']],
                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                        timeout=3, check=False)
+                        timeout=3, check=False, cwd=self.state)
                     available = result.returncode == 0
                 except (OSError, subprocess.TimeoutExpired):
                     available = False
