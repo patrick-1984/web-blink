@@ -15,7 +15,7 @@ import uuid
 
 from .doctor import secure_state_directory
 
-PUBLIC_METHODS = frozenset({'services', 'search', 'describe', 'call_read', 'prepare', 'execute', 'admin', 'doctor'})
+PUBLIC_METHODS = frozenset({'services', 'search', 'describe', 'call_read', 'prepare', 'execute', 'verify', 'admin', 'doctor'})
 MAX_MESSAGE = 1_048_576
 
 

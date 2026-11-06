@@ -81,6 +81,8 @@ blink team:timesheets submit-hours --body file://hours.json --request-id hours-2
 The timesheet name illustrates an integration you install or learn; it is not a bundled live connector.
 Use `--dry-run` to validate a local plan without dispatch, and stable request IDs to resume a script safely.
 Writes need an exact native approval; unknown outcomes retain their intent and budget for reconciliation.
+Successful dispatch is labelled accepted/unverified. `blink_verify` checks explicit expectations through
+reviewed reads; writes require correlated read-back and never repeat a mutation for verification.
 
 Each Blink also has a **private Blink** for you alone: your login name, field defaults ("leave PTO empty"),
 preferences and process notes ("fill weeks Monday to Friday"), plus optional secrets kept in a separate file.
@@ -88,6 +90,7 @@ It lives in `$BLINK_HOME/private/<blink>.json` (default `~/.web-blink`, files 06
 shared with the Blink, and Claude reads it before preparing writes. Tell Claude your preference and it saves it
 (`private_set`); `blink admin --input '{"action": "private", "service": "local:<blink>"}'` shows it without secret values.
 
+- [Result verification](docs/result-verification.md): expected versus observed checks, correlated write read-back and pending outcomes.
 - [Runtime guide](docs/runtime-guide.md): setup, accounts, learning, execution and schedules.
 - [Use existing browser logins](docs/browser-sessions.md): select Chrome, Edge or Brave profiles, keep personal/admin accounts separate, and discover Firefox profiles.
 - [CLI reference](docs/cli-reference.md): command grammar, scripting, defaults and precedence.

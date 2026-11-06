@@ -13,7 +13,7 @@ from .config import CLIENT_CONTROLS, ConfigError, ConfigStore, GLOBAL_KEYS, SERV
 from .errors import BlinkError
 
 
-LEGACY = {'doctor', 'services', 'search', 'describe', 'read', 'prepare', 'execute', 'status',
+LEGACY = {'doctor', 'services', 'search', 'describe', 'read', 'prepare', 'execute', 'verify', 'status',
           'human', 'install', 'approve-manifest', 'approve-intent', 'sources', 'schemas', 'tools',
           'account', 'custody', 'learn', 'jobs', 'health', 'trust', 'forget', 'purge', 'browser'}
 VALUE_FLAGS = {'--output': 'output', '-o': 'output', '--region': 'region', '--language': 'language',

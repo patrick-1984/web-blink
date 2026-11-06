@@ -19,7 +19,7 @@ from .profile import compile_manifest,origin,SENSITIVE
 from .storage import Store,digest,encoded
 from .paths import plugin_root as resolve_plugin_root
 
-PUBLIC={'services','search','describe','call_read','prepare','execute','admin','doctor'}
+PUBLIC={'services','search','describe','call_read','prepare','execute','verify','admin','doctor'}
 HUMAN={'approve_manifest','set_trust','grant','bind','custody_authorize','approve_intent','reconcile','revoke','retry_intent',
        'private_set','private_secret_set'}
 ID=re.compile(r'^[a-z0-9]+(?:[.-][a-z0-9]+)*$')
@@ -117,10 +117,13 @@ class Runtime:
             return envelope('forbidden','This method needs an exact-command control permit (CLI or the blink_request_approval bridge) or is not exposed')
         try:
             with self._lock,self.broker.secret_scope():
-                if method in ('call_read', 'prepare', 'execute'):
+                if method in ('call_read', 'prepare', 'execute', 'verify'):
                     if not self.preflight.check('runtime')['usable']:
                         raise BlinkError('env_unavailable', 'Required runtime capability is unavailable; run doctor')
                 result=getattr(self,'_'+method)(params)
+                if method in ('call_read','execute') and result['status'] in ('ok','succeeded','resolved_done'):
+                    result['verification']={'state':'accepted','verification':'unverified',
+                                            'reason':'Compare explicit expectations with a read or correlated write read-back.'}
             # Public data cannot contain raw credentials even when a service reflects them.
             return result
         except BlinkError as exc:return failure(exc,method)
@@ -642,6 +645,10 @@ class Runtime:
             if binding:binding=self._binding(p,record,op)
             return envelope('ok','Read completed',self._send(record,op,args,binding))
 
+    def _verify(self,p):
+        from .verification import verify
+        return verify(self,p)
+
     def _with_variables(self,record,op,args):
         """Fill arguments backed by a Blink variable (tenant, workspace, login, user ID) from this user's private Blink
         when the caller left them out; an explicit argument always wins. The filled values are part of the exact plan."""
@@ -1000,6 +1007,10 @@ class Runtime:
         if action=='control_action':
             from .control import action_contract
             return action_contract(self,p)
+        if action=='verification':
+            result=self.store.get('verification',p.get('id'))
+            if not result:raise BlinkError('invalid_arguments','Verification record not found')
+            return envelope('ok','Stored expected-versus-observed verification',result)
         if action=='status':
             with self.store.transaction() as db:
                 counts={row['state']:row['n'] for row in db.execute('SELECT state,COUNT(*) AS n FROM intents GROUP BY state')}

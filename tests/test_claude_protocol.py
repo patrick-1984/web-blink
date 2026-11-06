@@ -48,10 +48,10 @@ class ClaudeProtocolTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in messages], [1, 2, 3])
         self.assertEqual(messages[0]['result']['protocolVersion'], '2025-11-25')
         tools = messages[1]['result']['tools']
-        self.assertEqual(len(tools), 13)
+        self.assertEqual(len(tools), 14)
         self.assertEqual({t['name'] for t in tools}, {'blink_services', 'blink_search', 'blink_describe',
             'blink_call_read', 'blink_prepare', 'blink_execute', 'blink_admin', 'blink_doctor', 'blink_request_approval',
-            'blink_connect_browser', 'blink_restore_browser', 'blink_start_recording', 'blink_browser_status'})
+            'blink_connect_browser', 'blink_restore_browser', 'blink_start_recording', 'blink_browser_status', 'blink_verify'})
         report = json.loads(messages[2]['result']['content'][0]['text'])
         self.assertTrue(report['data']['capabilities']['diagnostics'])
         self.assertFalse(report['data']['capabilities']['runtime'])
@@ -78,11 +78,12 @@ class ClaudeProtocolTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == 'nt', 'Synthetic executable fixture uses a POSIX shebang')
     def test_guided_start_and_status_route_to_distinct_runtime_actions(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp)
-            executable = folder / 'synthetic-python'
-            calls = folder / 'calls.jsonl'
-            executable.write_text('#!' + sys.executable + '\n' + '''
+        for wait in (0, 20, 30):
+            with tempfile.TemporaryDirectory() as tmp:
+                folder = Path(tmp)
+                executable = folder / 'synthetic-python'
+                calls = folder / 'calls.jsonl'
+                executable.write_text('#!' + sys.executable + '\n' + '''
 import json,sys
 from pathlib import Path
 if '-m' not in sys.argv:
@@ -98,22 +99,22 @@ else:
     result={'status':'ok','data':{'recording':False,'connectionChecked':False}}
 print(json.dumps(result))
 ''')
-            executable.chmod(0o700)
-            params = {'url': 'https://app.example/', 'browser': {'mode': 'shared'}, 'waitSeconds': 20}
-            messages = node_messages([INIT,
-                {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'blink_start_recording', 'arguments': params}},
-                {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'blink_browser_status', 'arguments': {}}}],
-                {'BLINK_PYTHON': str(executable), 'BLINK_HOME': str(folder / 'blink')})
-            requests = [json.loads(line) for line in calls.read_text().splitlines()]
-        self.assertEqual([row['method'] for row in requests], ['describe', 'apply', 'admin'])
-        self.assertEqual(requests[0]['params']['method'], 'learn_start_guided')
-        routed = requests[1]['params']['params']
-        self.assertEqual({key: value for key, value in routed.items() if key != '_flowId'}, params)
-        self.assertEqual(len(routed['_flowId']), 32)
-        self.assertEqual(requests[2]['params']['action'], 'browser_connection')
-        self.assertEqual(requests[2]['params']['_flowId'], routed['_flowId'])
-        self.assertTrue(json.loads(messages[1]['result']['content'][0]['text'])['data']['recording'])
-        self.assertFalse(json.loads(messages[2]['result']['content'][0]['text'])['data']['recording'])
+                executable.chmod(0o700)
+                params = {'url': 'https://app.example/', 'browser': {'mode': 'shared'}, 'waitSeconds': wait}
+                messages = node_messages([INIT,
+                    {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'blink_start_recording', 'arguments': params}},
+                    {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'blink_browser_status', 'arguments': {}}}],
+                    {'BLINK_PYTHON': str(executable), 'BLINK_HOME': str(folder / 'blink')})
+                requests = [json.loads(line) for line in calls.read_text().splitlines()]
+            self.assertEqual([row['method'] for row in requests], ['describe', 'apply', 'admin'])
+            self.assertEqual(requests[0]['params']['method'], 'learn_start_guided')
+            routed = requests[1]['params']['params']
+            self.assertEqual({key: value for key, value in routed.items() if key != '_flowId'}, params)
+            self.assertEqual(len(routed['_flowId']), 32)
+            self.assertEqual(requests[2]['params']['action'], 'browser_connection')
+            self.assertEqual(requests[2]['params']['_flowId'], routed['_flowId'])
+            self.assertTrue(json.loads(messages[1]['result']['content'][0]['text'])['data']['recording'])
+            self.assertFalse(json.loads(messages[2]['result']['content'][0]['text'])['data']['recording'])
 
     @unittest.skipIf(os.name == 'nt', 'Synthetic executable fixture uses a POSIX shebang')
     def test_browser_choice_is_a_pending_tool_result_instead_of_an_error(self):
