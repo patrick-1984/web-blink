@@ -211,6 +211,12 @@ def describe(method, params, *, state_dir=None, plugin_root=None, config_dir=Non
         # A broken policy runs nothing and opens no dialog.
         return {'status': 'configuration_error', 'summary': f'Approval setting is invalid: {exc}', 'warnings': []}
     params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root, config_dir=config_dir)
+    if method == 'activate_blink':
+        from .client import request
+        checked = request('admin', {'action': 'control_action', 'method': method, 'params': params},
+                          state_dir=state_dir, plugin_root=plugin_root)
+        if checked.get('status') != 'ok':
+            return checked
     if mode == 'none':
         # The user's order authorizes the action: a small descriptor, no review document.
         return {'status': 'ok', 'summary': 'Exact action described',
@@ -279,6 +285,12 @@ def apply(method, params, expected_digest, *, state_dir=None, plugin_root=None, 
     params = complete(method, params, state_dir=state_dir, plugin_root=plugin_root, config_dir=config_dir)
     if not isinstance(expected_digest, str) or digest(params) != expected_digest:
         return {'status': 'authorization_required', 'summary': 'Parameters differ from the described action', 'warnings': []}
+    if method == 'activate_blink':
+        from .client import request
+        checked = request('admin', {'action': 'control_action', 'method': method, 'params': params},
+                          state_dir=state_dir, plugin_root=plugin_root)
+        if checked.get('status') != 'ok':
+            return checked
     if method == 'restart_daemon':
         from .client import restart_legacy_daemon
         return restart_legacy_daemon(state_dir=state_dir, plugin_root=plugin_root)

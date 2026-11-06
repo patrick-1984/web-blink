@@ -340,7 +340,10 @@ class NoDialogPolicyTests(BridgeFixture):
                         self.assertNotIn(result['status'], ('forbidden', 'approval_unavailable', 'approval_too_large',
                                                             'declined', 'configuration_error'), result)
                         self.assertNotIn(SECRET, json.dumps(result))
-                        if method != 'purge_state':
+                        if method == 'activate_blink':
+                            self.assertEqual(result['status'], 'quarantined')
+                            self.assertEqual(self.consumed_permits(), before, 'invalid activation must stop at preflight')
+                        elif method != 'purge_state':
                             self.assertGreater(self.consumed_permits(), before, 'the action was not dispatched')
 
     def test_ordered_activation_runs_end_to_end_without_any_dialog(self):

@@ -212,3 +212,14 @@ headers. Successful checks record operation/input/response digests, HTTP status 
 provenance. This evidence covers the checked input only; it does not verify business correctness or all inputs.
 Captured authenticated writes and unconfirmed POST reads cannot use this path. A failed/missing check stages
 nothing and does not relax account identity or write authorization.
+
+## Activation control contract
+
+`blink_admin` with `action: "control_action"`, `method: "activate_blink"` (or `"bind"`) and a
+`candidate` (or approved `service`) returns the action's JSON Schema and both anonymous/authenticated
+examples. Example account/selector values are placeholders and must be replaced with genuine identity
+evidence. The schema embeds the reviewed identity probe's input contract at `bind.identity.arguments`.
+Optional `params` validates an action without authorization or state changes. The activation bridge checks
+this contract before any activation step; errors identify the exact missing nested field. Runtime account,
+trust, grant and exact-manifest checks still apply when each step executes; preflight is not a remote identity
+check or a transaction across the activation steps.

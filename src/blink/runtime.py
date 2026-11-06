@@ -989,6 +989,9 @@ class Runtime:
 
     def _admin(self,p):
         action=p.get('action','status')
+        if action=='control_action':
+            from .control import action_contract
+            return action_contract(self,p)
         if action=='status':
             with self.store.transaction() as db:
                 counts={row['state']:row['n'] for row in db.execute('SELECT state,COUNT(*) AS n FROM intents GROUP BY state')}
