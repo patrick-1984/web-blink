@@ -8,6 +8,18 @@
       "version": "1.0.0",
       "descriptor": "blinks/com.banana/1.0.0/weblink.json",
       "sha256": "430a00040efa7fe3a6919c37e02069de885d93972f6eaddde8fa9c681533c6f2"
+    },
+    {
+      "id": "ruddr-com",
+      "version": "0.6.0",
+      "descriptor": "blinks/ruddr-com/0.6.0/weblink.json",
+      "sha256": "7b8b8588ad8f9d9ece117ee65c9ba423555f61951c7c30c8994ad86398116906"
+    },
+    {
+      "id": "entra-microsoft",
+      "version": "0.1.0",
+      "descriptor": "blinks/entra-microsoft/0.1.0/weblink.json",
+      "sha256": "5f0351e57b83436901eda94039a1769126e27de26fba4e2cc2b5d312ed31708f"
     }
   ]
 }

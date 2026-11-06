@@ -1,0 +1,16 @@
+{
+  "$schema": "urn:web-blink:schema:weblink:1",
+  "schemaVersion": 1,
+  "id": "ruddr-com",
+  "version": "0.6.0",
+  "name": "Ruddr time tracking",
+  "description": "Ruddr (ruddr.io) time entries: read and edit days and weeks, projects, roles, tasks, holidays, submit weeks. Your workspace, member ID and email are variables filled from your private Blink; no account data is included.",
+  "artifacts": [
+    {
+      "role": "openapi",
+      "path": "openapi.json",
+      "sha256": "91298fc6a2dbbbc7ee9fba4bee2f82d1ca93a45d16cdfb2338e6e1f91148f6ef",
+      "mediaType": "application/json"
+    }
+  ]
+}
