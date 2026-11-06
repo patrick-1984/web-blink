@@ -9,6 +9,7 @@ import uuid
 from .browser import BrowserBridge, PlaywrightMCP
 from .contexts import read, write
 from .errors import BlinkError
+from .installation import work_dir
 from .storage import private_dir
 
 
@@ -18,7 +19,7 @@ def _stamp(pid):
         return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[19]
     except (OSError, IndexError):
         try:
-            return subprocess.check_output(['ps', '-p', str(pid), '-o', 'lstart='], text=True).strip() or None
+            return subprocess.check_output(['ps', '-p', str(pid), '-o', 'lstart='], text=True, cwd=work_dir()).strip() or None
         except (OSError, subprocess.CalledProcessError):
             return None
 
@@ -50,7 +51,7 @@ def _groups(record):
     else:
         # macOS exposes process environments through ps instead of /proc. Never print this output.
         try:
-            rows = subprocess.check_output(['ps', 'eww', '-axo', 'pgid=,command='], text=True)
+            rows = subprocess.check_output(['ps', 'eww', '-axo', 'pgid=,command='], text=True, cwd=work_dir())
             marker = 'BLINK_HEADLESS_ID=' + token
             groups.update(int(parts[0]) for row in rows.splitlines()
                           if len(parts := row.strip().split(None, 1)) == 2 and parts[0].isdigit() and marker in parts[1].split())
@@ -86,6 +87,7 @@ class Headless:
     def _spawn(self, command, **kwargs):
         token = uuid.uuid4().hex
         kwargs['env'] = {**(kwargs.get('env') or os.environ), 'BLINK_HEADLESS_ID': token}
+        kwargs['cwd'] = str(work_dir(self.runtime.store.path))
         kwargs['start_new_session'] = True
         # Set a private umask for all browser-created files without changing the daemon's umask.
         kwargs['umask'] = 0o077

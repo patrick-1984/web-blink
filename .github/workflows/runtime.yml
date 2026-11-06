@@ -25,6 +25,8 @@ jobs:
         run: python -m unittest discover -s tests -p test_windows_runtime.py -v
       - name: Native CLI and MCP read/write demonstration
         run: python scripts/demo.py
+      - name: Running plugin rename/delete and connector death (Windows folder locks)
+        run: python -m unittest discover -s tests -p test_plugin_updates.py -v
       - name: Profile labels, cache and numbered selection
         run: python -m unittest discover -s tests -p test_profile_index.py -v
       - name: Shared-profile restart safety

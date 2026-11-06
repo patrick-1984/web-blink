@@ -54,6 +54,15 @@ Use a supportive factual handoff: “Recording is off; I’m starting it now” 
      “requires configuration”, “profile unavailable” or “run these setup commands”.
    - Use the versions and capabilities already returned by Blink's diagnostics. Missing host-version details
      do not block normal browser setup and are not a reason to send the user terminal commands.
+   - Windows / Claude Desktop update failure (especially 0.12.0): inspect `data.updateBlocker`,
+     daemon `version`, `pluginRoot`, `cwd`, `codeRoot` and `executable`. An old daemon may not report
+     cwd; `cwdMayPinPlugin` is a risk indicator. Follow the returned remedy: stop recording and
+     the Blink connector; end only the Task Manager `python.exe` whose command line contains
+     `blink.daemon` (or restart Windows); **Update before using Blink again**, then restart Claude
+     Desktop and verify both component and daemon are 0.13.1 or later. If the CLI is available,
+     `blink daemon stop` stops the daemon without autostart. Do not restart the old daemon from
+     the old plugin folder, and do not kill browser processes. This one-time step cannot be
+     retrofitted into an already running 0.12.0 process. See `docs/release-updates.md`.
 2. Write a short root cause analysis: what happened, what was expected, the evidence (versions, statuses,
    error texts), the most likely cause, and how sure you are. Tell the user the cause and a workaround.
 3. Do not offer or ask about a problem report. Submit one only when the user orders it (for example "report

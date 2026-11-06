@@ -20,7 +20,8 @@ def default_state_dir() -> Path:
 def secure_state_directory(value=None) -> Path:
     """Create/validate the Unix transport boundary without traversing symlinks."""
     path = Path(value).expanduser().absolute() if value else default_state_dir()
-    if path.resolve().is_relative_to(Path(__file__).resolve().parents[2]):
+    from .paths import plugin_root
+    if path.resolve().is_relative_to(plugin_root()):
         raise ValueError('state directory must be outside the installed plugin tree')
     for parent in (path, *path.parents):
         if parent.is_symlink():

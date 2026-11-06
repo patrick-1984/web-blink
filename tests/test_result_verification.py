@@ -141,9 +141,9 @@ class ResultVerificationTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('node'), 'Node is required for the MCP check')
     def test_verification_runs_through_the_public_mcp_client_and_daemon(self):
-        from blink.client import control_request
+        from blink.client import stop_daemon
         from test_claude_protocol import INIT, node_messages
-        self.addCleanup(lambda: control_request('shutdown_daemon', {}, state_dir=self.temp.name, autostart=False))
+        self.addCleanup(lambda: stop_daemon(state_dir=self.temp.name))
         messages = node_messages([INIT, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {
             'name': 'blink_verify', 'arguments': {'service': self.service, 'operation': 'search',
                 'arguments': {'q': 'new-input'}, 'expected': [{'path': '/items', 'equals': ['new-input']}]}}}],

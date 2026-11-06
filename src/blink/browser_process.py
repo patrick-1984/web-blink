@@ -9,6 +9,7 @@ import sys
 import time
 
 from .errors import BlinkError
+from .installation import work_dir
 
 
 def _alive(pid):
@@ -41,7 +42,7 @@ def profile_host(plan, state, environment):
     from .storage import private_dir, private_file
     import shutil
     state = Path(state)
-    folder = private_dir(state / 'browser-hosts')
+    folder = work_dir(state / 'browser-hosts')
     ready = folder / (plan['selection']['profile'] + '.json')
     if ready.is_file() and not ready.is_symlink():
         try:
@@ -100,7 +101,7 @@ def open_profile(browser, profile, binary, *, permission=False, extension=False,
     # A URL invocation reuses a window of this profile when Chromium is already running.
     # Do not force a new window for a permission/extension page or an ordinary blank tab.
     args += ['--restore-last-session'] if restore else [url]
-    subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    subprocess.Popen(args, cwd=work_dir(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      **({'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == 'nt' else {'start_new_session': True}))
 
 
@@ -160,7 +161,7 @@ def processes(browser, root, binary):
         try:
             result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
                 env={**os.environ, 'BLINK_PROCESS_NAME': name, 'BLINK_PROCESS_SID': user_sid()},
-                encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=8, check=False)
+                cwd=work_dir(), encoding='utf-8', stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=8, check=False)
             rows = json.loads(result.stdout) if result.returncode == 0 else []
             for row in rows:
                 if row.get('executable') and os.path.normcase(row['executable']) == os.path.normcase(binary):
@@ -190,7 +191,7 @@ def processes(browser, root, binary):
             return []
     elif sys.platform == 'darwin':
         try:
-            result = subprocess.run(['ps', '-U', str(os.getuid()), '-o', 'pid=,command='], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(['ps', '-U', str(os.getuid()), '-o', 'pid=,command='], capture_output=True, text=True, timeout=5, cwd=work_dir())
             for line in result.stdout.splitlines():
                 pid, _, command = line.strip().partition(' ')
                 if pid.isdigit() and command.startswith(binary) and '--type=' not in command:

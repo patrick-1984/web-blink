@@ -111,7 +111,8 @@ class BridgeFixture(unittest.TestCase):
     def consumed_permits(self):
         """Exact-command permits the daemon consumed: proof that an action was really dispatched."""
         from blink.storage import Store
-        return sum(p.get('state') == 'consumed' for p in Store(self.state).list('human_permit'))
+        with Store(self.state).transaction() as db:
+            return db.execute("SELECT COUNT(*) FROM audit WHERE event='control_permit' AND status='consumed'").fetchone()[0]
 
 
 @unittest.skipUnless(shutil.which('node'), 'Node is required for Claude MCP')
@@ -328,6 +329,26 @@ class NoDialogPolicyTests(BridgeFixture):
     """The default policy: no dialogs at all; the ordered action is dispatched at once."""
     CLIENTS = {'form': {'elicitation': {'form': {}}}, 'legacy': {'elicitation': {}}, 'url-only': {'elicitation': {'url': {}}},
                'no elicitation': {}}
+
+    def test_dispatch_evidence_survives_permit_expiry_with_two_live_sessions(self):
+        from blink.storage import Store
+        first, second = self.session(), self.session()
+        for session in (first, second):
+            session.tool('blink_request_approval', {'method': 'set_trust', 'params': {}})
+        store = Store(self.state)
+        expired = store.list('human_permit')
+        for permit in expired:
+            permit['issuedAt'] -= 61; permit['expiresAt'] -= 61
+            store.put('human_permit', permit['id'], permit)
+        before = self.consumed_permits()
+        self.assertGreaterEqual(before, 3)
+        for session in (first, second):
+            result = session.tool('blink_request_approval', {'method': 'set_trust', 'params': {}})
+            self.assertNotIn(result['status'], ('daemon_stale', 'daemon_retiring'), result)
+            before += 1
+            self.assertEqual(self.consumed_permits(), before)
+        for permit in expired:
+            self.assertIsNone(store.get('human_permit', permit['id']), 'expired authority should still be cleaned up')
 
     def test_every_supported_action_is_dispatched_without_elicitation_for_every_client(self):
         from blink.approval import METHODS

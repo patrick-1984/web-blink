@@ -64,7 +64,7 @@ def main():
                            'BLINK_PYTHON': sys.executable, 'BLINK_STATE_DIR': str(state),
                            'BLINK_CONFIG_DIR': str(config), 'BLINK_PLUGIN_ROOT': str(ROOT)}
             daemon = subprocess.Popen([sys.executable, '-m', 'blink.daemon', '--state-dir', str(state),
-                                       '--plugin-root', str(ROOT)], env=environment,
+                                       '--plugin-root', str(ROOT)], env=environment, cwd=work,
                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             def stop_daemon():
                 if daemon.poll() is None:
@@ -90,7 +90,7 @@ def main():
                 raise RuntimeError('Demo daemon startup timed out')
 
             def cli(*args):
-                result = subprocess.run([sys.executable, '-m', 'blink.cli', *args], env=environment,
+                result = subprocess.run([sys.executable, '-m', 'blink.cli', *args], env=environment, cwd=work,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', timeout=40)
                 document = json.loads(result.stdout)
                 if result.returncode:
@@ -145,7 +145,7 @@ def main():
                 {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'},
                 {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'blink_call_read',
                  'arguments': {'service': stage['service'], 'operation': 'list_items', 'binding': 'demo', 'arguments': {'region': 'eu'}}}}]
-            mcp = subprocess.run(['node', str(ROOT / 'mcp/server.mjs')], env=environment,
+            mcp = subprocess.run(['node', str(ROOT / 'mcp/server.mjs')], env=environment, cwd=work,
                 input=''.join(json.dumps(x) + '\n' for x in messages), text=True, encoding='utf-8',
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=45)
             replies = [json.loads(line) for line in mcp.stdout.splitlines()]

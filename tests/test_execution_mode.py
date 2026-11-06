@@ -316,7 +316,7 @@ class ExecutionTests(unittest.TestCase):
         self.assertNotIn('jdoe', source)
         tree = ast.parse(source)
         imports = [n.names[0].name for n in tree.body if isinstance(n, ast.Import)]
-        self.assertEqual(imports, ['json', 'subprocess', 'sys', 'time'])
+        self.assertEqual(imports, ['json', 'os', 'subprocess', 'sys', 'time'])
         self.assertIn("[sys.executable, '-c', CLI_CODE, '--output', 'json', 'routine', 'step', '--yes'", source)
         self.assertIn('DELAY = 100', source)
         for delay in (49, 501, True):

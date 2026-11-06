@@ -152,6 +152,8 @@ def build_parser():
     from .paths import plugin_root
     parser.add_argument('--plugin-root', default=str(plugin_root()))
     sub = parser.add_subparsers(dest='command', required=True)
+    daemon = sub.add_parser('daemon', help='Manage the local Blink daemon')
+    daemon.add_subparsers(dest='daemon_action', required=True).add_parser('stop', help='Stop Blink before updating')
     doctor = sub.add_parser('doctor', help='Report dependency capabilities and manual repair recipes')
     doctor.add_argument('--force', action='store_true', help='Recheck tools instead of reusing the static sentinel')
     doctor.add_argument('--capability', choices=('runtime', 'learn', 'gitSources', 'git-sources', 'signatures', 'browser'))
@@ -250,6 +252,9 @@ def build_parser():
 
 
 def run(args):
+    if args.command == 'daemon':
+        from .client import stop_daemon
+        return stop_daemon(args.state_dir, args.plugin_root)
     if args.command == 'routine':
         return run_routine(args)
     if args.command == 'browser':
@@ -430,7 +435,9 @@ def run_routine(args):
                        PYTHONPATH=os.pathsep.join(str(path) for path in sys.path))
     if getattr(args, '_config_directory', None):
         environment['BLINK_CONFIG_DIR'] = str(args._config_directory)
-    response = subprocess.run([sys.executable, str(script), run['id']], env=environment, capture_output=True, text=True)
+    from .installation import work_dir, external_python, snapshot
+    environment['PYTHONPATH'] = str(snapshot())
+    response = subprocess.run([external_python(args.plugin_root), str(script), run['id']], env=environment, cwd=work_dir(), capture_output=True, text=True)
     try:
         return parse_json(response.stdout)
     except ValueError:
