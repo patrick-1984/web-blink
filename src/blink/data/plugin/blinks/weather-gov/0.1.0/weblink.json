@@ -1,0 +1,16 @@
+{
+  "$schema": "urn:web-blink:schema:weblink:1",
+  "schemaVersion": 1,
+  "id": "weather-gov",
+  "version": "0.1.0",
+  "name": "US weather alerts",
+  "description": "Active National Weather Service watches, warnings and advisories by state, severity or kind. Read-only, no account, no browser needed.",
+  "artifacts": [
+    {
+      "role": "openapi",
+      "path": "openapi.json",
+      "sha256": "45efef28d221229db47f77698e2a300147f119bd1f0e51af2a8bc65cb4f79fc4",
+      "mediaType": "application/json"
+    }
+  ]
+}

@@ -1,0 +1,3563 @@
+{
+  "notation": "Exact edge = from>to:trigger@actor. Step = Entity#instance:exact-edge. Scenario = {given, links, scopes, steps}. An undeclared initial instance starts at new. given states are assumptions, not validated histories. links bind guard roles to instances; same_scope guards require equal nonempty scope labels. edge_examples are isolated one-edge examples, not integrated workflows.",
+  "entities": {
+    "PreflightSentinel": {
+      "desc": "cached result of static environment checks (AD-19)",
+      "terminal": [
+        "removed"
+      ],
+      "transitions": [
+        "new>checking:first_entry_or_no_sentinel@blinkd",
+        "checking>ok:all_required_pass@blinkd",
+        "checking>degraded:optional_missing@blinkd",
+        "checking>failed:required_missing@blinkd",
+        "ok>stale:fingerprint_ttl_version_or_env_error@blinkd",
+        "degraded>stale:fingerprint_ttl_version_or_env_error@blinkd",
+        "stale>checking:next_entry@blinkd",
+        "failed>awaiting_user:auq_offer_install@model",
+        "failed>blocked:headless_no_user@blinkd",
+        "awaiting_user>installing:recipe_authorized_out_of_band@human",
+        "awaiting_user>blocked:user_declined_or_unavailable@human",
+        "installing>checking:install_finished@blinkd",
+        "blocked>checking:doctor_rerun@human",
+        "ok>removed:uninstall@human",
+        "degraded>removed:uninstall@human",
+        "blocked>removed:uninstall@human",
+        "failed>stale:ttl_or_fingerprint_changed@blinkd",
+        "degraded>awaiting_user:optional_install_requested@model",
+        "awaiting_user>degraded:optional_install_declined@human",
+        "installing>blocked:install_failed@blinkd",
+        "failed>removed:uninstall@human",
+        "awaiting_user>removed:uninstall@human",
+        "installing>blocked:shutdown_cancels_install@blinkd",
+        "checking>removed:shutdown@blinkd",
+        "stale>removed:uninstall@human"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      },
+      "guards": {
+        "awaiting_user>installing:recipe_authorized_out_of_band@human": [
+          {
+            "role": "installation",
+            "entity": "ApprovalReceipt",
+            "states": [
+              "consumed"
+            ],
+            "same_scope": true
+          }
+        ]
+      }
+    },
+    "UserQuestion": {
+      "desc": "an AskUserQuestion prompt (AD-20)",
+      "terminal": [
+        "answered",
+        "unavailable"
+      ],
+      "transitions": [
+        "new>asked:decision_needed@model",
+        "asked>answered:user_answers@human",
+        "asked>unavailable:headless_or_dismissed@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "Notification": {
+      "desc": "human notification (park, expiry forecast, preflight block)",
+      "terminal": [
+        "acknowledged",
+        "superseded"
+      ],
+      "transitions": [
+        "new>raised:park_forecast_or_block@blinkd",
+        "raised>acknowledged:user_ack@human",
+        "raised>superseded:condition_cleared@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "CaptureSession": {
+      "desc": "recorded learning session (AD-17)",
+      "terminal": [
+        "deleted"
+      ],
+      "transitions": [
+        "new>recording:learn_start@human",
+        "recording>spooled:learn_stop@human",
+        "recording>aborted:abort_or_crash@blinkd",
+        "spooled>analyzing:analyze@blinkd",
+        "analyzing>proposed:proposal_ready@blinkd",
+        "analyzing>incomplete:uncovered_origin_or_target@blinkd",
+        "incomplete>proposed:accept_partial@human",
+        "incomplete>deleted:discard@human",
+        "proposed>installed:approve_install@human",
+        "proposed>rejected:reject@human",
+        "installed>deleted:ttl_or_rm@blinkd",
+        "rejected>deleted:ttl_or_rm@blinkd",
+        "aborted>deleted:startup_sweep@blinkd",
+        "spooled>aborted:analysis_cancel_or_restart@blinkd",
+        "analyzing>aborted:analysis_failed_or_restart@blinkd",
+        "proposed>deleted:ttl_or_purge@blinkd",
+        "incomplete>deleted:ttl_or_purge@blinkd",
+        "recording>aborted:purge_or_cancel@human"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "startup sweep before learning resumes; redacted spools expire after 30 days by default",
+        "restart": "abort recording, spooled or analyzing captures; delete aborted artifacts",
+        "disposition": "drop raw memory immediately; remove redacted spool on TTL or explicit purge"
+      }
+    },
+    "RawRunBuffer": {
+      "desc": "in-memory raw values of a live capture",
+      "terminal": [
+        "dropped"
+      ],
+      "transitions": [
+        "new>live:learn_start@blinkd",
+        "live>dropped:run_end_abort_or_crash@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "ManifestOp": {
+      "desc": "one learned operation + lockfile digest (AD-6, AD-15)",
+      "terminal": [
+        "retired"
+      ],
+      "transitions": [
+        "new>draft:proposal_ready@blinkd",
+        "new>quarantined:import_untrusted@human",
+        "draft>pending_review:submit@blinkd",
+        "draft>retired:discard@human",
+        "quarantined>pending_review:review_requested@human",
+        "quarantined>retired:discard@human",
+        "pending_review>approved:approve@human",
+        "pending_review>retired:reject@human",
+        "approved>pending_review:digest_changed@blinkd",
+        "approved>drift_suspected:canary_or_contract_fail@blinkd",
+        "drift_suspected>pending_review:relearn_delta@human",
+        "drift_suspected>approved:canary_recovers_digest_unchanged@blinkd",
+        "drift_suspected>retired:retire@human",
+        "approved>retired:retire_or_uninstall@human",
+        "new>quarantined:repository_candidate_discovered@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "Grant": {
+      "desc": "credential->origin/op grant (AD-4)",
+      "terminal": [
+        "revoked",
+        "expired"
+      ],
+      "transitions": [
+        "new>requested:proposal_ready@blinkd",
+        "requested>active:approval_receipt@human",
+        "requested>revoked:deny@human",
+        "active>invalidated:digest_widened@blinkd",
+        "invalidated>active:reapprove@human",
+        "invalidated>revoked:deny@human",
+        "active>revoked:revoke_or_kill_switch@human",
+        "active>expired:grant_expiry@blinkd",
+        "requested>revoked:purge@blinkd",
+        "invalidated>revoked:purge@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "AccountBinding": {
+      "desc": "service x account x tenant (AD-5)",
+      "terminal": [
+        "deleted"
+      ],
+      "transitions": [
+        "new>pending:binding_proposed@blinkd",
+        "pending>active:approval_receipt@human",
+        "pending>deleted:reject@human",
+        "active>parked:login_mismatch_or_stepup@blinkd",
+        "parked>active:relogin_identity_ok@human",
+        "parked>deleted:forget@human",
+        "active>deleted:forget_or_uninstall@human",
+        "pending>deleted:purge@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "Custody": {
+      "desc": "One binding x operation custody selection (C1-C5); a mixed binding uses distinct instances. Shared credential-family ownership must remain exclusive.",
+      "terminal": [
+        "revoked"
+      ],
+      "transitions": [
+        "new>unassigned:binding_proposed@blinkd",
+        "unassigned>eligibility_check:custody_requested@human",
+        "unassigned>revoked:binding_deleted@blinkd",
+        "eligibility_check>c1:browser_live_chosen_or_required@human",
+        "eligibility_check>c2:browser_on_demand_chosen@human",
+        "eligibility_check>c3:eligible_c3_receipt_valid@human",
+        "eligibility_check>c4:eligible_c4_and_separate_authorization@human",
+        "eligibility_check>c5:official_broker_grant_approved@human",
+        "eligibility_check>revoked:decline_or_cancel@human",
+        "c1>eligibility_check:switch_requested@human",
+        "c2>eligibility_check:switch_requested@human",
+        "c3>transferring:future_calls_handback_requested@human",
+        "c4>transferring:future_calls_handback_requested@human",
+        "c3>parked:refresh_unknown_or_expired@blinkd",
+        "c4>parked:refresh_unknown_or_expired@blinkd",
+        "c5>parked:refresh_unknown_or_expired@blinkd",
+        "c1>parked:browser_login_required@blinkd",
+        "c2>parked:browser_login_required@blinkd",
+        "c3>human_required:challenge_mismatch_or_stepup@blinkd",
+        "c4>human_required:challenge_mismatch_or_stepup@blinkd",
+        "c5>human_required:challenge_mismatch_or_stepup@blinkd",
+        "c1>human_required:challenge_mismatch_or_stepup@blinkd",
+        "c2>human_required:challenge_mismatch_or_stepup@blinkd",
+        "c4>reharvesting:future_unsent_call_authorized_reseed@blinkd",
+        "reharvesting>c4:identity_checked_generation_committed@blinkd",
+        "reharvesting>human_required:login_mfa_challenge_or_mismatch@blinkd",
+        "reharvesting>parked:browser_refused_or_unavailable@blinkd",
+        "parked>eligibility_check:human_relogin_and_recheck@human",
+        "human_required>eligibility_check:human_resolved_and_recheck@human",
+        "transferring>c1:browser_owner_epoch_committed@blinkd",
+        "transferring>c3:reconciled_broker_c3_owner@blinkd",
+        "transferring>c4:reconciled_broker_c4_owner@blinkd",
+        "c1>revoked:forget_after_quiesce@human",
+        "c2>revoked:forget_after_quiesce@human",
+        "c3>revoked:forget_after_quiesce@human",
+        "c4>revoked:forget_after_quiesce@human",
+        "c5>revoked:forget_after_quiesce@human",
+        "parked>revoked:forget_after_quiesce@human",
+        "human_required>revoked:forget_after_quiesce@human",
+        "reharvesting>revoked:forget_after_quiesce@human",
+        "transferring>revoked:forget_after_quiesce@human"
+      ],
+      "guards": {
+        "eligibility_check>c3:eligible_c3_receipt_valid@human": [
+          {
+            "role": "eligibility",
+            "entity": "OperationEligibility",
+            "states": [
+              "detachable"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "approval",
+            "entity": "ApprovalReceipt",
+            "states": [
+              "issued"
+            ],
+            "same_scope": true
+          }
+        ],
+        "eligibility_check>c4:eligible_c4_and_separate_authorization@human": [
+          {
+            "role": "eligibility",
+            "entity": "OperationEligibility",
+            "states": [
+              "detachable"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "approval",
+            "entity": "ApprovalReceipt",
+            "states": [
+              "issued"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "reharvest",
+            "entity": "ReharvestAuthorization",
+            "states": [
+              "active"
+            ],
+            "same_scope": true
+          }
+        ],
+        "eligibility_check>c5:official_broker_grant_approved@human": [
+          {
+            "role": "approval",
+            "entity": "ApprovalReceipt",
+            "states": [
+              "issued"
+            ],
+            "same_scope": true
+          }
+        ],
+        "c4>reharvesting:future_unsent_call_authorized_reseed@blinkd": [
+          {
+            "role": "reharvest",
+            "entity": "ReharvestAuthorization",
+            "states": [
+              "active"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "eligibility",
+            "entity": "OperationEligibility",
+            "states": [
+              "detachable"
+            ],
+            "same_scope": true
+          }
+        ],
+        "reharvesting>c4:identity_checked_generation_committed@blinkd": [
+          {
+            "role": "generation",
+            "entity": "CredentialGeneration",
+            "states": [
+              "current"
+            ],
+            "same_scope": true
+          }
+        ],
+        "transferring>c1:browser_owner_epoch_committed@blinkd": [
+          {
+            "role": "transfer",
+            "entity": "OwnershipTransfer",
+            "states": [
+              "committed"
+            ],
+            "same_scope": true
+          }
+        ],
+        "transferring>c3:reconciled_broker_c3_owner@blinkd": [
+          {
+            "role": "transfer",
+            "entity": "OwnershipTransfer",
+            "states": [
+              "broker_recovered"
+            ],
+            "same_scope": true
+          }
+        ],
+        "transferring>c4:reconciled_broker_c4_owner@blinkd": [
+          {
+            "role": "transfer",
+            "entity": "OwnershipTransfer",
+            "states": [
+              "broker_recovered"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "reharvest",
+            "entity": "ReharvestAuthorization",
+            "states": [
+              "active"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "eligibility",
+            "entity": "OperationEligibility",
+            "states": [
+              "detachable"
+            ],
+            "same_scope": true
+          }
+        ]
+      },
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "CredentialGeneration": {
+      "desc": "One atomic durable credential bundle. New generations invalidate identity evidence; only identity-matched generations become current.",
+      "terminal": [
+        "purged"
+      ],
+      "transitions": [
+        "new>pending_identity:authorized_harvest_committed@blinkd",
+        "new>pending_identity:refresh_successor_committed@blinkd",
+        "new>pending_identity:ordinary_response_successor_committed@blinkd",
+        "new>pending_identity:error_response_successor_committed@blinkd",
+        "pending_identity>current:identity_probe_matches@blinkd",
+        "pending_identity>purged:identity_mismatch_or_cancel@blinkd",
+        "current>superseded:successor_published@blinkd",
+        "current>invalid:server_revoked@service",
+        "current>invalid:rotation_persistence_unknown@blinkd",
+        "current>purged:custody_revoked_after_quiesce@blinkd",
+        "current>purged:browser_owner_committed_handback@blinkd",
+        "superseded>purged:retention_sweep@blinkd",
+        "invalid>purged:retention_sweep@blinkd"
+      ],
+      "guards": {
+        "new>pending_identity:authorized_harvest_committed@blinkd": [
+          {
+            "role": "custody",
+            "entity": "Custody",
+            "states": [
+              "c3",
+              "c4",
+              "c5",
+              "reharvesting"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "approval",
+            "entity": "ApprovalReceipt",
+            "states": [
+              "consumed"
+            ],
+            "same_scope": true
+          }
+        ],
+        "new>pending_identity:refresh_successor_committed@blinkd": [
+          {
+            "role": "update",
+            "entity": "CredentialUpdate",
+            "states": [
+              "persisted"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "custody",
+            "entity": "Custody",
+            "states": [
+              "c3",
+              "c4",
+              "c5"
+            ],
+            "same_scope": true
+          }
+        ],
+        "new>pending_identity:ordinary_response_successor_committed@blinkd": [
+          {
+            "role": "update",
+            "entity": "CredentialUpdate",
+            "states": [
+              "persisted"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "custody",
+            "entity": "Custody",
+            "states": [
+              "c3",
+              "c4",
+              "c5"
+            ],
+            "same_scope": true
+          }
+        ],
+        "new>pending_identity:error_response_successor_committed@blinkd": [
+          {
+            "role": "update",
+            "entity": "CredentialUpdate",
+            "states": [
+              "persisted"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "custody",
+            "entity": "Custody",
+            "states": [
+              "c3",
+              "c4",
+              "c5"
+            ],
+            "same_scope": true
+          }
+        ],
+        "current>superseded:successor_published@blinkd": [
+          {
+            "role": "successor",
+            "entity": "CredentialGeneration",
+            "states": [
+              "current"
+            ],
+            "same_scope": true,
+            "distinct_instance": true
+          }
+        ],
+        "current>purged:browser_owner_committed_handback@blinkd": [
+          {
+            "role": "transfer",
+            "entity": "OwnershipTransfer",
+            "states": [
+              "committed"
+            ],
+            "same_scope": true
+          }
+        ],
+        "current>purged:custody_revoked_after_quiesce@blinkd": [
+          {
+            "role": "custody",
+            "entity": "Custody",
+            "states": [
+              "revoked"
+            ],
+            "same_scope": true
+          }
+        ],
+        "pending_identity>current:identity_probe_matches@blinkd": [
+          {
+            "role": "custody",
+            "entity": "Custody",
+            "states": [
+              "c3",
+              "c4",
+              "c5",
+              "reharvesting"
+            ],
+            "same_scope": true
+          }
+        ]
+      },
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "load only committed generation and owner epoch; fence unknown rotations",
+        "disposition": "purge superseded/revoked material only after successor or owner commit; secrets excluded from exports"
+      }
+    },
+    "RefreshAttempt": {
+      "desc": "journaled refresh (AD-16a #2)",
+      "terminal": [
+        "aborted",
+        "committed",
+        "failed",
+        "resolved"
+      ],
+      "transitions": [
+        "new>journaled:refresh_due@blinkd",
+        "journaled>aborted:precheck_failed_or_grant_revoked@blinkd",
+        "journaled>sent:dispatch@blinkd",
+        "sent>committed:identity_checked_successor_published@blinkd",
+        "sent>failed:invalid_grant@service",
+        "sent>outcome_unknown:lost_response_or_crash@blinkd",
+        "outcome_unknown>resolved:human_relogin@human"
+      ],
+      "guards": {
+        "sent>committed:identity_checked_successor_published@blinkd": [
+          {
+            "role": "generation",
+            "entity": "CredentialGeneration",
+            "states": [
+              "current"
+            ],
+            "same_scope": true
+          }
+        ]
+      },
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "BrowserContext": {
+      "desc": "isolated harvest context or Blink profile (AD-16a #4, #6)",
+      "terminal": [
+        "disposed"
+      ],
+      "transitions": [
+        "new>created:harvest_start@blinkd",
+        "created>quiesced:login_done_snapshot@blinkd",
+        "created>disposed:abort_or_startup_sweep@blinkd",
+        "quiesced>disposed:generation_committed_c3@blinkd",
+        "quiesced>retained:generation_committed_c4@blinkd",
+        "retained>quiesced:authorized_c4_reharvest@blinkd",
+        "retained>disposed:custody_forget@human",
+        "quiesced>disposed:commit_failed_cancel_or_restart@blinkd",
+        "retained>disposed:purge_after_quiesce@blinkd"
+      ],
+      "guards": {
+        "retained>quiesced:authorized_c4_reharvest@blinkd": [
+          {
+            "role": "custody",
+            "entity": "Custody",
+            "states": [
+              "reharvesting"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "reharvest",
+            "entity": "ReharvestAuthorization",
+            "states": [
+              "active"
+            ],
+            "same_scope": true
+          }
+        ],
+        "quiesced>disposed:generation_committed_c3@blinkd": [
+          {
+            "role": "generation",
+            "entity": "CredentialGeneration",
+            "states": [
+              "current"
+            ],
+            "same_scope": true
+          }
+        ],
+        "quiesced>retained:generation_committed_c4@blinkd": [
+          {
+            "role": "generation",
+            "entity": "CredentialGeneration",
+            "states": [
+              "current"
+            ],
+            "same_scope": true
+          }
+        ]
+      },
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "dispose created/quiesced leftovers unless a durable C4 retention commit exists; never adopt another session context",
+        "disposition": "C3 temporary context disposed; C4 retained profile requires explicit forget/purge"
+      }
+    },
+    "WorkTab": {
+      "desc": "Blink-owned tab right of tab 0 (AD-14)",
+      "terminal": [
+        "closed"
+      ],
+      "transitions": [
+        "new>open:tab_needed@blinkd",
+        "open>closed:work_done@blinkd",
+        "open>discarded:chrome_discard@browser",
+        "discarded>open:reopen@blinkd",
+        "discarded>closed:not_needed@blinkd",
+        "open>orphaned:daemon_crash@blinkd",
+        "orphaned>closed:startup_sweep@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "Intent": {
+      "desc": "non-read business attempt + journal (AD-10/10a)",
+      "terminal": [
+        "cancelled",
+        "expired",
+        "succeeded",
+        "failed_clean",
+        "resolved_done",
+        "resolved_not_done"
+      ],
+      "transitions": [
+        "new>prepared:blink_prepare@model",
+        "new>prepared:occurrence_running@scheduler",
+        "prepared>cancelled:cancel@model",
+        "prepared>expired:handle_ttl@blinkd",
+        "prepared>approved:approval_receipt@human",
+        "prepared>approved:standing_approval_valid@blinkd",
+        "approved>expired:approval_stale@blinkd",
+        "approved>dispatching:execute@model",
+        "dispatching>succeeded:response_ok@service",
+        "dispatching>failed_clean:definitive_error@service",
+        "dispatching>outcome_unknown:timeout_or_crash@blinkd",
+        "outcome_unknown>dispatching:idempotent_retry_same_key@blinkd",
+        "outcome_unknown>resolved_done:correlated_effect_confirmed@human",
+        "outcome_unknown>resolved_not_done:correlated_nonexecution_proven@human",
+        "approved>cancelled:purge_before_send@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "dispatching becomes outcome_unknown; reuse stable intent/key only under proven idempotency contract",
+        "disposition": "unknown effects preserve journal; no unsent-job fallback retries a dispatched intent"
+      }
+    },
+    "SpendReservation": {
+      "desc": "atomic budget reservation (review-2 delta 1)",
+      "terminal": [
+        "consumed",
+        "released"
+      ],
+      "transitions": [
+        "new>held:blink_prepare@blinkd",
+        "held>consumed:intent_succeeded@blinkd",
+        "held>released:cancel_expire_or_clean_fail@blinkd",
+        "held>pending_unknown:intent_outcome_unknown@blinkd",
+        "pending_unknown>consumed:resolved_done@human",
+        "pending_unknown>released:resolved_not_done@human",
+        "pending_unknown>consumed:same_intent_retry_succeeded@blinkd",
+        "pending_unknown>released:same_intent_retry_definitive_nonexecution@blinkd"
+      ],
+      "guards": {
+        "held>consumed:intent_succeeded@blinkd": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "succeeded"
+            ],
+            "same_scope": true
+          }
+        ],
+        "held>released:cancel_expire_or_clean_fail@blinkd": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "cancelled",
+              "expired",
+              "failed_clean"
+            ],
+            "same_scope": true
+          }
+        ],
+        "held>pending_unknown:intent_outcome_unknown@blinkd": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "outcome_unknown"
+            ],
+            "same_scope": true
+          }
+        ],
+        "pending_unknown>consumed:resolved_done@human": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "resolved_done"
+            ],
+            "same_scope": true
+          }
+        ],
+        "pending_unknown>released:resolved_not_done@human": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "resolved_not_done"
+            ],
+            "same_scope": true
+          }
+        ],
+        "pending_unknown>consumed:same_intent_retry_succeeded@blinkd": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "succeeded"
+            ],
+            "same_scope": true
+          }
+        ],
+        "pending_unknown>released:same_intent_retry_definitive_nonexecution@blinkd": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "failed_clean"
+            ],
+            "same_scope": true
+          }
+        ]
+      },
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "restore held/pending reservations; settle transactionally once per same intent/key",
+        "disposition": "unknown effects keep budget reserved; definitive correlated outcome consumes or releases once"
+      }
+    },
+    "ApprovalReceipt": {
+      "desc": "out-of-band human approval (review-2 delta 2)",
+      "terminal": [
+        "consumed",
+        "expired",
+        "revoked"
+      ],
+      "transitions": [
+        "new>issued:human_approves_out_of_band@human",
+        "issued>consumed:execute_or_activate@blinkd",
+        "issued>expired:ttl@blinkd",
+        "issued>revoked:revoke@human",
+        "issued>revoked:purge@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "Job": {
+      "desc": "scheduled job with standing approval (section 10)",
+      "terminal": [
+        "retired"
+      ],
+      "transitions": [
+        "new>pending_approval:job_create@human",
+        "pending_approval>active:standing_approval@human",
+        "pending_approval>retired:reject@human",
+        "active>paused:pause_or_grant_lost@blinkd",
+        "paused>active:resume@human",
+        "paused>retired:retire@human",
+        "active>retired:retire_or_uninstall@human"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "Occurrence": {
+      "desc": "One scheduled run. parked is unsent only; awaiting_reconciliation retains a dispatched intent and cannot be scheduled as new work.",
+      "terminal": [
+        "skipped",
+        "coalesced",
+        "expired",
+        "done",
+        "failed",
+        "evidence_retained"
+      ],
+      "transitions": [
+        "new>scheduled:cron_tick@scheduler",
+        "scheduled>skipped:overlap_or_missed_financial@scheduler",
+        "scheduled>coalesced:missed_write_policy@scheduler",
+        "scheduled>expired:latest_start_passed@scheduler",
+        "scheduled>running:latest_start_ok_and_preflight_ok@scheduler",
+        "running>done:intent_terminal_ok@scheduler",
+        "running>failed:intent_failed_clean@scheduler",
+        "running>parked:env_login_or_browser_unavailable_unsent@blinkd",
+        "parked>scheduled:resume_after_fix_recheck_deadline@blinkd",
+        "parked>skipped:stale_financial_needs_fresh_approval@scheduler",
+        "scheduled>parked:required_capability_unavailable@blinkd",
+        "parked>expired:latest_start_passed@scheduler",
+        "scheduled>skipped:purge_before_dispatch@blinkd",
+        "parked>skipped:purge_before_dispatch@blinkd",
+        "running>awaiting_reconciliation:sent_intent_unknown_preserve_journal@blinkd",
+        "awaiting_reconciliation>done:same_intent_effect_confirmed@scheduler",
+        "awaiting_reconciliation>failed:same_intent_nonexecution_proven@scheduler",
+        "awaiting_reconciliation>evidence_retained:purge_preserves_unknown_evidence@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      },
+      "guards": {
+        "running>awaiting_reconciliation:sent_intent_unknown_preserve_journal@blinkd": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "outcome_unknown"
+            ],
+            "same_scope": true
+          }
+        ],
+        "awaiting_reconciliation>done:same_intent_effect_confirmed@scheduler": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "succeeded",
+              "resolved_done"
+            ],
+            "same_scope": true
+          }
+        ],
+        "awaiting_reconciliation>failed:same_intent_nonexecution_proven@scheduler": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "failed_clean",
+              "resolved_not_done"
+            ],
+            "same_scope": true
+          }
+        ],
+        "awaiting_reconciliation>evidence_retained:purge_preserves_unknown_evidence@blinkd": [
+          {
+            "role": "intent",
+            "entity": "Intent",
+            "states": [
+              "outcome_unknown"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "purge",
+            "entity": "PurgeRun",
+            "states": [
+              "cleaning"
+            ],
+            "same_scope": true
+          }
+        ]
+      }
+    },
+    "OperationEligibility": {
+      "desc": "Eligibility for one binding x operation x execution mode; unknown telemetry never permits detachable execution.",
+      "terminal": [
+        "retired"
+      ],
+      "transitions": [
+        "new>unknown:operation_selected@blinkd",
+        "unknown>browser_only:bound_gated_or_evidence_missing@blinkd",
+        "unknown>detachable:lifecycle_evidence_verified@human",
+        "browser_only>unknown:relearn@human",
+        "detachable>unknown:digest_or_lifecycle_changed@blinkd",
+        "unknown>retired:discard_or_purge@human",
+        "browser_only>retired:discard_or_purge@human",
+        "detachable>retired:discard_or_purge@human"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "ReharvestAuthorization": {
+      "desc": "Separate, revocable C4 authorization scoped to binding, family and selected operation. A C3 authorization cannot imply it.",
+      "terminal": [
+        "revoked",
+        "expired"
+      ],
+      "transitions": [
+        "new>active:human_authorizes_c4_out_of_band@human",
+        "active>revoked:revoke_or_purge@human",
+        "active>expired:authorization_expiry@blinkd"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "OwnershipTransfer": {
+      "desc": "Durable owner-epoch transfer. Stop maintenance and fence both owners before reseeding; retain broker generation until browser ownership commits.",
+      "terminal": [
+        "complete",
+        "broker_recovered",
+        "revoked"
+      ],
+      "transitions": [
+        "new>fenced:maintenance_stopped_and_epoch_fenced@blinkd",
+        "fenced>reseeded:browser_snapshot_written@blinkd",
+        "reseeded>committed:browser_verified_owner_epoch_committed@blinkd",
+        "committed>complete:broker_copy_purged@blinkd",
+        "fenced>unknown:crash_or_reseed_failure@blinkd",
+        "reseeded>unknown:crash_before_owner_commit@blinkd",
+        "unknown>committed:restart_proves_browser_owner@blinkd",
+        "unknown>broker_recovered:restart_proves_broker_owner@blinkd",
+        "unknown>revoked:human_revokes_both_owners@human",
+        "fenced>revoked:revoke_both_owners@human"
+      ],
+      "guards": {
+        "new>fenced:maintenance_stopped_and_epoch_fenced@blinkd": [
+          {
+            "role": "custody",
+            "entity": "Custody",
+            "states": [
+              "transferring"
+            ],
+            "same_scope": true
+          }
+        ],
+        "committed>complete:broker_copy_purged@blinkd": [
+          {
+            "role": "generation",
+            "entity": "CredentialGeneration",
+            "states": [
+              "purged"
+            ],
+            "same_scope": true
+          }
+        ]
+      },
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before either owner resumes refresh or calls",
+        "restart": "reconcile durable epoch and verified browser owner; otherwise stop for human",
+        "disposition": "keep recoverable broker bundle until browser ownership commits; revoke both on explicit cancellation"
+      }
+    },
+    "CredentialUpdate": {
+      "desc": "Serialized family update from refresh, ordinary or error response. Journal before send; expected-generation compare-and-commit rejects stale replies.",
+      "terminal": [
+        "released",
+        "parked"
+      ],
+      "transitions": [
+        "new>locked:family_lock_acquired@blinkd",
+        "locked>journaled:write_ahead_with_base_generation@blinkd",
+        "locked>released:precheck_failed_unlock@blinkd",
+        "journaled>sent:dispatch_under_family_lock@blinkd",
+        "journaled>released:cancel_before_send@blinkd",
+        "sent>response_ready:refresh_response_rotates@service",
+        "sent>response_ready:ordinary_response_rotates@service",
+        "sent>response_ready:error_response_rotates@service",
+        "sent>unknown:response_lost_or_restart@blinkd",
+        "response_ready>persisted:atomic_expected_generation_commit@blinkd",
+        "response_ready>stale:base_generation_changed@blinkd",
+        "response_ready>unknown:crash_before_durable_commit@blinkd",
+        "persisted>released:identity_and_publication_complete_unlock@blinkd",
+        "stale>released:reject_stale_reply_unlock@blinkd",
+        "unknown>parked:fence_and_invalidate_identity@blinkd"
+      ],
+      "guards": {
+        "persisted>released:identity_and_publication_complete_unlock@blinkd": [
+          {
+            "role": "generation",
+            "entity": "CredentialGeneration",
+            "states": [
+              "current",
+              "purged"
+            ],
+            "same_scope": true
+          }
+        ]
+      },
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "UserCheck": {
+      "desc": "User-added dependency check configuration; included in checkSetHash and service/purge inventory.",
+      "terminal": [
+        "removed"
+      ],
+      "transitions": [
+        "new>active:tools_add@human",
+        "active>removed:tools_remove_or_purge@human"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "reconcile durable state before permitting affected work",
+        "disposition": "follow terminal paths; failed cleanup is retried and reported"
+      }
+    },
+    "PurgeRun": {
+      "desc": "Forget/uninstall protocol. Sensitive material is removed after quiescing; ambiguous business evidence is retained explicitly rather than silently erased.",
+      "terminal": [
+        "complete",
+        "evidence_retained"
+      ],
+      "transitions": [
+        "new>quiescing:forget_or_uninstall_requested@human",
+        "quiescing>cleaning:jobs_and_maintenance_stopped@blinkd",
+        "cleaning>complete:all_durable_artifacts_disposed_no_unknowns@blinkd",
+        "cleaning>evidence_retained:unknown_intents_and_reservations_preserved@blinkd",
+        "quiescing>blocked:cannot_confirm_dispatch_stopped@blinkd",
+        "cleaning>blocked:deletion_failed@blinkd",
+        "blocked>quiescing:retry_after_restart_or_fix@human"
+      ],
+      "recovery": {
+        "owner": "blinkd, with human resolution where noted",
+        "deadline": "before the next dispatch after restart; human waits remain parked and notified",
+        "restart": "resume quiesce then deletion; failures stay blocked with notification",
+        "disposition": "inventory includes registry, bindings, grants, credentials, retained profiles, captures, tabs, user checks, sentinel, receipts, jobs, occurrences, intents, reservations and journals; preserve ambiguous evidence without secrets"
+      }
+    },
+    "CatalogSource": {
+      "desc": "User-configured named HTTPS Git URL, ref and catalogPath. Each check resolves one immutable commit and reads only bounded regular blobs from that snapshot. Source availability does not change previously approved installed pins.",
+      "terminal": [
+        "removed"
+      ],
+      "transitions": [
+        "new>configured:user_adds_named_git_url_ref_catalog@human",
+        "configured>checking:resolve_immutable_commit_and_read_bounded_catalog@blinkd",
+        "ready>checking:user_or_scheduled_source_check@blinkd",
+        "degraded>checking:retry_source_check@blinkd",
+        "checking>ready:catalog_snapshot_schema_paths_digests_valid@blinkd",
+        "checking>degraded:resolution_fetch_or_catalog_validation_failed@blinkd",
+        "ready>configured:user_edits_source_configuration@human",
+        "configured>removed:user_removes_source@human",
+        "checking>removed:user_removes_source_cancel_check@human",
+        "ready>removed:user_removes_source@human",
+        "degraded>removed:user_removes_source@human"
+      ],
+      "recovery": {
+        "owner": "blinkd source reader; user owns source configuration",
+        "deadline": "bounded source check timeout; no source operation blocks use of an approved local pin",
+        "restart": "discard incomplete temporary reads, retain configured source and last approved immutable snapshots",
+        "disposition": "source removal stops updates and deletes temporary fetch state; installed pinned Web Links remain until explicitly retired"
+      }
+    },
+    "SourceCandidate": {
+      "desc": "One Web Link candidate from one source/integration at an immutable Git commit. Quarantine is the initial trust state. This local lifecycle cannot grant origins, raise local trust, execute repository code or alter installed approvals.",
+      "terminal": [
+        "activated",
+        "deleted"
+      ],
+      "transitions": [
+        "new>quarantined:bounded_immutable_snapshot_staged@blinkd",
+        "quarantined>validated:schemas_paths_and_content_digests_valid@blinkd",
+        "quarantined>rejected:schema_path_digest_or_blob_validation_failed@blinkd",
+        "validated>pending_review:new_or_changed_execution_semantics@blinkd",
+        "validated>staged:unchanged_semantic_digest_and_existing_pin_valid@blinkd",
+        "pending_review>staged:scoped_human_receipt_and_manifest_approval_valid@blinkd",
+        "pending_review>rejected:human_rejects@human",
+        "staged>activated:atomic_activation_expected_old_digest_cas_matches@blinkd",
+        "staged>rejected:expected_old_digest_cas_failed@blinkd",
+        "staged>rejected:staging_ttl_source_removed_or_reconfigured@blinkd",
+        "quarantined>deleted:user_discards_candidate@human",
+        "validated>deleted:user_cancels_candidate@human",
+        "rejected>deleted:staging_cleanup@blinkd",
+        "quarantined>rejected:staging_ttl_expired_or_source_removed@blinkd",
+        "validated>rejected:staging_ttl_expired_or_source_removed@blinkd",
+        "pending_review>rejected:staging_ttl_expired_or_source_removed@blinkd"
+      ],
+      "guards": {
+        "validated>staged:unchanged_semantic_digest_and_existing_pin_valid@blinkd": [
+          {
+            "role": "manifest",
+            "entity": "ManifestOp",
+            "states": [
+              "approved"
+            ],
+            "same_scope": true
+          }
+        ],
+        "pending_review>staged:scoped_human_receipt_and_manifest_approval_valid@blinkd": [
+          {
+            "role": "manifest",
+            "entity": "ManifestOp",
+            "states": [
+              "approved"
+            ],
+            "same_scope": true,
+            "reciprocal_role": "candidate"
+          },
+          {
+            "role": "approval",
+            "entity": "ApprovalReceipt",
+            "states": [
+              "consumed"
+            ],
+            "same_scope": true,
+            "reciprocal_role": "candidate"
+          }
+        ],
+        "staged>activated:atomic_activation_expected_old_digest_cas_matches@blinkd": [
+          {
+            "role": "manifest",
+            "entity": "ManifestOp",
+            "states": [
+              "approved"
+            ],
+            "same_scope": true
+          },
+          {
+            "role": "source",
+            "entity": "CatalogSource",
+            "states": [
+              "ready"
+            ],
+            "same_scope": true
+          }
+        ]
+      },
+      "recovery": {
+        "owner": "blinkd source reader and registry; human approves semantic changes out of band",
+        "deadline": "candidate staging TTL or explicit discard; expired authorization prevents activation",
+        "restart": "reconcile atomic installed-pointer commit; incomplete staging never replaces the prior pin",
+        "disposition": "delete rejected or expired staging; keep activated immutable pin, provenance and approval record under the installed Web Link contract"
+      }
+    }
+  },
+  "flows": {
+    "F01 required dependency repair": {
+      "purpose": "The conversational choice is followed by a host-verifiable recipe authorization. Cached checks do not convert failure into success.",
+      "given": {},
+      "links": {
+        "PreflightSentinel#p": {
+          "installation": "ApprovalReceipt#install"
+        }
+      },
+      "scopes": {
+        "PreflightSentinel#p": "host-a/recipe-digest-a",
+        "ApprovalReceipt#install": "host-a/recipe-digest-a"
+      },
+      "steps": [
+        "PreflightSentinel#p:new>checking:first_entry_or_no_sentinel@blinkd",
+        "PreflightSentinel#p:checking>failed:required_missing@blinkd",
+        "PreflightSentinel#p:failed>awaiting_user:auq_offer_install@model",
+        "UserQuestion#q:new>asked:decision_needed@model",
+        "UserQuestion#q:asked>answered:user_answers@human",
+        "ApprovalReceipt#install:new>issued:human_approves_out_of_band@human",
+        "ApprovalReceipt#install:issued>consumed:execute_or_activate@blinkd",
+        "PreflightSentinel#p:awaiting_user>installing:recipe_authorized_out_of_band@human",
+        "PreflightSentinel#p:installing>checking:install_finished@blinkd",
+        "PreflightSentinel#p:checking>ok:all_required_pass@blinkd"
+      ]
+    },
+    "F02 failed cache invalidation": {
+      "purpose": "",
+      "given": {
+        "PreflightSentinel#p": "failed"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#p:failed>stale:ttl_or_fingerprint_changed@blinkd",
+        "PreflightSentinel#p:stale>checking:next_entry@blinkd",
+        "PreflightSentinel#p:checking>degraded:optional_missing@blinkd"
+      ]
+    },
+    "F03 headless preflight parks unsent occurrence": {
+      "purpose": "",
+      "given": {
+        "PreflightSentinel#p": "failed",
+        "Occurrence#o": "scheduled"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#p:failed>blocked:headless_no_user@blinkd",
+        "Occurrence#o:scheduled>parked:required_capability_unavailable@blinkd",
+        "Notification#n:new>raised:park_forecast_or_block@blinkd",
+        "Occurrence#o:parked>expired:latest_start_passed@scheduler"
+      ]
+    },
+    "F04 learn and review a service": {
+      "purpose": "",
+      "given": {},
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#c:new>recording:learn_start@human",
+        "RawRunBuffer#raw:new>live:learn_start@blinkd",
+        "WorkTab#w:new>open:tab_needed@blinkd",
+        "CaptureSession#c:recording>spooled:learn_stop@human",
+        "RawRunBuffer#raw:live>dropped:run_end_abort_or_crash@blinkd",
+        "CaptureSession#c:spooled>analyzing:analyze@blinkd",
+        "CaptureSession#c:analyzing>proposed:proposal_ready@blinkd",
+        "ManifestOp#op:new>draft:proposal_ready@blinkd",
+        "ManifestOp#op:draft>pending_review:submit@blinkd",
+        "Grant#g:new>requested:proposal_ready@blinkd",
+        "AccountBinding#b:new>pending:binding_proposed@blinkd",
+        "ApprovalReceipt#review:new>issued:human_approves_out_of_band@human",
+        "ApprovalReceipt#review:issued>consumed:execute_or_activate@blinkd",
+        "Grant#g:requested>active:approval_receipt@human",
+        "AccountBinding#b:pending>active:approval_receipt@human",
+        "ManifestOp#op:pending_review>approved:approve@human",
+        "CaptureSession#c:proposed>installed:approve_install@human",
+        "WorkTab#w:open>closed:work_done@blinkd"
+      ]
+    },
+    "F05a incomplete capture accepted": {
+      "purpose": "",
+      "given": {
+        "CaptureSession#c": "analyzing"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#c:analyzing>incomplete:uncovered_origin_or_target@blinkd",
+        "CaptureSession#c:incomplete>proposed:accept_partial@human"
+      ]
+    },
+    "F05b incomplete capture discarded": {
+      "purpose": "",
+      "given": {
+        "CaptureSession#c": "analyzing"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#c:analyzing>incomplete:uncovered_origin_or_target@blinkd",
+        "CaptureSession#c:incomplete>deleted:discard@human"
+      ]
+    },
+    "F06 review rejected": {
+      "purpose": "",
+      "given": {
+        "CaptureSession#c": "proposed",
+        "ManifestOp#op": "pending_review",
+        "Grant#g": "requested",
+        "AccountBinding#b": "pending",
+        "Custody#read": "unassigned"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#c:proposed>rejected:reject@human",
+        "ManifestOp#op:pending_review>retired:reject@human",
+        "Grant#g:requested>revoked:deny@human",
+        "AccountBinding#b:pending>deleted:reject@human",
+        "Custody#read:unassigned>revoked:binding_deleted@blinkd",
+        "CaptureSession#c:rejected>deleted:ttl_or_rm@blinkd"
+      ]
+    },
+    "F07 imported manifest reviewed": {
+      "purpose": "",
+      "given": {},
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ManifestOp#op:new>quarantined:import_untrusted@human",
+        "ManifestOp#op:quarantined>pending_review:review_requested@human",
+        "ManifestOp#op:pending_review>approved:approve@human"
+      ]
+    },
+    "F08 C3 custody approval before durable harvest": {
+      "purpose": "Eligibility probing is transient. Persisted custody starts only after scoped receipt validation. The temporary browser context closes after identity-matched generation commit.",
+      "given": {},
+      "links": {
+        "Custody#read": {
+          "approval": "ApprovalReceipt#custody",
+          "eligibility": "OperationEligibility#read"
+        },
+        "CredentialGeneration#g1": {
+          "custody": "Custody#read",
+          "approval": "ApprovalReceipt#custody"
+        },
+        "BrowserContext#harvest": {
+          "generation": "CredentialGeneration#g1"
+        }
+      },
+      "scopes": {
+        "Custody#read": "binding-a/family-a/read",
+        "CredentialGeneration#g1": "binding-a/family-a/read",
+        "BrowserContext#harvest": "binding-a/family-a/read",
+        "ApprovalReceipt#custody": "binding-a/family-a/read",
+        "OperationEligibility#read": "binding-a/family-a/read"
+      },
+      "steps": [
+        "Custody#read:new>unassigned:binding_proposed@blinkd",
+        "Custody#read:unassigned>eligibility_check:custody_requested@human",
+        "OperationEligibility#read:new>unknown:operation_selected@blinkd",
+        "OperationEligibility#read:unknown>detachable:lifecycle_evidence_verified@human",
+        "BrowserContext#harvest:new>created:harvest_start@blinkd",
+        "BrowserContext#harvest:created>quiesced:login_done_snapshot@blinkd",
+        "ApprovalReceipt#custody:new>issued:human_approves_out_of_band@human",
+        "Custody#read:eligibility_check>c3:eligible_c3_receipt_valid@human",
+        "ApprovalReceipt#custody:issued>consumed:execute_or_activate@blinkd",
+        "CredentialGeneration#g1:new>pending_identity:authorized_harvest_committed@blinkd",
+        "CredentialGeneration#g1:pending_identity>current:identity_probe_matches@blinkd",
+        "BrowserContext#harvest:quiesced>disposed:generation_committed_c3@blinkd"
+      ]
+    },
+    "F08b custody declined clears temporary context": {
+      "purpose": "No generation is committed when authorization is declined or the human leaves.",
+      "given": {
+        "Custody#read": "eligibility_check",
+        "BrowserContext#harvest": "quiesced"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#read:eligibility_check>revoked:decline_or_cancel@human",
+        "BrowserContext#harvest:quiesced>disposed:commit_failed_cancel_or_restart@blinkd"
+      ]
+    },
+    "F09 mixed binding has browser write and detachable read": {
+      "purpose": "Distinct per-operation instances prevent a detachable read from granting detachable writes.",
+      "given": {
+        "Custody#write": "eligibility_check",
+        "Custody#read": "eligibility_check"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#write:eligibility_check>c1:browser_live_chosen_or_required@human",
+        "Custody#read:eligibility_check>c2:browser_on_demand_chosen@human"
+      ]
+    },
+    "F10 refresh generation": {
+      "purpose": "The credential-family lock spans send through durable generation publication. Old and successor generations have separate identities. Business-error responses may still rotate auth state.",
+      "given": {
+        "CredentialGeneration#old": "current",
+        "Custody#read": "c3"
+      },
+      "links": {
+        "CredentialGeneration#next": {
+          "update": "CredentialUpdate#u",
+          "custody": "Custody#read"
+        },
+        "CredentialGeneration#old": {
+          "successor": "CredentialGeneration#next"
+        },
+        "CredentialUpdate#u": {
+          "generation": "CredentialGeneration#next"
+        }
+      },
+      "scopes": {
+        "CredentialUpdate#u": "binding-a/family-a/read",
+        "CredentialGeneration#old": "binding-a/family-a/read",
+        "CredentialGeneration#next": "binding-a/family-a/read",
+        "Custody#read": "binding-a/family-a/read"
+      },
+      "steps": [
+        "CredentialUpdate#u:new>locked:family_lock_acquired@blinkd",
+        "CredentialUpdate#u:locked>journaled:write_ahead_with_base_generation@blinkd",
+        "CredentialUpdate#u:journaled>sent:dispatch_under_family_lock@blinkd",
+        "CredentialUpdate#u:sent>response_ready:refresh_response_rotates@service",
+        "CredentialUpdate#u:response_ready>persisted:atomic_expected_generation_commit@blinkd",
+        "CredentialGeneration#next:new>pending_identity:refresh_successor_committed@blinkd",
+        "CredentialGeneration#next:pending_identity>current:identity_probe_matches@blinkd",
+        "CredentialGeneration#old:current>superseded:successor_published@blinkd",
+        "CredentialUpdate#u:persisted>released:identity_and_publication_complete_unlock@blinkd",
+        "CredentialGeneration#old:superseded>purged:retention_sweep@blinkd"
+      ]
+    },
+    "F10b ordinary response rotates": {
+      "purpose": "The credential-family lock spans send through durable generation publication. Old and successor generations have separate identities. Business-error responses may still rotate auth state.",
+      "given": {
+        "CredentialGeneration#old": "current",
+        "Custody#read": "c3"
+      },
+      "links": {
+        "CredentialGeneration#next": {
+          "update": "CredentialUpdate#u",
+          "custody": "Custody#read"
+        },
+        "CredentialGeneration#old": {
+          "successor": "CredentialGeneration#next"
+        },
+        "CredentialUpdate#u": {
+          "generation": "CredentialGeneration#next"
+        }
+      },
+      "scopes": {
+        "CredentialUpdate#u": "binding-a/family-a/read",
+        "CredentialGeneration#old": "binding-a/family-a/read",
+        "CredentialGeneration#next": "binding-a/family-a/read",
+        "Custody#read": "binding-a/family-a/read"
+      },
+      "steps": [
+        "CredentialUpdate#u:new>locked:family_lock_acquired@blinkd",
+        "CredentialUpdate#u:locked>journaled:write_ahead_with_base_generation@blinkd",
+        "CredentialUpdate#u:journaled>sent:dispatch_under_family_lock@blinkd",
+        "CredentialUpdate#u:sent>response_ready:ordinary_response_rotates@service",
+        "CredentialUpdate#u:response_ready>persisted:atomic_expected_generation_commit@blinkd",
+        "CredentialGeneration#next:new>pending_identity:ordinary_response_successor_committed@blinkd",
+        "CredentialGeneration#next:pending_identity>current:identity_probe_matches@blinkd",
+        "CredentialGeneration#old:current>superseded:successor_published@blinkd",
+        "CredentialUpdate#u:persisted>released:identity_and_publication_complete_unlock@blinkd",
+        "CredentialGeneration#old:superseded>purged:retention_sweep@blinkd"
+      ]
+    },
+    "F10c error response rotates": {
+      "purpose": "The credential-family lock spans send through durable generation publication. Old and successor generations have separate identities. Business-error responses may still rotate auth state.",
+      "given": {
+        "CredentialGeneration#old": "current",
+        "Custody#read": "c3"
+      },
+      "links": {
+        "CredentialGeneration#next": {
+          "update": "CredentialUpdate#u",
+          "custody": "Custody#read"
+        },
+        "CredentialGeneration#old": {
+          "successor": "CredentialGeneration#next"
+        },
+        "CredentialUpdate#u": {
+          "generation": "CredentialGeneration#next"
+        }
+      },
+      "scopes": {
+        "CredentialUpdate#u": "binding-a/family-a/read",
+        "CredentialGeneration#old": "binding-a/family-a/read",
+        "CredentialGeneration#next": "binding-a/family-a/read",
+        "Custody#read": "binding-a/family-a/read"
+      },
+      "steps": [
+        "CredentialUpdate#u:new>locked:family_lock_acquired@blinkd",
+        "CredentialUpdate#u:locked>journaled:write_ahead_with_base_generation@blinkd",
+        "CredentialUpdate#u:journaled>sent:dispatch_under_family_lock@blinkd",
+        "CredentialUpdate#u:sent>response_ready:error_response_rotates@service",
+        "CredentialUpdate#u:response_ready>persisted:atomic_expected_generation_commit@blinkd",
+        "CredentialGeneration#next:new>pending_identity:error_response_successor_committed@blinkd",
+        "CredentialGeneration#next:pending_identity>current:identity_probe_matches@blinkd",
+        "CredentialGeneration#old:current>superseded:successor_published@blinkd",
+        "CredentialUpdate#u:persisted>released:identity_and_publication_complete_unlock@blinkd",
+        "CredentialGeneration#old:superseded>purged:retention_sweep@blinkd"
+      ]
+    },
+    "F11 rotation crash before persistence parks custody": {
+      "purpose": "Do not retry a rotating refresh with stale material; business effects and credential persistence are separately ambiguous.",
+      "given": {
+        "CredentialUpdate#u": "response_ready",
+        "CredentialGeneration#old": "current",
+        "Custody#read": "c3",
+        "AccountBinding#b": "active",
+        "Occurrence#o": "running",
+        "Intent#i": "outcome_unknown"
+      },
+      "links": {
+        "Occurrence#o": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Occurrence#o": "intent-a/key-a",
+        "Intent#i": "intent-a/key-a"
+      },
+      "steps": [
+        "CredentialUpdate#u:response_ready>unknown:crash_before_durable_commit@blinkd",
+        "CredentialUpdate#u:unknown>parked:fence_and_invalidate_identity@blinkd",
+        "CredentialGeneration#old:current>invalid:rotation_persistence_unknown@blinkd",
+        "Custody#read:c3>parked:refresh_unknown_or_expired@blinkd",
+        "AccountBinding#b:active>parked:login_mismatch_or_stepup@blinkd",
+        "Occurrence#o:running>awaiting_reconciliation:sent_intent_unknown_preserve_journal@blinkd",
+        "Notification#n:new>raised:park_forecast_or_block@blinkd"
+      ]
+    },
+    "F12 refresh rejected": {
+      "purpose": "",
+      "given": {
+        "RefreshAttempt#r": "sent",
+        "CredentialGeneration#g": "current",
+        "Custody#read": "c3"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "RefreshAttempt#r:sent>failed:invalid_grant@service",
+        "CredentialGeneration#g:current>invalid:server_revoked@service",
+        "CredentialGeneration#g:invalid>purged:retention_sweep@blinkd",
+        "Custody#read:c3>parked:refresh_unknown_or_expired@blinkd"
+      ]
+    },
+    "F13 stale response rejected": {
+      "purpose": "",
+      "given": {
+        "CredentialUpdate#u": "response_ready"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CredentialUpdate#u:response_ready>stale:base_generation_changed@blinkd",
+        "CredentialUpdate#u:stale>released:reject_stale_reply_unlock@blinkd"
+      ]
+    },
+    "F14 authorized C4 re-harvest succeeds": {
+      "purpose": "The remembered profile and C4 authorization are retained explicitly; the original C3 approval alone is insufficient.",
+      "given": {
+        "Custody#read": "c4",
+        "BrowserContext#retained": "retained",
+        "ReharvestAuthorization#c4": "active",
+        "OperationEligibility#read": "detachable",
+        "ApprovalReceipt#custody": "consumed"
+      },
+      "links": {
+        "Custody#read": {
+          "reharvest": "ReharvestAuthorization#c4",
+          "eligibility": "OperationEligibility#read",
+          "generation": "CredentialGeneration#reseed"
+        },
+        "BrowserContext#retained": {
+          "custody": "Custody#read",
+          "reharvest": "ReharvestAuthorization#c4",
+          "generation": "CredentialGeneration#reseed"
+        },
+        "CredentialGeneration#reseed": {
+          "custody": "Custody#read",
+          "approval": "ApprovalReceipt#custody"
+        }
+      },
+      "scopes": {
+        "ReharvestAuthorization#c4": "binding-a/family-a/read",
+        "Custody#read": "binding-a/family-a/read",
+        "CredentialGeneration#reseed": "binding-a/family-a/read",
+        "BrowserContext#retained": "binding-a/family-a/read",
+        "ApprovalReceipt#custody": "binding-a/family-a/read",
+        "OperationEligibility#read": "binding-a/family-a/read"
+      },
+      "steps": [
+        "Custody#read:c4>reharvesting:future_unsent_call_authorized_reseed@blinkd",
+        "BrowserContext#retained:retained>quiesced:authorized_c4_reharvest@blinkd",
+        "CredentialGeneration#reseed:new>pending_identity:authorized_harvest_committed@blinkd",
+        "CredentialGeneration#reseed:pending_identity>current:identity_probe_matches@blinkd",
+        "BrowserContext#retained:quiesced>retained:generation_committed_c4@blinkd",
+        "Custody#read:reharvesting>c4:identity_checked_generation_committed@blinkd"
+      ]
+    },
+    "F14b C4 identity failure disposes quiesced context": {
+      "purpose": "",
+      "given": {
+        "Custody#read": "reharvesting",
+        "BrowserContext#retained": "retained",
+        "ReharvestAuthorization#c4": "active",
+        "ApprovalReceipt#custody": "consumed"
+      },
+      "links": {
+        "Custody#read": {
+          "reharvest": "ReharvestAuthorization#c4",
+          "eligibility": "OperationEligibility#read",
+          "generation": "CredentialGeneration#reseed"
+        },
+        "BrowserContext#retained": {
+          "custody": "Custody#read",
+          "reharvest": "ReharvestAuthorization#c4",
+          "generation": "CredentialGeneration#reseed"
+        },
+        "CredentialGeneration#reseed": {
+          "custody": "Custody#read",
+          "approval": "ApprovalReceipt#custody"
+        }
+      },
+      "scopes": {
+        "ReharvestAuthorization#c4": "binding-a/family-a/read",
+        "Custody#read": "binding-a/family-a/read",
+        "CredentialGeneration#reseed": "binding-a/family-a/read",
+        "BrowserContext#retained": "binding-a/family-a/read",
+        "ApprovalReceipt#custody": "binding-a/family-a/read",
+        "OperationEligibility#read": "binding-a/family-a/read"
+      },
+      "steps": [
+        "BrowserContext#retained:retained>quiesced:authorized_c4_reharvest@blinkd",
+        "CredentialGeneration#reseed:new>pending_identity:authorized_harvest_committed@blinkd",
+        "CredentialGeneration#reseed:pending_identity>purged:identity_mismatch_or_cancel@blinkd",
+        "BrowserContext#retained:quiesced>disposed:commit_failed_cancel_or_restart@blinkd",
+        "Custody#read:reharvesting>human_required:login_mfa_challenge_or_mismatch@blinkd"
+      ]
+    },
+    "F15 hand-back commits browser owner before broker purge": {
+      "purpose": "Both refreshers remain fenced during an interrupted transfer. The committed owner epoch decides who can resume.",
+      "given": {
+        "Custody#read": "c3",
+        "CredentialGeneration#broker": "current"
+      },
+      "links": {
+        "OwnershipTransfer#t": {
+          "custody": "Custody#read",
+          "generation": "CredentialGeneration#broker"
+        },
+        "Custody#read": {
+          "transfer": "OwnershipTransfer#t"
+        },
+        "CredentialGeneration#broker": {
+          "transfer": "OwnershipTransfer#t"
+        }
+      },
+      "scopes": {
+        "Custody#read": "binding-a/family-a/read",
+        "OwnershipTransfer#t": "binding-a/family-a/read",
+        "CredentialGeneration#broker": "binding-a/family-a/read"
+      },
+      "steps": [
+        "Custody#read:c3>transferring:future_calls_handback_requested@human",
+        "OwnershipTransfer#t:new>fenced:maintenance_stopped_and_epoch_fenced@blinkd",
+        "OwnershipTransfer#t:fenced>reseeded:browser_snapshot_written@blinkd",
+        "OwnershipTransfer#t:reseeded>committed:browser_verified_owner_epoch_committed@blinkd",
+        "Custody#read:transferring>c1:browser_owner_epoch_committed@blinkd",
+        "CredentialGeneration#broker:current>purged:browser_owner_committed_handback@blinkd",
+        "OwnershipTransfer#t:committed>complete:broker_copy_purged@blinkd"
+      ]
+    },
+    "F15b interrupted transfer reconciles broker owner": {
+      "purpose": "Broker generation stays recoverable; browser refresh remains fenced. No business attempt is replayed.",
+      "given": {
+        "OwnershipTransfer#t": "reseeded",
+        "Custody#read": "transferring",
+        "CredentialGeneration#broker": "current"
+      },
+      "links": {
+        "OwnershipTransfer#t": {
+          "custody": "Custody#read",
+          "generation": "CredentialGeneration#broker"
+        },
+        "Custody#read": {
+          "transfer": "OwnershipTransfer#t"
+        },
+        "CredentialGeneration#broker": {
+          "transfer": "OwnershipTransfer#t"
+        }
+      },
+      "scopes": {
+        "Custody#read": "binding-a/family-a/read",
+        "OwnershipTransfer#t": "binding-a/family-a/read",
+        "CredentialGeneration#broker": "binding-a/family-a/read"
+      },
+      "steps": [
+        "OwnershipTransfer#t:reseeded>unknown:crash_before_owner_commit@blinkd",
+        "OwnershipTransfer#t:unknown>broker_recovered:restart_proves_broker_owner@blinkd",
+        "Custody#read:transferring>c3:reconciled_broker_c3_owner@blinkd"
+      ]
+    },
+    "F16 warm tab discard and reopen": {
+      "purpose": "",
+      "given": {},
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "WorkTab#w:new>open:tab_needed@blinkd",
+        "WorkTab#w:open>discarded:chrome_discard@browser",
+        "WorkTab#w:discarded>open:reopen@blinkd",
+        "WorkTab#w:open>closed:work_done@blinkd"
+      ]
+    },
+    "F17 approved write succeeds": {
+      "purpose": "Receipt consumption and dispatch journal commit are one runtime transaction under AD-10a; this scenario does not prove transaction atomicity.",
+      "given": {},
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a"
+      },
+      "steps": [
+        "Intent#i:new>prepared:blink_prepare@model",
+        "SpendReservation#r:new>held:blink_prepare@blinkd",
+        "ApprovalReceipt#a:new>issued:human_approves_out_of_band@human",
+        "Intent#i:prepared>approved:approval_receipt@human",
+        "ApprovalReceipt#a:issued>consumed:execute_or_activate@blinkd",
+        "Intent#i:approved>dispatching:execute@model",
+        "Intent#i:dispatching>succeeded:response_ok@service",
+        "SpendReservation#r:held>consumed:intent_succeeded@blinkd"
+      ]
+    },
+    "F18a same-key idempotent retry succeeds": {
+      "purpose": "Retry has the original key and payload under a reviewed service idempotency contract. Settlement is once per same intent/key.",
+      "given": {
+        "Intent#i": "dispatching",
+        "SpendReservation#r": "held"
+      },
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a"
+      },
+      "steps": [
+        "Intent#i:dispatching>outcome_unknown:timeout_or_crash@blinkd",
+        "SpendReservation#r:held>pending_unknown:intent_outcome_unknown@blinkd",
+        "Intent#i:outcome_unknown>dispatching:idempotent_retry_same_key@blinkd",
+        "Intent#i:dispatching>succeeded:response_ok@service",
+        "SpendReservation#r:pending_unknown>consumed:same_intent_retry_succeeded@blinkd"
+      ]
+    },
+    "F18b same-key retry proves nonexecution": {
+      "purpose": "A clean failure must cover the entire original idempotent intent, not merely the retry request.",
+      "given": {
+        "Intent#i": "outcome_unknown",
+        "SpendReservation#r": "pending_unknown"
+      },
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a"
+      },
+      "steps": [
+        "Intent#i:outcome_unknown>dispatching:idempotent_retry_same_key@blinkd",
+        "Intent#i:dispatching>failed_clean:definitive_error@service",
+        "SpendReservation#r:pending_unknown>released:same_intent_retry_definitive_nonexecution@blinkd"
+      ]
+    },
+    "F18c human reconciliation confirms effect": {
+      "purpose": "",
+      "given": {
+        "Intent#i": "outcome_unknown",
+        "SpendReservation#r": "pending_unknown"
+      },
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a"
+      },
+      "steps": [
+        "Intent#i:outcome_unknown>resolved_done:correlated_effect_confirmed@human",
+        "SpendReservation#r:pending_unknown>consumed:resolved_done@human"
+      ]
+    },
+    "F18d correlated terminal nonexecution releases": {
+      "purpose": "An absent status result alone does not establish nonexecution.",
+      "given": {
+        "Intent#i": "outcome_unknown",
+        "SpendReservation#r": "pending_unknown"
+      },
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a"
+      },
+      "steps": [
+        "Intent#i:outcome_unknown>resolved_not_done:correlated_nonexecution_proven@human",
+        "SpendReservation#r:pending_unknown>released:resolved_not_done@human"
+      ]
+    },
+    "F19 cancel before send releases held budget": {
+      "purpose": "",
+      "given": {
+        "Intent#i": "prepared",
+        "SpendReservation#r": "held"
+      },
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a"
+      },
+      "steps": [
+        "Intent#i:prepared>cancelled:cancel@model",
+        "SpendReservation#r:held>released:cancel_expire_or_clean_fail@blinkd"
+      ]
+    },
+    "F20 scheduled occurrence with standing approval": {
+      "purpose": "",
+      "given": {},
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a"
+      },
+      "steps": [
+        "Job#j:new>pending_approval:job_create@human",
+        "Job#j:pending_approval>active:standing_approval@human",
+        "Occurrence#o:new>scheduled:cron_tick@scheduler",
+        "Occurrence#o:scheduled>running:latest_start_ok_and_preflight_ok@scheduler",
+        "Intent#i:new>prepared:occurrence_running@scheduler",
+        "SpendReservation#r:new>held:blink_prepare@blinkd",
+        "Intent#i:prepared>approved:standing_approval_valid@blinkd",
+        "Intent#i:approved>dispatching:execute@model",
+        "Intent#i:dispatching>succeeded:response_ok@service",
+        "SpendReservation#r:held>consumed:intent_succeeded@blinkd",
+        "Occurrence#o:running>done:intent_terminal_ok@scheduler"
+      ]
+    },
+    "F21 parked occurrence deadline rechecked": {
+      "purpose": "",
+      "given": {
+        "Occurrence#o": "parked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Occurrence#o:parked>scheduled:resume_after_fix_recheck_deadline@blinkd",
+        "Occurrence#o:scheduled>expired:latest_start_passed@scheduler"
+      ]
+    },
+    "F22 job pause and retire": {
+      "purpose": "",
+      "given": {
+        "Job#j": "active"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Job#j:active>paused:pause_or_grant_lost@blinkd",
+        "Job#j:paused>active:resume@human",
+        "Job#j:active>retired:retire_or_uninstall@human"
+      ]
+    },
+    "F23 definition change invalidates grant and job": {
+      "purpose": "",
+      "given": {
+        "ManifestOp#op": "approved",
+        "Grant#g": "active",
+        "Job#j": "active"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ManifestOp#op:approved>pending_review:digest_changed@blinkd",
+        "Grant#g:active>invalidated:digest_widened@blinkd",
+        "Job#j:active>paused:pause_or_grant_lost@blinkd"
+      ]
+    },
+    "F24 drift requires rereview": {
+      "purpose": "",
+      "given": {
+        "ManifestOp#op": "approved"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ManifestOp#op:approved>drift_suspected:canary_or_contract_fail@blinkd",
+        "ManifestOp#op:drift_suspected>pending_review:relearn_delta@human"
+      ]
+    },
+    "F25 recording capture restart cleanup": {
+      "purpose": "",
+      "given": {
+        "CaptureSession#c": "recording"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#c:recording>aborted:abort_or_crash@blinkd",
+        "CaptureSession#c:aborted>deleted:startup_sweep@blinkd"
+      ]
+    },
+    "F25 spooled capture restart cleanup": {
+      "purpose": "",
+      "given": {
+        "CaptureSession#c": "spooled"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#c:spooled>aborted:analysis_cancel_or_restart@blinkd",
+        "CaptureSession#c:aborted>deleted:startup_sweep@blinkd"
+      ]
+    },
+    "F25 analyzing capture restart cleanup": {
+      "purpose": "",
+      "given": {
+        "CaptureSession#c": "analyzing"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#c:analyzing>aborted:analysis_failed_or_restart@blinkd",
+        "CaptureSession#c:aborted>deleted:startup_sweep@blinkd"
+      ]
+    },
+    "F25b temporary browser and tab cleanup": {
+      "purpose": "",
+      "given": {
+        "BrowserContext#c": "quiesced",
+        "WorkTab#w": "open"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "BrowserContext#c:quiesced>disposed:commit_failed_cancel_or_restart@blinkd",
+        "WorkTab#w:open>orphaned:daemon_crash@blinkd",
+        "WorkTab#w:orphaned>closed:startup_sweep@blinkd"
+      ]
+    },
+    "F26 challenged broker stops automatic fallback": {
+      "purpose": "No edge permits automatic fallback from human_required; only explicit resolution or revocation can leave it.",
+      "given": {
+        "Custody#read": "c3",
+        "AccountBinding#b": "active"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#read:c3>human_required:challenge_mismatch_or_stepup@blinkd",
+        "AccountBinding#b:active>parked:login_mismatch_or_stepup@blinkd",
+        "Notification#n:new>raised:park_forecast_or_block@blinkd"
+      ]
+    },
+    "F27 purge unsent work and configuration": {
+      "purpose": "A design inventory, not an exhaustive system snapshot. Runtime must enumerate all instances and verify each disposal; failed cleanup remains blocked.",
+      "given": {
+        "Job#j": "active",
+        "Occurrence#o": "scheduled",
+        "Intent#i": "approved",
+        "SpendReservation#r": "held",
+        "ApprovalReceipt#a": "issued",
+        "UserCheck#check": "active",
+        "Custody#read": "c3",
+        "CredentialGeneration#g": "current",
+        "BrowserContext#ctx": "retained",
+        "AccountBinding#b": "active",
+        "Grant#grant": "active",
+        "ManifestOp#op": "approved",
+        "CaptureSession#c": "installed",
+        "PreflightSentinel#sentinel": "ok"
+      },
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        },
+        "CredentialGeneration#g": {
+          "custody": "Custody#read"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a",
+        "CredentialGeneration#g": "binding-a/family-a/read",
+        "Custody#read": "binding-a/family-a/read"
+      },
+      "steps": [
+        "PurgeRun#p:new>quiescing:forget_or_uninstall_requested@human",
+        "Job#j:active>retired:retire_or_uninstall@human",
+        "PurgeRun#p:quiescing>cleaning:jobs_and_maintenance_stopped@blinkd",
+        "Occurrence#o:scheduled>skipped:purge_before_dispatch@blinkd",
+        "Intent#i:approved>cancelled:purge_before_send@blinkd",
+        "SpendReservation#r:held>released:cancel_expire_or_clean_fail@blinkd",
+        "ApprovalReceipt#a:issued>revoked:purge@blinkd",
+        "UserCheck#check:active>removed:tools_remove_or_purge@human",
+        "Custody#read:c3>revoked:forget_after_quiesce@human",
+        "CredentialGeneration#g:current>purged:custody_revoked_after_quiesce@blinkd",
+        "BrowserContext#ctx:retained>disposed:purge_after_quiesce@blinkd",
+        "AccountBinding#b:active>deleted:forget_or_uninstall@human",
+        "Grant#grant:active>revoked:revoke_or_kill_switch@human",
+        "ManifestOp#op:approved>retired:retire_or_uninstall@human",
+        "CaptureSession#c:installed>deleted:ttl_or_rm@blinkd",
+        "PreflightSentinel#sentinel:ok>removed:uninstall@human",
+        "PurgeRun#p:cleaning>complete:all_durable_artifacts_disposed_no_unknowns@blinkd"
+      ]
+    },
+    "F27b purge preserves ambiguous business evidence": {
+      "purpose": "The unknown intent journal and pending reservation remain; secret material is removed separately. Uninstall must report this retained evidence explicitly.",
+      "given": {
+        "Occurrence#o": "awaiting_reconciliation",
+        "Intent#i": "outcome_unknown",
+        "SpendReservation#r": "pending_unknown"
+      },
+      "links": {
+        "SpendReservation#r": {
+          "intent": "Intent#i"
+        },
+        "Occurrence#o": {
+          "intent": "Intent#i",
+          "purge": "PurgeRun#p"
+        }
+      },
+      "scopes": {
+        "Intent#i": "intent-a/key-a",
+        "SpendReservation#r": "intent-a/key-a",
+        "Occurrence#o": "intent-a/key-a",
+        "PurgeRun#p": "intent-a/key-a"
+      },
+      "steps": [
+        "PurgeRun#p:new>quiescing:forget_or_uninstall_requested@human",
+        "PurgeRun#p:quiescing>cleaning:jobs_and_maintenance_stopped@blinkd",
+        "Occurrence#o:awaiting_reconciliation>evidence_retained:purge_preserves_unknown_evidence@blinkd",
+        "PurgeRun#p:cleaning>evidence_retained:unknown_intents_and_reservations_preserved@blinkd"
+      ]
+    },
+    "F08c C4 authorization is separate": {
+      "purpose": "C4 requires both persistent custody approval and a separate active auto re-harvest authorization before the durable harvest. The profile is retained explicitly.",
+      "given": {},
+      "links": {
+        "Custody#read": {
+          "approval": "ApprovalReceipt#custody",
+          "eligibility": "OperationEligibility#read",
+          "reharvest": "ReharvestAuthorization#c4"
+        },
+        "CredentialGeneration#g1": {
+          "custody": "Custody#read",
+          "approval": "ApprovalReceipt#custody"
+        },
+        "BrowserContext#harvest": {
+          "generation": "CredentialGeneration#g1"
+        }
+      },
+      "scopes": {
+        "Custody#read": "binding-a/family-a/read",
+        "CredentialGeneration#g1": "binding-a/family-a/read",
+        "BrowserContext#harvest": "binding-a/family-a/read",
+        "ApprovalReceipt#custody": "binding-a/family-a/read",
+        "OperationEligibility#read": "binding-a/family-a/read",
+        "ReharvestAuthorization#c4": "binding-a/family-a/read"
+      },
+      "steps": [
+        "Custody#read:new>unassigned:binding_proposed@blinkd",
+        "Custody#read:unassigned>eligibility_check:custody_requested@human",
+        "OperationEligibility#read:new>unknown:operation_selected@blinkd",
+        "OperationEligibility#read:unknown>detachable:lifecycle_evidence_verified@human",
+        "BrowserContext#harvest:new>created:harvest_start@blinkd",
+        "BrowserContext#harvest:created>quiesced:login_done_snapshot@blinkd",
+        "ApprovalReceipt#custody:new>issued:human_approves_out_of_band@human",
+        "ReharvestAuthorization#c4:new>active:human_authorizes_c4_out_of_band@human",
+        "Custody#read:eligibility_check>c4:eligible_c4_and_separate_authorization@human",
+        "ApprovalReceipt#custody:issued>consumed:execute_or_activate@blinkd",
+        "CredentialGeneration#g1:new>pending_identity:authorized_harvest_committed@blinkd",
+        "CredentialGeneration#g1:pending_identity>current:identity_probe_matches@blinkd",
+        "BrowserContext#harvest:quiesced>retained:generation_committed_c4@blinkd"
+      ]
+    },
+    "F28a unknown occurrence completes only after same-intent resolution": {
+      "purpose": "An already-dispatched occurrence is reconciled, never queued as a fresh dispatch.",
+      "given": {
+        "Occurrence#o": "awaiting_reconciliation",
+        "Intent#i": "outcome_unknown"
+      },
+      "links": {
+        "Occurrence#o": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Occurrence#o": "intent-a/key-a",
+        "Intent#i": "intent-a/key-a"
+      },
+      "steps": [
+        "Intent#i:outcome_unknown>resolved_done:correlated_effect_confirmed@human",
+        "Occurrence#o:awaiting_reconciliation>done:same_intent_effect_confirmed@scheduler"
+      ]
+    },
+    "F28b unknown occurrence fails only after correlated nonexecution": {
+      "purpose": "An already-dispatched occurrence is reconciled, never queued as a fresh dispatch.",
+      "given": {
+        "Occurrence#o": "awaiting_reconciliation",
+        "Intent#i": "outcome_unknown"
+      },
+      "links": {
+        "Occurrence#o": {
+          "intent": "Intent#i"
+        }
+      },
+      "scopes": {
+        "Occurrence#o": "intent-a/key-a",
+        "Intent#i": "intent-a/key-a"
+      },
+      "steps": [
+        "Intent#i:outcome_unknown>resolved_not_done:correlated_nonexecution_proven@human",
+        "Occurrence#o:awaiting_reconciliation>failed:same_intent_nonexecution_proven@scheduler"
+      ]
+    },
+    "F15c revoked transfer never resumes either owner": {
+      "purpose": "Revoking both owners cannot restore broker custody; remove it explicitly.",
+      "given": {
+        "OwnershipTransfer#t": "reseeded",
+        "Custody#read": "transferring",
+        "CredentialGeneration#broker": "current"
+      },
+      "links": {
+        "OwnershipTransfer#t": {
+          "custody": "Custody#read",
+          "generation": "CredentialGeneration#broker"
+        },
+        "Custody#read": {
+          "transfer": "OwnershipTransfer#t"
+        },
+        "CredentialGeneration#broker": {
+          "transfer": "OwnershipTransfer#t"
+        }
+      },
+      "scopes": {
+        "Custody#read": "binding-a/family-a/read",
+        "OwnershipTransfer#t": "binding-a/family-a/read",
+        "CredentialGeneration#broker": "binding-a/family-a/read"
+      },
+      "steps": [
+        "OwnershipTransfer#t:reseeded>unknown:crash_before_owner_commit@blinkd",
+        "OwnershipTransfer#t:unknown>revoked:human_revokes_both_owners@human",
+        "Custody#read:transferring>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "F27c purge cancels an unsent parked occurrence": {
+      "purpose": "An unsent parked occurrence can be cancelled; awaiting reconciliation is a different state.",
+      "given": {
+        "Occurrence#o": "parked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PurgeRun#p:new>quiescing:forget_or_uninstall_requested@human",
+        "PurgeRun#p:quiescing>cleaning:jobs_and_maintenance_stopped@blinkd",
+        "Occurrence#o:parked>skipped:purge_before_dispatch@blinkd",
+        "PurgeRun#p:cleaning>complete:all_durable_artifacts_disposed_no_unknowns@blinkd"
+      ]
+    },
+    "F29 Web Link source install from an immutable commit": {
+      "purpose": "HTTPS URL/ref/catalogPath are user configuration; the source reader resolves a single commit and verifies bounded regular blobs. Repository trust cannot become local trust or origin grants. For first install, expected-old is absent. Schema/path/digest validation and atomic CAS are normative runtime requirements, not implemented downloader behavior.",
+      "given": {},
+      "links": {
+        "SourceCandidate#banana": {
+          "manifest": "ManifestOp#banana",
+          "approval": "ApprovalReceipt#linkReview",
+          "source": "CatalogSource#personal"
+        },
+        "ApprovalReceipt#linkReview": {
+          "candidate": "SourceCandidate#banana"
+        },
+        "ManifestOp#banana": {
+          "candidate": "SourceCandidate#banana"
+        }
+      },
+      "scopes": {
+        "CatalogSource#personal": "source-personal/web-link-banana",
+        "SourceCandidate#banana": "source-personal/web-link-banana",
+        "ManifestOp#banana": "source-personal/web-link-banana",
+        "ApprovalReceipt#linkReview": "source-personal/web-link-banana"
+      },
+      "steps": [
+        "CatalogSource#personal:new>configured:user_adds_named_git_url_ref_catalog@human",
+        "CatalogSource#personal:configured>checking:resolve_immutable_commit_and_read_bounded_catalog@blinkd",
+        "CatalogSource#personal:checking>ready:catalog_snapshot_schema_paths_digests_valid@blinkd",
+        "SourceCandidate#banana:new>quarantined:bounded_immutable_snapshot_staged@blinkd",
+        "SourceCandidate#banana:quarantined>validated:schemas_paths_and_content_digests_valid@blinkd",
+        "ManifestOp#banana:new>quarantined:repository_candidate_discovered@blinkd",
+        "SourceCandidate#banana:validated>pending_review:new_or_changed_execution_semantics@blinkd",
+        "ManifestOp#banana:quarantined>pending_review:review_requested@human",
+        "ApprovalReceipt#linkReview:new>issued:human_approves_out_of_band@human",
+        "ManifestOp#banana:pending_review>approved:approve@human",
+        "ApprovalReceipt#linkReview:issued>consumed:execute_or_activate@blinkd",
+        "SourceCandidate#banana:pending_review>staged:scoped_human_receipt_and_manifest_approval_valid@blinkd",
+        "SourceCandidate#banana:staged>activated:atomic_activation_expected_old_digest_cas_matches@blinkd"
+      ]
+    },
+    "F30 source check failure retains approved pinned Web Link": {
+      "purpose": "The approved local immutable snapshot remains usable. A source fetch, ref-resolution or catalog-validation failure does not invalidate its ManifestOp or change its installed digest.",
+      "given": {
+        "CatalogSource#personal": "ready",
+        "ManifestOp#installed": "approved"
+      },
+      "links": {},
+      "scopes": {
+        "CatalogSource#personal": "source-personal/web-link-banana",
+        "ManifestOp#installed": "source-personal/web-link-banana"
+      },
+      "steps": [
+        "CatalogSource#personal:ready>checking:user_or_scheduled_source_check@blinkd",
+        "CatalogSource#personal:checking>degraded:resolution_fetch_or_catalog_validation_failed@blinkd"
+      ]
+    },
+    "F31 Web Link semantic update rejected and staging cleaned": {
+      "purpose": "Old installed and proposed operation instances are distinct. Rejecting new semantics deletes only candidate staging; the existing approved immutable install is unchanged.",
+      "given": {
+        "CatalogSource#personal": "ready",
+        "ManifestOp#installed": "approved"
+      },
+      "links": {},
+      "scopes": {
+        "CatalogSource#personal": "source-personal/web-link-banana",
+        "SourceCandidate#banana": "source-personal/web-link-banana",
+        "ManifestOp#installed": "source-personal/web-link-banana",
+        "ManifestOp#proposed": "source-personal/web-link-banana"
+      },
+      "steps": [
+        "SourceCandidate#banana:new>quarantined:bounded_immutable_snapshot_staged@blinkd",
+        "SourceCandidate#banana:quarantined>validated:schemas_paths_and_content_digests_valid@blinkd",
+        "ManifestOp#proposed:new>quarantined:repository_candidate_discovered@blinkd",
+        "SourceCandidate#banana:validated>pending_review:new_or_changed_execution_semantics@blinkd",
+        "ManifestOp#proposed:quarantined>pending_review:review_requested@human",
+        "SourceCandidate#banana:pending_review>rejected:human_rejects@human",
+        "ManifestOp#proposed:pending_review>retired:reject@human",
+        "SourceCandidate#banana:rejected>deleted:staging_cleanup@blinkd"
+      ]
+    },
+    "F32 Web Link activation CAS failure preserves prior install": {
+      "purpose": "An approval cannot authorize overwriting a concurrently changed installed pointer. Registry CAS failure leaves the currently installed approved snapshot in place; no partial activation occurs.",
+      "given": {
+        "CatalogSource#personal": "ready",
+        "SourceCandidate#banana": "staged",
+        "ManifestOp#installed": "approved",
+        "ManifestOp#proposed": "approved"
+      },
+      "links": {},
+      "scopes": {
+        "CatalogSource#personal": "source-personal/web-link-banana",
+        "SourceCandidate#banana": "source-personal/web-link-banana",
+        "ManifestOp#installed": "source-personal/web-link-banana",
+        "ManifestOp#proposed": "source-personal/web-link-banana"
+      },
+      "steps": [
+        "SourceCandidate#banana:staged>rejected:expected_old_digest_cas_failed@blinkd",
+        "SourceCandidate#banana:rejected>deleted:staging_cleanup@blinkd"
+      ]
+    },
+    "F33 removing a source stops updates and preserves its installed pins": {
+      "purpose": "Source removal affects future checks and staged candidates only. Explicit Web Link retirement is separate and uses ManifestOp approved-to-retired; there is no implicit removal of pinned installations.",
+      "given": {
+        "CatalogSource#personal": "ready",
+        "SourceCandidate#banana": "staged",
+        "ManifestOp#installed": "approved"
+      },
+      "links": {},
+      "scopes": {
+        "CatalogSource#personal": "source-personal/web-link-banana",
+        "SourceCandidate#banana": "source-personal/web-link-banana",
+        "ManifestOp#installed": "source-personal/web-link-banana"
+      },
+      "steps": [
+        "CatalogSource#personal:ready>removed:user_removes_source@human",
+        "SourceCandidate#banana:staged>rejected:staging_ttl_source_removed_or_reconfigured@blinkd",
+        "SourceCandidate#banana:rejected>deleted:staging_cleanup@blinkd"
+      ]
+    },
+    "F34 unchanged semantic digest can update provenance without new authority": {
+      "purpose": "The reviewed execution-semantic digest must be exactly unchanged and the old pin must still match. This path updates an immutable provenance pin without expanding trust, credentials, operations or grants. Runtime digest comparison and expected-old CAS remain mandatory.",
+      "given": {
+        "CatalogSource#personal": "ready",
+        "ManifestOp#banana": "approved"
+      },
+      "links": {
+        "SourceCandidate#banana": {
+          "manifest": "ManifestOp#banana",
+          "approval": "ApprovalReceipt#linkReview",
+          "source": "CatalogSource#personal"
+        }
+      },
+      "scopes": {
+        "CatalogSource#personal": "source-personal/web-link-banana",
+        "SourceCandidate#banana": "source-personal/web-link-banana",
+        "ManifestOp#banana": "source-personal/web-link-banana",
+        "ApprovalReceipt#linkReview": "source-personal/web-link-banana"
+      },
+      "steps": [
+        "SourceCandidate#banana:new>quarantined:bounded_immutable_snapshot_staged@blinkd",
+        "SourceCandidate#banana:quarantined>validated:schemas_paths_and_content_digests_valid@blinkd",
+        "SourceCandidate#banana:validated>staged:unchanged_semantic_digest_and_existing_pin_valid@blinkd",
+        "SourceCandidate#banana:staged>activated:atomic_activation_expected_old_digest_cas_matches@blinkd"
+      ]
+    },
+    "F35 invalid Web Link blob rejected before proposal": {
+      "purpose": "Bad paths, schema failures, digest mismatch, unsupported Git modes or resource-limit failures never reach approval or activation. The installed snapshot remains unchanged.",
+      "given": {
+        "CatalogSource#personal": "ready",
+        "ManifestOp#installed": "approved"
+      },
+      "links": {},
+      "scopes": {
+        "CatalogSource#personal": "source-personal/web-link-banana",
+        "SourceCandidate#banana": "source-personal/web-link-banana",
+        "ManifestOp#installed": "source-personal/web-link-banana"
+      },
+      "steps": [
+        "SourceCandidate#banana:new>quarantined:bounded_immutable_snapshot_staged@blinkd",
+        "SourceCandidate#banana:quarantined>rejected:schema_path_digest_or_blob_validation_failed@blinkd",
+        "SourceCandidate#banana:rejected>deleted:staging_cleanup@blinkd"
+      ]
+    }
+  },
+  "edge_examples": {
+    "X001 PreflightSentinel ok>stale:fingerprint_ttl_version_or_env_error@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "ok"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:ok>stale:fingerprint_ttl_version_or_env_error@blinkd"
+      ]
+    },
+    "X002 PreflightSentinel degraded>stale:fingerprint_ttl_version_or_env_error@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "degraded"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:degraded>stale:fingerprint_ttl_version_or_env_error@blinkd"
+      ]
+    },
+    "X003 PreflightSentinel awaiting_user>blocked:user_declined_or_unavailable@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "awaiting_user"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:awaiting_user>blocked:user_declined_or_unavailable@human"
+      ]
+    },
+    "X004 PreflightSentinel blocked>checking:doctor_rerun@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "blocked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:blocked>checking:doctor_rerun@human"
+      ]
+    },
+    "X005 PreflightSentinel degraded>removed:uninstall@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "degraded"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:degraded>removed:uninstall@human"
+      ]
+    },
+    "X006 PreflightSentinel blocked>removed:uninstall@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "blocked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:blocked>removed:uninstall@human"
+      ]
+    },
+    "X007 PreflightSentinel degraded>awaiting_user:optional_install_requested@model": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "degraded"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:degraded>awaiting_user:optional_install_requested@model"
+      ]
+    },
+    "X008 PreflightSentinel awaiting_user>degraded:optional_install_declined@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "awaiting_user"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:awaiting_user>degraded:optional_install_declined@human"
+      ]
+    },
+    "X009 PreflightSentinel installing>blocked:install_failed@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "installing"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:installing>blocked:install_failed@blinkd"
+      ]
+    },
+    "X010 PreflightSentinel failed>removed:uninstall@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "failed"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:failed>removed:uninstall@human"
+      ]
+    },
+    "X011 PreflightSentinel awaiting_user>removed:uninstall@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "awaiting_user"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:awaiting_user>removed:uninstall@human"
+      ]
+    },
+    "X012 PreflightSentinel installing>blocked:shutdown_cancels_install@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "installing"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:installing>blocked:shutdown_cancels_install@blinkd"
+      ]
+    },
+    "X013 PreflightSentinel checking>removed:shutdown@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "checking"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:checking>removed:shutdown@blinkd"
+      ]
+    },
+    "X014 PreflightSentinel stale>removed:uninstall@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PreflightSentinel#example": "stale"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PreflightSentinel#example:stale>removed:uninstall@human"
+      ]
+    },
+    "X015 UserQuestion asked>unavailable:headless_or_dismissed@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "UserQuestion#example": "asked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "UserQuestion#example:asked>unavailable:headless_or_dismissed@blinkd"
+      ]
+    },
+    "X016 Notification raised>acknowledged:user_ack@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Notification#example": "raised"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Notification#example:raised>acknowledged:user_ack@human"
+      ]
+    },
+    "X017 Notification raised>superseded:condition_cleared@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Notification#example": "raised"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Notification#example:raised>superseded:condition_cleared@blinkd"
+      ]
+    },
+    "X018 CaptureSession proposed>deleted:ttl_or_purge@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CaptureSession#example": "proposed"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#example:proposed>deleted:ttl_or_purge@blinkd"
+      ]
+    },
+    "X019 CaptureSession incomplete>deleted:ttl_or_purge@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CaptureSession#example": "incomplete"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#example:incomplete>deleted:ttl_or_purge@blinkd"
+      ]
+    },
+    "X020 CaptureSession recording>aborted:purge_or_cancel@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CaptureSession#example": "recording"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CaptureSession#example:recording>aborted:purge_or_cancel@human"
+      ]
+    },
+    "X021 ManifestOp draft>retired:discard@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "ManifestOp#example": "draft"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ManifestOp#example:draft>retired:discard@human"
+      ]
+    },
+    "X022 ManifestOp quarantined>retired:discard@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "ManifestOp#example": "quarantined"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ManifestOp#example:quarantined>retired:discard@human"
+      ]
+    },
+    "X023 ManifestOp drift_suspected>approved:canary_recovers_digest_unchanged@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "ManifestOp#example": "drift_suspected"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ManifestOp#example:drift_suspected>approved:canary_recovers_digest_unchanged@blinkd"
+      ]
+    },
+    "X024 ManifestOp drift_suspected>retired:retire@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "ManifestOp#example": "drift_suspected"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ManifestOp#example:drift_suspected>retired:retire@human"
+      ]
+    },
+    "X025 Grant invalidated>active:reapprove@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Grant#example": "invalidated"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Grant#example:invalidated>active:reapprove@human"
+      ]
+    },
+    "X026 Grant invalidated>revoked:deny@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Grant#example": "invalidated"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Grant#example:invalidated>revoked:deny@human"
+      ]
+    },
+    "X027 Grant active>expired:grant_expiry@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Grant#example": "active"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Grant#example:active>expired:grant_expiry@blinkd"
+      ]
+    },
+    "X028 Grant requested>revoked:purge@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Grant#example": "requested"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Grant#example:requested>revoked:purge@blinkd"
+      ]
+    },
+    "X029 Grant invalidated>revoked:purge@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Grant#example": "invalidated"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Grant#example:invalidated>revoked:purge@blinkd"
+      ]
+    },
+    "X030 AccountBinding parked>active:relogin_identity_ok@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "AccountBinding#example": "parked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "AccountBinding#example:parked>active:relogin_identity_ok@human"
+      ]
+    },
+    "X031 AccountBinding parked>deleted:forget@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "AccountBinding#example": "parked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "AccountBinding#example:parked>deleted:forget@human"
+      ]
+    },
+    "X032 AccountBinding pending>deleted:purge@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "AccountBinding#example": "pending"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "AccountBinding#example:pending>deleted:purge@blinkd"
+      ]
+    },
+    "X033 Custody eligibility_check>c5:official_broker_grant_approved@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "eligibility_check",
+        "ApprovalReceipt#premise0": "issued"
+      },
+      "links": {
+        "Custody#example": {
+          "approval": "ApprovalReceipt#premise0"
+        }
+      },
+      "scopes": {
+        "Custody#example": "assumed-shared-scope",
+        "ApprovalReceipt#premise0": "assumed-shared-scope"
+      },
+      "steps": [
+        "Custody#example:eligibility_check>c5:official_broker_grant_approved@human"
+      ]
+    },
+    "X034 Custody c1>eligibility_check:switch_requested@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c1"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c1>eligibility_check:switch_requested@human"
+      ]
+    },
+    "X035 Custody c2>eligibility_check:switch_requested@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c2"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c2>eligibility_check:switch_requested@human"
+      ]
+    },
+    "X036 Custody c4>transferring:future_calls_handback_requested@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c4"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c4>transferring:future_calls_handback_requested@human"
+      ]
+    },
+    "X037 Custody c4>parked:refresh_unknown_or_expired@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c4"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c4>parked:refresh_unknown_or_expired@blinkd"
+      ]
+    },
+    "X038 Custody c5>parked:refresh_unknown_or_expired@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c5"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c5>parked:refresh_unknown_or_expired@blinkd"
+      ]
+    },
+    "X039 Custody c1>parked:browser_login_required@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c1"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c1>parked:browser_login_required@blinkd"
+      ]
+    },
+    "X040 Custody c2>parked:browser_login_required@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c2"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c2>parked:browser_login_required@blinkd"
+      ]
+    },
+    "X041 Custody c4>human_required:challenge_mismatch_or_stepup@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c4"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c4>human_required:challenge_mismatch_or_stepup@blinkd"
+      ]
+    },
+    "X042 Custody c5>human_required:challenge_mismatch_or_stepup@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c5"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c5>human_required:challenge_mismatch_or_stepup@blinkd"
+      ]
+    },
+    "X043 Custody c1>human_required:challenge_mismatch_or_stepup@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c1"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c1>human_required:challenge_mismatch_or_stepup@blinkd"
+      ]
+    },
+    "X044 Custody c2>human_required:challenge_mismatch_or_stepup@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c2"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c2>human_required:challenge_mismatch_or_stepup@blinkd"
+      ]
+    },
+    "X045 Custody reharvesting>parked:browser_refused_or_unavailable@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "reharvesting"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:reharvesting>parked:browser_refused_or_unavailable@blinkd"
+      ]
+    },
+    "X046 Custody parked>eligibility_check:human_relogin_and_recheck@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "parked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:parked>eligibility_check:human_relogin_and_recheck@human"
+      ]
+    },
+    "X047 Custody human_required>eligibility_check:human_resolved_and_recheck@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "human_required"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:human_required>eligibility_check:human_resolved_and_recheck@human"
+      ]
+    },
+    "X048 Custody transferring>c4:reconciled_broker_c4_owner@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "transferring",
+        "OwnershipTransfer#premise0": "broker_recovered",
+        "ReharvestAuthorization#premise_reharvest": "active",
+        "OperationEligibility#premise_eligibility": "detachable"
+      },
+      "links": {
+        "Custody#example": {
+          "transfer": "OwnershipTransfer#premise0",
+          "reharvest": "ReharvestAuthorization#premise_reharvest",
+          "eligibility": "OperationEligibility#premise_eligibility"
+        }
+      },
+      "scopes": {
+        "Custody#example": "assumed-shared-scope",
+        "OwnershipTransfer#premise0": "assumed-shared-scope",
+        "ReharvestAuthorization#premise_reharvest": "assumed-shared-scope",
+        "OperationEligibility#premise_eligibility": "assumed-shared-scope"
+      },
+      "steps": [
+        "Custody#example:transferring>c4:reconciled_broker_c4_owner@blinkd"
+      ]
+    },
+    "X049 Custody c1>revoked:forget_after_quiesce@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c1"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c1>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "X050 Custody c2>revoked:forget_after_quiesce@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c2"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c2>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "X051 Custody c4>revoked:forget_after_quiesce@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c4"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c4>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "X052 Custody c5>revoked:forget_after_quiesce@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "c5"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:c5>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "X053 Custody parked>revoked:forget_after_quiesce@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "parked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:parked>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "X054 Custody human_required>revoked:forget_after_quiesce@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "human_required"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:human_required>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "X055 Custody reharvesting>revoked:forget_after_quiesce@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "reharvesting"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:reharvesting>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "X056 Custody transferring>revoked:forget_after_quiesce@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Custody#example": "transferring"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Custody#example:transferring>revoked:forget_after_quiesce@human"
+      ]
+    },
+    "X057 RefreshAttempt new>journaled:refresh_due@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {},
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "RefreshAttempt#example:new>journaled:refresh_due@blinkd"
+      ]
+    },
+    "X058 RefreshAttempt journaled>aborted:precheck_failed_or_grant_revoked@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "RefreshAttempt#example": "journaled"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "RefreshAttempt#example:journaled>aborted:precheck_failed_or_grant_revoked@blinkd"
+      ]
+    },
+    "X059 RefreshAttempt journaled>sent:dispatch@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "RefreshAttempt#example": "journaled"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "RefreshAttempt#example:journaled>sent:dispatch@blinkd"
+      ]
+    },
+    "X060 RefreshAttempt sent>committed:identity_checked_successor_published@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "RefreshAttempt#example": "sent",
+        "CredentialGeneration#premise0": "current"
+      },
+      "links": {
+        "RefreshAttempt#example": {
+          "generation": "CredentialGeneration#premise0"
+        }
+      },
+      "scopes": {
+        "RefreshAttempt#example": "assumed-shared-scope",
+        "CredentialGeneration#premise0": "assumed-shared-scope"
+      },
+      "steps": [
+        "RefreshAttempt#example:sent>committed:identity_checked_successor_published@blinkd"
+      ]
+    },
+    "X061 RefreshAttempt sent>outcome_unknown:lost_response_or_crash@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "RefreshAttempt#example": "sent"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "RefreshAttempt#example:sent>outcome_unknown:lost_response_or_crash@blinkd"
+      ]
+    },
+    "X062 RefreshAttempt outcome_unknown>resolved:human_relogin@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "RefreshAttempt#example": "outcome_unknown"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "RefreshAttempt#example:outcome_unknown>resolved:human_relogin@human"
+      ]
+    },
+    "X063 BrowserContext created>disposed:abort_or_startup_sweep@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "BrowserContext#example": "created"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "BrowserContext#example:created>disposed:abort_or_startup_sweep@blinkd"
+      ]
+    },
+    "X064 BrowserContext retained>disposed:custody_forget@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "BrowserContext#example": "retained"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "BrowserContext#example:retained>disposed:custody_forget@human"
+      ]
+    },
+    "X065 WorkTab discarded>closed:not_needed@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "WorkTab#example": "discarded"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "WorkTab#example:discarded>closed:not_needed@blinkd"
+      ]
+    },
+    "X066 Intent prepared>expired:handle_ttl@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Intent#example": "prepared"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Intent#example:prepared>expired:handle_ttl@blinkd"
+      ]
+    },
+    "X067 Intent approved>expired:approval_stale@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Intent#example": "approved"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Intent#example:approved>expired:approval_stale@blinkd"
+      ]
+    },
+    "X068 ApprovalReceipt issued>expired:ttl@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "ApprovalReceipt#example": "issued"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ApprovalReceipt#example:issued>expired:ttl@blinkd"
+      ]
+    },
+    "X069 ApprovalReceipt issued>revoked:revoke@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "ApprovalReceipt#example": "issued"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ApprovalReceipt#example:issued>revoked:revoke@human"
+      ]
+    },
+    "X070 Job pending_approval>retired:reject@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Job#example": "pending_approval"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Job#example:pending_approval>retired:reject@human"
+      ]
+    },
+    "X071 Job paused>retired:retire@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Job#example": "paused"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Job#example:paused>retired:retire@human"
+      ]
+    },
+    "X072 Occurrence scheduled>skipped:overlap_or_missed_financial@scheduler": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Occurrence#example": "scheduled"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Occurrence#example:scheduled>skipped:overlap_or_missed_financial@scheduler"
+      ]
+    },
+    "X073 Occurrence scheduled>coalesced:missed_write_policy@scheduler": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Occurrence#example": "scheduled"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Occurrence#example:scheduled>coalesced:missed_write_policy@scheduler"
+      ]
+    },
+    "X074 Occurrence running>failed:intent_failed_clean@scheduler": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Occurrence#example": "running"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Occurrence#example:running>failed:intent_failed_clean@scheduler"
+      ]
+    },
+    "X075 Occurrence running>parked:env_login_or_browser_unavailable_unsent@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Occurrence#example": "running"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Occurrence#example:running>parked:env_login_or_browser_unavailable_unsent@blinkd"
+      ]
+    },
+    "X076 Occurrence parked>skipped:stale_financial_needs_fresh_approval@scheduler": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "Occurrence#example": "parked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "Occurrence#example:parked>skipped:stale_financial_needs_fresh_approval@scheduler"
+      ]
+    },
+    "X077 OperationEligibility unknown>browser_only:bound_gated_or_evidence_missing@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OperationEligibility#example": "unknown"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OperationEligibility#example:unknown>browser_only:bound_gated_or_evidence_missing@blinkd"
+      ]
+    },
+    "X078 OperationEligibility browser_only>unknown:relearn@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OperationEligibility#example": "browser_only"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OperationEligibility#example:browser_only>unknown:relearn@human"
+      ]
+    },
+    "X079 OperationEligibility detachable>unknown:digest_or_lifecycle_changed@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OperationEligibility#example": "detachable"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OperationEligibility#example:detachable>unknown:digest_or_lifecycle_changed@blinkd"
+      ]
+    },
+    "X080 OperationEligibility unknown>retired:discard_or_purge@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OperationEligibility#example": "unknown"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OperationEligibility#example:unknown>retired:discard_or_purge@human"
+      ]
+    },
+    "X081 OperationEligibility browser_only>retired:discard_or_purge@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OperationEligibility#example": "browser_only"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OperationEligibility#example:browser_only>retired:discard_or_purge@human"
+      ]
+    },
+    "X082 OperationEligibility detachable>retired:discard_or_purge@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OperationEligibility#example": "detachable"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OperationEligibility#example:detachable>retired:discard_or_purge@human"
+      ]
+    },
+    "X083 ReharvestAuthorization active>revoked:revoke_or_purge@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "ReharvestAuthorization#example": "active"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ReharvestAuthorization#example:active>revoked:revoke_or_purge@human"
+      ]
+    },
+    "X084 ReharvestAuthorization active>expired:authorization_expiry@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "ReharvestAuthorization#example": "active"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "ReharvestAuthorization#example:active>expired:authorization_expiry@blinkd"
+      ]
+    },
+    "X085 OwnershipTransfer fenced>unknown:crash_or_reseed_failure@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OwnershipTransfer#example": "fenced"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OwnershipTransfer#example:fenced>unknown:crash_or_reseed_failure@blinkd"
+      ]
+    },
+    "X086 OwnershipTransfer unknown>committed:restart_proves_browser_owner@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OwnershipTransfer#example": "unknown"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OwnershipTransfer#example:unknown>committed:restart_proves_browser_owner@blinkd"
+      ]
+    },
+    "X087 OwnershipTransfer unknown>revoked:human_revokes_both_owners@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OwnershipTransfer#example": "unknown"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OwnershipTransfer#example:unknown>revoked:human_revokes_both_owners@human"
+      ]
+    },
+    "X088 OwnershipTransfer fenced>revoked:revoke_both_owners@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "OwnershipTransfer#example": "fenced"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "OwnershipTransfer#example:fenced>revoked:revoke_both_owners@human"
+      ]
+    },
+    "X089 CredentialUpdate locked>released:precheck_failed_unlock@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CredentialUpdate#example": "locked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CredentialUpdate#example:locked>released:precheck_failed_unlock@blinkd"
+      ]
+    },
+    "X090 CredentialUpdate journaled>released:cancel_before_send@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CredentialUpdate#example": "journaled"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CredentialUpdate#example:journaled>released:cancel_before_send@blinkd"
+      ]
+    },
+    "X091 CredentialUpdate sent>unknown:response_lost_or_restart@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CredentialUpdate#example": "sent"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CredentialUpdate#example:sent>unknown:response_lost_or_restart@blinkd"
+      ]
+    },
+    "X092 UserCheck new>active:tools_add@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {},
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "UserCheck#example:new>active:tools_add@human"
+      ]
+    },
+    "X093 PurgeRun quiescing>blocked:cannot_confirm_dispatch_stopped@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PurgeRun#example": "quiescing"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PurgeRun#example:quiescing>blocked:cannot_confirm_dispatch_stopped@blinkd"
+      ]
+    },
+    "X094 PurgeRun cleaning>blocked:deletion_failed@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PurgeRun#example": "cleaning"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PurgeRun#example:cleaning>blocked:deletion_failed@blinkd"
+      ]
+    },
+    "X095 PurgeRun blocked>quiescing:retry_after_restart_or_fix@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "PurgeRun#example": "blocked"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "PurgeRun#example:blocked>quiescing:retry_after_restart_or_fix@human"
+      ]
+    },
+    "X096 CatalogSource degraded>checking:retry_source_check@blinkd": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CatalogSource#example": "degraded"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CatalogSource#example:degraded>checking:retry_source_check@blinkd"
+      ]
+    },
+    "X097 CatalogSource ready>configured:user_edits_source_configuration@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CatalogSource#example": "ready"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CatalogSource#example:ready>configured:user_edits_source_configuration@human"
+      ]
+    },
+    "X098 CatalogSource configured>removed:user_removes_source@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CatalogSource#example": "configured"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CatalogSource#example:configured>removed:user_removes_source@human"
+      ]
+    },
+    "X099 CatalogSource checking>removed:user_removes_source_cancel_check@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CatalogSource#example": "checking"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CatalogSource#example:checking>removed:user_removes_source_cancel_check@human"
+      ]
+    },
+    "X100 CatalogSource degraded>removed:user_removes_source@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "CatalogSource#example": "degraded"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "CatalogSource#example:degraded>removed:user_removes_source@human"
+      ]
+    },
+    "X101 SourceCandidate quarantined>deleted:user_discards_candidate@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "SourceCandidate#example": "quarantined"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "SourceCandidate#example:quarantined>deleted:user_discards_candidate@human"
+      ]
+    },
+    "X102 SourceCandidate validated>deleted:user_cancels_candidate@human": {
+      "purpose": "Isolated exact-edge coverage. Preconditions are assumed; no integrated safety or eventual cleanup claim.",
+      "given": {
+        "SourceCandidate#example": "validated"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "SourceCandidate#example:validated>deleted:user_cancels_candidate@human"
+      ]
+    },
+    "X103 SourceCandidate quarantined>rejected:staging_ttl_expired_or_source_removed@blinkd": {
+      "purpose": "Isolated cleanup edge: the bounded candidate sweep cancels inactive or source-removed staging without waiting for a human.",
+      "given": {
+        "SourceCandidate#example": "quarantined"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "SourceCandidate#example:quarantined>rejected:staging_ttl_expired_or_source_removed@blinkd"
+      ]
+    },
+    "X104 SourceCandidate validated>rejected:staging_ttl_expired_or_source_removed@blinkd": {
+      "purpose": "Isolated cleanup edge: the bounded candidate sweep cancels inactive or source-removed staging without waiting for a human.",
+      "given": {
+        "SourceCandidate#example": "validated"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "SourceCandidate#example:validated>rejected:staging_ttl_expired_or_source_removed@blinkd"
+      ]
+    },
+    "X105 SourceCandidate pending_review>rejected:staging_ttl_expired_or_source_removed@blinkd": {
+      "purpose": "Isolated cleanup edge: the bounded candidate sweep cancels inactive or source-removed staging without waiting for a human.",
+      "given": {
+        "SourceCandidate#example": "pending_review"
+      },
+      "links": {},
+      "scopes": {},
+      "steps": [
+        "SourceCandidate#example:pending_review>rejected:staging_ttl_expired_or_source_removed@blinkd"
+      ]
+    }
+  },
+  "proof_limits": [
+    "No runtime implementation or provider experiments are exercised.",
+    "Initial states and scope labels are assumptions.",
+    "Isolated examples establish edge-reference coverage, not integrated workflows.",
+    "Existential terminal reachability does not imply fair scheduling, bounded recovery or eventual human action.",
+    "Atomicity, dynamic authorization expiry, ownership epochs and idempotency payload equality remain runtime test obligations."
+  ]
+}

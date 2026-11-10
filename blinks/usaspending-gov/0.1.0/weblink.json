@@ -1,0 +1,16 @@
+{
+  "$schema": "urn:web-blink:schema:weblink:1",
+  "schemaVersion": 1,
+  "id": "usaspending-gov",
+  "version": "0.1.0",
+  "name": "US federal agency budgets",
+  "description": "Budget of every federal agency (USAspending.gov), learned from a recording of its Agency Profiles page. Read-only, no account, no browser needed.",
+  "artifacts": [
+    {
+      "role": "openapi",
+      "path": "openapi.json",
+      "sha256": "cea61bdb75869e7c3bd85a55ba022ef4f4f333bd917a178cb232a66c82d01526",
+      "mediaType": "application/json"
+    }
+  ]
+}

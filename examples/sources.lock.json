@@ -1,0 +1,29 @@
+{
+  "$schema": "urn:web-blink:schema:source-lock:1",
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "team",
+      "repository": "https://git.example/team/weblinks.git",
+      "requestedRef": "main",
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "catalogPath": "blink-catalog.json",
+      "catalogSha256": "d8eadc0d7736828a5ffb1234510f1c14b6001d7a505048e7d326704b02ef5c26"
+    }
+  ],
+  "installed": [
+    {
+      "sourceId": "team",
+      "id": "com.banana",
+      "version": "1.0.0",
+      "descriptor": "blinks/com.banana/1.0.0/weblink.json",
+      "descriptorSha256": "430a00040efa7fe3a6919c37e02069de885d93972f6eaddde8fa9c681533c6f2",
+      "snapshot": {
+        "repository": "https://git.example/team/weblinks.git",
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "catalogPath": "blink-catalog.json",
+        "catalogSha256": "d8eadc0d7736828a5ffb1234510f1c14b6001d7a505048e7d326704b02ef5c26"
+      }
+    }
+  ]
+}

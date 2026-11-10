@@ -1,0 +1,397 @@
+#!/usr/bin/env node
+/** Claude-compatible MCP stdio server. Diagnostics require only this Node file. */
+import {spawn, spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
+import {StringDecoder} from 'node:string_decoder';
+import fs from 'node:fs';
+import os from 'node:os';
+import {randomBytes} from 'node:crypto';
+import {privateDirectory} from './private-dir.mjs';
+import {inside,stagePackage,externalPython} from './process-paths.mjs';
+import {discoverWindows} from './browsers.mjs';
+
+const root = path.resolve(process.env.BLINK_PLUGIN_ROOT || path.dirname(path.dirname(fileURLToPath(import.meta.url))));
+const VERSION='0.18.2';
+const home=path.resolve(process.env.BLINK_HOME||path.join(os.homedir(),'.web-blink'));
+if(inside(home,root))throw Error('Blink home must be outside the plugin directory');
+const cwd=path.join(home,'processes');
+privateDirectory(cwd);
+process.chdir(cwd); // Claude starts the connector in its plugin folder; release that directory immediately.
+const connector=randomBytes(16).toString('hex');
+let usedBackend=false, codeRoot;
+try{
+ const manifest=JSON.parse(fs.readFileSync(path.join(root,'.claude-plugin/plugin.json'),'utf8'));
+ const registry=path.join(home,'installation');privateDirectory(registry); // the Blink home itself may be 0755
+ const marker=path.join(registry,'current-plugin.json');
+ let previous;try{previous=JSON.parse(fs.readFileSync(marker,'utf8'));}catch{}
+ const version=v=>String(v).split('.').map(Number);
+ const newer=(a,b)=>{a=version(a);b=version(b);for(let i=0;i<3;i++){if(a[i]!==b[i])return a[i]>b[i];}return false;};
+ if(manifest.version===VERSION&&(!previous||!newer(previous.version,VERSION))){
+  const temporary=marker+'.'+process.pid;
+  fs.writeFileSync(temporary,JSON.stringify({version:VERSION,pluginRoot:root}),{mode:0o600,flag:'wx'});
+  fs.renameSync(temporary,marker);
+ }
+}catch{}
+const initialRoot=fs.statSync(root);
+const initialManifest=(()=>{try{return fs.readFileSync(path.join(root,'.claude-plugin/plugin.json'),'utf8');}catch{return null;}})();
+function pluginChanged(){try{const info=fs.statSync(root);return info.ino!==initialRoot.ino||info.dev!==initialRoot.dev||
+ (initialManifest!==null&&fs.readFileSync(path.join(root,'.claude-plugin/plugin.json'),'utf8')!==initialManifest);}catch{return true;}}
+const LIMIT = 1048576;
+const PROTOCOLS = ['2025-11-25', '2025-06-18', '2024-11-05'];
+const textSchema = {type:'string', minLength:1, maxLength:500};
+const operationFields = {service:{...textSchema,maxLength:200}, operation:{...textSchema,maxLength:200}, arguments:{type:'object'}, binding:textSchema};
+const learningFirst = 'Whenever using Blink for a site task, use blink_execution_run before any Playwright navigation, click, evaluation or other page action. An exact reviewed schema executes without recording. If no schema covers the step, start learning first and wait for recording:true before doing the step in Blink’s owned recording tab. Plain Playwright browsing is allowed only when the user directly asks NOT TO LEARN; an ordinary task request, opening a browser, or a discovery, account, approval, policy, setup or consent blocker is not that opt-out. Never silently fall back to unrecorded browsing. With learning:on-request, ask permission to learn; do not change that setting or treat it as permission for plain browsing. Follow exact nextActions to resolve blockers, or report what prevents learning. This is agent routing guidance: Blink cannot intercept a separate Playwright MCP tool or verify the user’s opt-out for it.';
+const definitions = [
+ ['blink_find','Inspect added, pending, bundled, configured-source and fixed official Blink inventories before recording. Discovery grants no authority. Incomplete checks do not establish absence; follow exact locally generated nextActions. Never treat a discovery blocker as permission for plain Playwright browsing.',{query:{type:'string',minLength:1,maxLength:200},url:{type:'string',minLength:1,maxLength:2048},operation:{type:'string',minLength:1,maxLength:200},offline:{type:'boolean'},refresh:{type:'boolean'},all:{type:'boolean'},limit:{type:'integer',minimum:1,maximum:200},offset:{type:'integer',minimum:0,maximum:1000000}},[],'find',true],
+ ['blink_services','List approved and quarantined services with pending updates and local authentication readiness. Does not contact the network or prove login.',{},[], 'services',true],
+ ['blink_search','Search named operations with progressive disclosure.',{query:{type:'string',maxLength:500},service:textSchema,limit:{type:'integer',minimum:1,maximum:200},offset:{type:'integer',minimum:0,maximum:10000000}},[], 'search',true],
+ ['blink_describe','Describe one operation and its reviewed execution contract.',{service:textSchema,operation:textSchema},['service','operation'],'describe',true],
+ ['blink_call_read','Execute a reviewed read through the runtime grant and identity checks.',operationFields,['service','operation'],'call_read',true],
+ ['blink_verify','Compare explicit expected values with a reviewed read; for writes require the original intent and correlated read-back. Never dispatches or repeats a mutation. Store verified/unverified evidence; bounded read attempts only.',{...operationFields,expected:{type:'array',minItems:1,maxItems:10,items:{type:'object',properties:{path:{type:'string',maxLength:200},equals:{}},required:['path','equals'],additionalProperties:false}},intentId:textSchema,correlation:{type:'object',properties:{source:{enum:['result','arguments']},path:{type:'string',maxLength:200},argumentPath:{type:'string',maxLength:200},responsePath:{type:'string',maxLength:200}},required:['source','path','argumentPath'],additionalProperties:false},maxAttempts:{type:'integer',minimum:1,maximum:3},intervalSeconds:{type:'number',minimum:0,maximum:2}},['service','operation','expected'],'verify',true],
+ ['blink_prepare','Prepare a non-read intent for separate human approval. Does not dispatch it.',{...operationFields,intentId:{type:'string',minLength:1,maxLength:100}},['service','operation'],'prepare',false],
+ ['blink_execute','Execute one already-approved intent. This tool cannot issue approval.',{intentId:textSchema},['intentId'],'execute',false],
+ ['blink_execution_run',learningFirst+' With a Blink and operation it executes: selects the private context, applies private defaults and notes, tries the known login headlessly and cleans it up before a visible prefilled login handoff. With no Blink (pass the app url) or no operation it checks all inventories before offering or starting recording. Follow blink_find and exact nextActions; only complete absence or an explicit forceLearn permits recording: do the step in the recording tab, stop, propose, activate, test the Blink with this use case, then continue through the Blink; repeat on the next gap. Never replay uncertain or recorded mutations.',{...operationFields,context:textSchema,requestId:textSchema,verification:{type:'object'},visible:{type:'boolean'},url:{type:'string',minLength:1,maxLength:2048},browser:{type:'object'},task:textSchema,offline:{type:'boolean'},forceLearn:{type:'boolean'}},['service','operation'],'execution_run',false],
+ ['blink_routine_run','Run a private learned routine. First returns its one confirmation question and planDigest; after the user agrees pass confirmed:true and that digest. Preview only when previewBeforeCommit is enabled. Uses verified CLI-script steps and stable journal IDs.',{service:textSchema,name:textSchema,confirmed:{type:'boolean'},planDigest:textSchema,runId:textSchema},['service','name'],'routine_run',false],
+ ['blink_admin','Read runtime status, browser profiles, private instructions, contexts and routines. routine_lookup with service/phrase returns the known-routine confirmation; routine_plan with service/name supplies its digest. routine and routine_run expose history and run journals. control_action describes activation/binding schemas. Never returns credential values.',{action:{type:'string',enum:['sources','status','browsers','recording','review','capabilities','sessions','jobs','job','binding','intent','workflow','canary','private','control_action','verification','contexts','routines','routine','routine_lookup','routine_plan','routine_run']},method:{type:'string',enum:['activate_blink','bind']},params:{type:'object'},browser:{type:'string',enum:['chrome','edge','brave','firefox']},refresh:{type:'boolean'},name:textSchema,phrase:textSchema,id:textSchema,service:textSchema,blink:textSchema,session:textSchema,job:textSchema,binding:textSchema,intentId:textSchema,runId:textSchema,candidate:textSchema,offset:{type:'integer',minimum:0,maximum:1000000},limit:{type:'integer',minimum:1,maximum:200}},['action'],'admin',true],
+ ['blink_doctor','Report host capabilities without needing Python, a daemon or browser.',{},[],'doctor',true],
+ ['blink_connect_browser','Open/connect only; this does NOT start recording or authorize page actions. Use for authentication or continuation of existing recording/setup, or standalone plain browsing only when the user directly asks NOT TO LEARN. For ordered site tasks use blink_execution_run first; missing schemas require learning before page actions. For human learn/record requests use blink_start_recording instead. After connection follow guidance and resume the original goal in this turn. Never stop at “you can log in now” or silently fall back to plain Playwright on blockers.', {browser:{type:'object'},binding:textSchema,waitSeconds:{type:'integer',minimum:0,maximum:30}},['browser'],'connect_browser',false],
+ ['blink_start_recording','Connect the chosen browser AND start recording the requested app in one guided action. Use for human learn/record requests, including after switching browsers; the user owns the demonstration until they ask the agent to act. For agent-executed site tasks use blink_execution_run, which starts learning for missing schemas before any page action. Preserve the app URL through pending browser consent; follow nextActions to finish. Only recording:true means recording started; connection or a blocker never permits plain browsing.',{url:{type:'string',minLength:1,maxLength:2048},browser:{type:'object'},binding:{...textSchema,maxLength:100},waitSeconds:{type:'integer',minimum:0,maximum:30},service:{type:'string',minLength:1,maxLength:200},operation:{type:'string',minLength:1,maxLength:200},offline:{type:'boolean'},forceLearn:{type:'boolean'}},['url','browser'],'start_recording',false],
+ ['blink_browser_status','Read actual recording state and the last verified browser connection without opening tabs, reconnecting or running OS commands. Use for “is it recording?”; pass binding for a previously known/chosen recording, including after host restart. HTTP 404 alone does not prove native connection failure. Follow guidance; never run shell port/process probes.',{browser:{type:'object'},binding:{...textSchema,maxLength:100}},[],'browser_status',true],
+ ['blink_restore_browser','Ask the browser to reopen one selected profile and restore its saved session. Closes no windows, terminates no processes and does not claim restored tabs were verified.',{browser:{type:'object'}},['browser'],'restore_browser',false],
+ ['blink_request_approval','Carry out the exact action the user ordered. The user\'s order is the authorization: the action runs at once (recording, activation, bind, grants, approve_intent for a prepared write, jobs, forget, restart). Call it directly in the same turn; never ask for confirmation in chat and never announce a dialog. Only when the user set approvals to dialog in the CLI does the client show one Accept/Decline dialog.',{method:{type:'string',minLength:1,maxLength:100},params:{type:'object'},reason:{type:'string',maxLength:500}},['method','params'],'approval',false],
+];
+const tools = definitions.map(([name,description,properties,required,method,readOnly]) => ({
+ name,description,inputSchema:{type:'object',properties,required,additionalProperties:false},
+ ...(name==='blink_connect_browser'?{title:'Connect a browser profile'}:name==='blink_restore_browser'?{title:'Reopen a browser profile'}:name==='blink_start_recording'?{title:'Start recording an app'}:name==='blink_browser_status'?{title:'Check browser and recording status'}:{}),
+ annotations:{readOnlyHint:readOnly,destructiveHint:name==='blink_execute',idempotentHint:readOnly,openWorldHint:true},
+ ...(name==='blink_find'||name==='blink_services'||name==='blink_search'||name==='blink_describe'?{_meta:{'anthropic/alwaysLoad':true}}:{}),
+}));
+const methods = new Map(definitions.map(d => [d[0], d[4]]));
+const browserFlowId=randomBytes(16).toString('hex'); // Conversation routing, not an authorization credential.
+let initialized = false, canElicit = false, nextRequest = 0;
+const awaiting = new Map(), dialogs = new Map(), cancelled = new Set(); // dialog id -> resolver; tool call id -> dialog id
+const APPROVAL_WAIT = 600000, DIALOG_LIMIT = 6000;
+// An unanswered dialog counts as declined; BLINK_DIALOG_WAIT_MS can only shorten the wait (tests).
+const DIALOG_WAIT = Math.min(APPROVAL_WAIT, Number(process.env.BLINK_DIALOG_WAIT_MS) > 0 ? Number(process.env.BLINK_DIALOG_WAIT_MS) : APPROVAL_WAIT);
+
+function binaryAvailable(command) {
+ const result=spawnSync(command,['--version'],{stdio:'ignore',cwd,timeout:2000,windowsHide:true});
+ return !result.error && result.status===0;
+}
+function runtimePaths(){
+ const home=path.resolve(process.env.BLINK_HOME||path.join(os.homedir(),'.web-blink'));
+ const directory=path.join(home,'runtime');
+ return {directory,cache:path.join(directory,'uv-cache'),python:path.join(directory,'python'),marker:path.join(directory,'ready.json'),uv:path.join(directory,'bin',process.platform==='win32'?'uv.exe':'uv')};
+}
+function preparedRuntime(){
+ try{const p=runtimePaths(),info=fs.lstatSync(p.marker);
+  if(!info.isFile()||info.isSymbolicLink()||info.size>1024)return false;
+  const marker=JSON.parse(fs.readFileSync(p.marker,'utf8'));
+  return marker.schemaVersion===1&&marker.cache==='app-local';
+ }catch{return false;}
+}
+function launcher() {
+ if(process.env.BLINK_PYTHON&&!preparedRuntime()) return {command:externalPython(process.env.BLINK_PYTHON,root,home),args:[],kind:'configured-python'};
+ const prepared=preparedRuntime(),p=runtimePaths(),uv=prepared&&fs.existsSync(p.uv)?p.uv:'uv';
+ if(process.env.BLINK_DISABLE_UV!=='1' && binaryAvailable(uv)){
+  return {command:uv,args:['--cache-dir',p.cache,'run','--offline','--quiet','--no-project','--with-requirements',path.join(root,'requirements.lock'),'python'],
+   kind:prepared?'uv-managed':'uv',env:{UV_PYTHON_INSTALL_DIR:p.python,UV_PYTHON_PREFERENCE:'only-managed',VIRTUAL_ENV:''}};
+ }
+ return {command:externalPython(process.platform==='win32'?'python':'python3',root,home),args:[],kind:'python'};
+}
+function doctor() {
+ const launch=launcher();
+ const probeArgs=launch.args;
+ const env={...process.env,...(launch.env||{}),PYTHONPATH:path.join(root,'src'),PYTHONDONTWRITEBYTECODE:'1',PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'};
+ delete env.PYTHONHOME;
+ const probe=spawnSync(launch.command,[...probeArgs,'-c','import sys,json; import jsonschema; import blink.runtime; from blink.doctor import report; assert sys.version_info >= (3,11); print(json.dumps(report()))'],
+  {env,cwd,encoding:'utf8',maxBuffer:65536,timeout:3500,windowsHide:true});
+ let runtimeAvailable=false;
+ let homeDir=null,moving=[];
+ if(!probe.error&&probe.status===0){try{const report=JSON.parse(probe.stdout),data=report.data;runtimeAvailable=data.capabilities.runtime===true;homeDir=data.homeDir??null;
+  moving=(report.warnings??[]).filter(w=>typeof w==='string'&&w.startsWith('Web Blink data stays'));}catch{}}
+ const unix=process.platform!=='win32';
+ const setup={tool:'blink_request_approval',method:'runtime_setup',params:{},
+  title:'Prepare Blink on this computer',
+  description:'Download Python and the required libraries once into Blink\'s own data folder. Does not open a browser or read browser logins.',
+  writesTo:runtimePaths().directory,
+  hostPermission:'The host may ask to authorize this preparation tool. Explain that it downloads local components, not access to browser logins. Do not change host permission or sandbox settings.'};
+ return {status:runtimeAvailable?'ok':'degraded',summary:'Host bootstrap capabilities',data:{
+  capabilities:{diagnostics:true,browserDiscovery:true,runtime:runtimeAvailable,windowsRuntime:!unix&&runtimeAvailable},
+  activeComponent:{version:'0.18.2',pluginRoot:root},
+  checks:{node:{available:true,version:process.versions.node},runtimeDependencies:{available:runtimeAvailable},
+   launcher:{kind:launch.kind},unixTransport:{available:unix},localTransport:{available:true,kind:unix?'unix-socket':'named-pipe'}},homeDir,
+  ...(runtimeAvailable?{}:{runtimeSetup:setup}),
+  dependencyPolicy:'Ordinary startup checks components offline. A user-ordered browser action can prepare missing components in Blink’s private folder; no session hook or shell instructions are needed.'},
+  warnings:[...(runtimeAvailable?[]:['Blink needs one-time preparation. Explain data.runtimeSetup.description and its hostPermission before requesting this native tool action. Windows profile discovery is already available.']),...moving]};
+}
+async function doctorWithDaemon(){
+ // Ask the daemon too: its handshake replaces an outdated one, and a version mismatch is reported here.
+ const local=doctor();
+ if(!local.data.capabilities.runtime)return local;
+ const remote=await backend('doctor',{});
+ if(!['ok','degraded'].includes(remote?.status)){
+  local.status='degraded';local.data.capabilities.runtime=false;local.data.daemonError={status:remote?.status??'unknown',summary:remote?.summary??''};
+  local.warnings.push('The local daemon is not reachable: '+(remote?.summary??'no answer'));return local;
+ }
+ local.data.daemon=remote?.data?.daemon??null;
+ local.data.client=remote?.data?.client??null;
+ local.data.daemonMatchesClient=remote?.data?.daemonMatchesClient===true;
+ if(remote?.data?.updateBlocker)local.data.updateBlocker=remote.data.updateBlocker;
+ if(!local.data.daemonMatchesClient)local.warnings.push('The local daemon does not match this plugin version: '+JSON.stringify(local.data.daemon?.version??'unknown')+' vs '+JSON.stringify(local.data.client?.version??'unknown')+'. Stop any recording, then call blink_doctor again to restart it.');
+ for(const w of remote?.warnings??[])local.warnings.push(w);
+ return local;
+}
+function backend(method,params,module=['blink.client'],timeout=45000) {
+ return new Promise(resolve=>{
+  const launch=launcher();
+  usedBackend=true;
+  const args=[...launch.args,'-m',...module,'--plugin-root',root];
+  if(process.env.BLINK_STATE_DIR) args.push('--state-dir',process.env.BLINK_STATE_DIR);
+  // The approval policy is read where config.py reads it: BLINK_CONFIG_DIR, else the Web Blink home.
+  if(module[0]==='blink.approval'&&process.env.BLINK_CONFIG_DIR) args.push('--config-dir',process.env.BLINK_CONFIG_DIR);
+  const env={...process.env,...(launch.env||{}),PYTHONPATH:(codeRoot??=stagePackage(root,home)),PYTHONDONTWRITEBYTECODE:'1',
+   BLINK_CONNECTOR_ID:connector,BLINK_CONNECTOR_PID:String(process.pid),PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'};
+  delete env.PYTHONHOME;
+  let child;
+  const failed=()=>resolve({status:'env_unavailable',summary:'Blink could not start its local components. Use its native preparation action, then continue the requested connection.',warnings:[]});
+  try {child=spawn(launch.command,args,{env,cwd,stdio:['pipe','pipe','ignore'],windowsHide:true});}catch {failed();return;}
+  let output=[],outputBytes=0,done=false;
+  const finish=value=>{if(!done){done=true;clearTimeout(timer);resolve(value);}};
+  const timer=setTimeout(()=>{child.kill();finish({status:'env_unavailable',summary:'Runtime request timed out; an already dispatched intent must be reconciled.',warnings:[]});},timeout);
+  child.on('error',()=>finish({status:'env_unavailable',summary:'Python runtime launcher is unavailable.',warnings:[]}));
+  child.stdout.on('data',data=>{
+   output.push(data);outputBytes+=data.length;
+   if(outputBytes>LIMIT){child.kill();finish({status:'response_too_large',summary:'Runtime response limit exceeded.',warnings:[]});}
+  });
+  child.on('close',code=>{
+   if(done)return;
+   try{
+    if(code!==0)throw new Error();
+    const result=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(output)));
+    if(!result || typeof result!=='object' || Array.isArray(result) || typeof result.status!=='string')throw new Error();
+    finish(result);
+   }catch{finish({status:'env_unavailable',summary:'Blink could not start its local components. Prepare them with the runtime_setup tool action, then retry the original request.',warnings:[]});}
+  });
+  child.stdin.on('error',()=>{});
+  child.stdin.end(JSON.stringify({method,params})+'\n');
+ });
+}
+function elicit(message,requestedSchema,callId){
+ return new Promise(resolve=>{
+  const id=`blink-approval-${++nextRequest}`;
+  const timer=setTimeout(()=>{awaiting.delete(id);dialogs.delete(callId);resolve({action:'cancel'});},DIALOG_WAIT);
+  dialogs.set(callId,id);
+  awaiting.set(id,reply=>{clearTimeout(timer);dialogs.delete(callId);resolve(reply);});
+  send({jsonrpc:'2.0',id,method:'elicitation/create',params:{message,requestedSchema}});
+ });
+}
+function approvalText(d,reason){
+ const lines=[d.text];
+ // One line, bounded: a model-written reason must not imitate the dialog's own lines.
+ if(reason)lines.push('',`Claude's stated reason (not verified): ${reason.replace(/\s+/g,' ').slice(0,300)}`);
+ lines.push('','Only approve if this is what you want. Claude cannot approve this for you.');
+ return lines.join('\n');
+}
+async function approval(args,callId){
+ if(!/^[a-z][a-z0-9_]{0,99}$/.test(args.method))return {status:'forbidden',summary:'This action is not supported by the Web Blink control bridge',warnings:[]};
+ if(['browser_connect','learn_start_guided','learn_start','learn_stop'].includes(args.method))
+  args={...args,params:{...args.params,_flowId:browserFlowId}};
+ if(args.method==='runtime_setup')return prepareRuntime(args.params,callId);
+ if(args.method==='browser_restart')return {status:'restart_not_isolated',summary:'Blink cannot restart just this profile without risking other profiles in the shared browser instance. No windows were closed. Use live connection or the optional PW extension; use safe reopen for recovery.',data:{closedWindows:false,nextActions:[
+  {tool:'blink_connect_browser',params:{browser:args.params?.browser},label:'Connect without closing any windows'},
+  {tool:'blink_restore_browser',params:{browser:args.params?.browser},label:'For recovery: reopen the selected profile and request saved-session restore; close nothing'}]},warnings:[]};
+ if(['learn_start','learn_start_guided','browser_connect','browser_restore','browser_select','browser_permission_open','browser_extension_open','browser_setup'].includes(args.method)
+    && !doctor().data.capabilities.runtime){
+  const ready=await prepareRuntime({},callId);if(ready.status!=='ok')return ready;
+ }
+ const request={method:args.method,params:args.params};
+ // Validation, the exact-parameter digest and the user's approval policy come from the local runtime and its
+ // trusted settings file; never from tool arguments.
+ const described=await backend('describe',request,['blink.approval','describe']);
+ if(described.status!=='ok')return described;
+ const declined={status:'declined',summary:'The request was cancelled; nothing was changed',warnings:[]};
+ const apply=()=>cancelled.has(callId)?declined
+  :backend('apply',{...request,digest:described.data.exactParametersSha256},['blink.approval','apply'],APPROVAL_WAIT);
+ if(cancelled.has(callId))return declined;
+ // Default policy: the user's order authorizes the exact described action; no dialog, whatever the client supports.
+ if(described.data.mode==='none')return apply();
+ if(described.data.mode!=='dialog')return {status:'configuration_error',summary:'Unknown approval policy; nothing was changed',warnings:[]};
+ // Opt-in dialog policy (the user set approvals to dialog). Local, reversible actions still run at once.
+ const fallback={method:args.method,command:`blink human ${args.method} --input <file with the parameters JSON>`};
+ if(described.data.immediate===true)return apply();
+ if(!canElicit)return {status:'approval_unavailable',summary:'Approval dialogs are switched on, but this client cannot show one; the human must run the CLI command',data:fallback,warnings:[]};
+ const text=approvalText(described.data,args.reason);
+ if(text.length>DIALOG_LIMIT)return {status:'approval_too_large',summary:'This action is too large to review in a dialog; the human must use the CLI command',data:fallback,warnings:[]};
+ // One click: Accept approves, Decline or Esc does not (no form fields: a field made Accept count as decline).
+ const answer=await elicit(text+'\n\nAccept = approve and run it. Decline = do nothing.',{type:'object',properties:{}},callId);
+ if(answer?.action!=='accept')
+  return {status:'declined',summary:'The human did not approve this action; nothing was changed',data:{method:args.method},warnings:[]};
+ return apply();
+}
+async function prepareRuntime(params,callId){
+ if(!params||typeof params!=='object'||Array.isArray(params)||Object.keys(params).length)
+  return {status:'invalid_arguments',summary:'Runtime preparation takes no configuration or account data.',warnings:[]};
+ let policy='none';
+ try{
+  const config=path.join(process.env.BLINK_CONFIG_DIR||path.join(path.resolve(process.env.BLINK_HOME||path.join(os.homedir(),'.web-blink')),'config'),'settings.json');
+  if(fs.existsSync(config)){
+   for(let current=path.dirname(config);;current=path.dirname(current)){
+    if(fs.existsSync(current)&&(fs.lstatSync(current).isSymbolicLink()||fs.existsSync(path.join(current,'.git'))))throw Error();
+    if(path.dirname(current)===current)break;
+   }
+   const info=fs.lstatSync(config);if(!info.isFile()||info.isSymbolicLink()||info.size>131072)throw Error();
+   if(process.platform!=='win32'&&((info.mode&0o077)||info.uid!==process.getuid()))throw Error();
+   const document=JSON.parse(fs.readFileSync(config,'utf8'));if(document.schemaVersion!==1||!document.defaults||!document.blinks)throw Error();policy=document.approvals??'none';
+   if(!['none','dialog'].includes(policy))throw Error();
+  }
+ }catch{return {status:'configuration_error',summary:'Blink cannot read its approval preference. Preparation has not started.',warnings:[]};}
+ if(policy==='dialog'){
+  if(!canElicit)return {status:'approval_unavailable',summary:'Your Blink preference requires a confirmation dialog, but this host cannot display it. Preparation has not started.',warnings:[]};
+  const answer=await elicit('Prepare Blink on this computer? This downloads Python and required libraries into '+runtimePaths().directory+
+   '. It does not open a browser or read browser logins. Accept prepares it once; Decline leaves it unchanged.',{type:'object',properties:{}},callId);
+  if(answer?.action!=='accept')return {status:'declined',summary:'Blink preparation was declined.',warnings:[]};
+ }
+ if(cancelled.has(callId))return {status:'declined',summary:'Blink preparation was cancelled before starting.',warnings:[]};
+ return new Promise(resolve=>{
+  let child,output='',done=false;
+  const finish=result=>{if(!done){done=true;clearTimeout(timer);resolve(result);}};
+  const timer=setTimeout(()=>{child?.kill();finish({status:'env_unavailable',summary:'Blink preparation timed out. Retry preparation; no browser has been opened.',warnings:[]});},270000);
+  try{child=spawn(process.execPath,[path.join(root,'mcp/setup-runtime.mjs'),'--json'],{cwd,env:process.env,windowsHide:true,stdio:['ignore','pipe','ignore']});}
+  catch{finish({status:'env_unavailable',summary:'Blink could not start its preparation component.',warnings:[]});return;}
+  child.on('error',()=>finish({status:'env_unavailable',summary:'Blink could not start its preparation component.',warnings:[]}));
+  child.stdout.on('data',data=>{output+=data.toString('utf8');if(Buffer.byteLength(output)>65536){child.kill();finish({status:'env_unavailable',summary:'Blink preparation returned an invalid result.',warnings:[]});}});
+  child.on('close',()=>{try{const result=JSON.parse(output);if(typeof result.status!=='string')throw Error();finish(result);}
+   catch{finish({status:'env_unavailable',summary:'Blink preparation did not complete. The browser and its logins were not accessed.',warnings:[]});}});
+ });
+}
+function rpcError(id,code,message){return {jsonrpc:'2.0',id,error:{code,message}};}
+function actionError(result,stage,dispatched=null){
+ if(['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large','waiting_for_browser','confirmation_required','learning_required','blink_available','activation_required','discovery_incomplete','ambiguous_service','learning_offer','app_url_required','discovery_changed'].includes(result.status)||result.data?.error)return result;
+ const safeStage=typeof stage==='string'&&/^[a-z_]{1,100}$/.test(stage)?stage:'tool_action';
+ const code=typeof result.status==='string'&&/^[a-z_]{1,100}$/.test(result.status)?result.status:'internal_error';
+ if(['forbidden','invalid_arguments','configuration_error'].includes(code))dispatched=false;
+ return {...result,data:{...(result.data&&typeof result.data==='object'&&!Array.isArray(result.data)?result.data:{}),error:{stage:safeStage,code,fieldPath:null,
+  correlationId:randomBytes(16).toString('hex'),httpStatus:null,dispatched,
+  recovery:'Inspect current status; reconcile the original intent for a write. Do not repeat the mutation.'}}};
+}
+function toolFailure(message,error){
+ const tool=tools.find(t=>t.name===message?.params?.name);
+ if(message?.method!=='tools/call'||!tool)return rpcError(message?.id??null,-32603,'Internal error');
+ const kinds=['TypeError','RangeError','SyntaxError','ReferenceError','Error'];
+ const operation=message.params?.arguments?.method??message.params?.arguments?.action??methods.get(tool.name);
+ return {jsonrpc:'2.0',id:message.id,result:{isError:true,content:[{type:'text',text:JSON.stringify(actionError({
+  status:'internal_error',summary:'Blink could not finish this tool action. Inspect its current state before retrying an action that may have changed anything.',
+  data:{tool:tool.name,operation:typeof operation==='string'&&/^[a-z_]{1,100}$/.test(operation)?operation:'tool_action',
+        errorType:kinds.includes(error?.name)?error.name:'Error'},warnings:[]},operation))}]}};
+}
+function validArguments(tool,args){
+ if(!args||typeof args!=='object'||Array.isArray(args))return false;
+ const schema=tool.inputSchema;
+ if(Object.keys(args).some(k=>!Object.hasOwn(schema.properties,k))||schema.required.some(k=>!(k in args)))return false;
+ for(const [k,v]of Object.entries(args)){
+  const p=schema.properties[k];
+  if(p.type==='string'&&(typeof v!=='string'||v.length<(p.minLength||0)||v.length>(p.maxLength||100000)))return false;
+  if(p.enum&&!p.enum.includes(v))return false;
+  if(p.type==='object'&&(!v||typeof v!=='object'||Array.isArray(v)))return false;
+  if(p.type==='boolean'&&typeof v!=='boolean')return false;
+  if(p.type==='number'&&(typeof v!=='number'||!Number.isFinite(v)||v<(p.minimum??-Infinity)))return false;
+  if(p.type==='integer'&&(!Number.isInteger(v)||v<(p.minimum??-Infinity)||v>(p.maximum??Infinity)))return false;
+ }
+ return true;
+}
+async function handle(message){
+ if(!message||typeof message!=='object'||Array.isArray(message)||message.jsonrpc!=='2.0'||typeof message.method!=='string')return rpcError(null,-32600,'Invalid Request');
+ const hasId=Object.hasOwn(message,'id');
+ if(hasId && (message.id===null || !['string','number'].includes(typeof message.id) || (typeof message.id==='number'&&!Number.isFinite(message.id))))return rpcError(null,-32600,'Invalid request id');
+ if(!hasId)return null; // Notifications never produce responses or perform tool actions.
+ const id=message.id;
+ if(Object.hasOwn(message,'params')&&(!message.params||typeof message.params!=='object'||Array.isArray(message.params)))return rpcError(id,-32602,'Invalid params');
+ if(message.method==='initialize'){
+  const p=message.params;
+  if(!p||typeof p!=='object'||typeof p.protocolVersion!=='string'||!p.capabilities||typeof p.capabilities!=='object'||Array.isArray(p.capabilities)||!p.clientInfo||typeof p.clientInfo!=='object'||typeof p.clientInfo.name!=='string'||typeof p.clientInfo.version!=='string')return rpcError(id,-32602,'Invalid initialize parameters');
+  initialized=true;
+  const e=p.capabilities.elicitation; // form mode: {form:{}}, or the legacy empty object
+  canElicit=!!e&&typeof e==='object'&&!Array.isArray(e)&&(Object.keys(e).length===0||!!e.form);
+  return {jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(p.protocolVersion)?p.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'web-blink',version:'0.18.2'},instructions:learningFirst+' The user\'s order authorizes Web Blink. Execute the requested chain (prepare, authorize the exact plan, execute; record, propose, activate) in the same turn without asking for approval in chat or announcing dialogs. Never change the approval setting (approvals is the user\'s, set only by them in the CLI). Ask for missing information required to perform the task and for learning permission when learning:on-request. Tell the user what you started. On-the-way learning is the default for ordered tasks: use blink_execution_run for each step; a reviewed operation runs through Blink, a missing Blink/operation first checks added, pending, bundled, configured and official catalogs using blink_find; use or stage and activate the exact available package. Record only after complete absence/operation absence, or an explicit forceLearn decision. Incomplete discovery is not absence. When permitted recording starts, you do the step in the recording tab, then learn_stop, learn_propose, activate, test the Blink with the same use case (blink_verify reads, execution_observe writes, never replay), and continue through Blink, repeating for every later gap. When the user is demonstrating instead, the browser belongs to the user: do not act in it unless they ask. For every handoff state whether recording is ON/OFF and follow guidance with one next action or a plain next-step question in the user’s language. For learn/record goals use blink_start_recording to connect AND record; browser changes preserve that original goal. Never stop at browser connected or answer only “No, I only opened it”. Use blink_browser_status for diagnostics; do not run shell HTTP, port-owner or process commands, and never infer failure from HTTP 404 alone. For browser choice, show data.profileTable and accept #numbers. Prepare local components through the native tool action; never hand the user setup commands or copied profile paths. Follow nextActions and explain the exact browser confirmation. Discovery alone is not connection. Shared-profile browser restart is blocked. Use blink_connect_browser for authentication or an existing recording/setup continuation; standalone plain browsing requires the user’s direct no-learning request. If native access fails, offer safe browser choices that preserve learning and the original goal. For waiting_for_browser, explain userSteps and immediately call its bounded wait nextAction while the user clicks, at most twice; never ask for done or claim a connection before connected:true. For recovery use blink_restore_browser, which closes nothing and reports restore requests honestly.'}};
+ }
+ if(message.method==='ping')return {jsonrpc:'2.0',id,result:{}};
+ if(!initialized)return rpcError(id,-32002,'Server is not initialized');
+ if(message.method==='tools/list'){
+  if(message.params?.cursor)return rpcError(id,-32602,'Unknown pagination cursor');
+  return {jsonrpc:'2.0',id,result:{tools}};
+ }
+ if(message.method==='tools/call'){
+  if(pluginChanged())return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify({status:'plugin_changed',summary:'Web Blink was updated. Restart its connector in your host app before using it again.',warnings:[]})}],isError:true}};
+  const p=message.params;
+  if(!p||typeof p!=='object'||typeof p.name!=='string')return rpcError(id,-32602,'Invalid tool call');
+  const tool=tools.find(t=>t.name===p.name);
+  if(!tool)return rpcError(id,-32602,'Unknown tool');
+  const args=p.arguments??{};
+  if(!validArguments(tool,args))return rpcError(id,-32602,'Invalid tool arguments');
+  const result=p.name==='blink_doctor'?await doctorWithDaemon():p.name==='blink_request_approval'?await approval(args,id)
+   :p.name==='blink_connect_browser'?await approval({method:'browser_connect',params:{...args,automatic:true}},id)
+   :p.name==='blink_start_recording'?await approval({method:'learn_start_guided',params:args},id)
+   :p.name==='blink_browser_status'?await backend('admin',{action:'browser_connection',...args,_flowId:browserFlowId})
+   :p.name==='blink_restore_browser'?await approval({method:'browser_restore',params:args},id)
+   :p.name==='blink_execution_run'||p.name==='blink_routine_run'?await approval({method:methods.get(p.name),params:args},id)
+   :process.platform==='win32'&&p.name==='blink_admin'&&args.action==='browsers'
+    ?{status:'ok',summary:'Local profile names and aliases (no Python or daemon required)',data:discoverWindows(args.browser,{refresh:args.refresh===true}),warnings:[]}
+    :await backend(methods.get(p.name),args);
+  return {jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(actionError(result,methods.get(p.name)))}],isError:!['ok','degraded','prepared','quarantined','approved','succeeded','resolved_done','declined','approval_unavailable','approval_too_large','waiting_for_browser','confirmation_required','learning_required','blink_available','activation_required','discovery_incomplete','ambiguous_service','learning_offer','app_url_required','discovery_changed'].includes(result.status)}};
+ }
+ return rpcError(id,-32601,'Method not found');
+}
+function send(value){if(value!==null)process.stdout.write(JSON.stringify(value)+'\n');}
+let pending='',dropping=false,queue=Promise.resolve();
+const decoder=new StringDecoder('utf8');
+process.stdin.on('data',chunk=>{
+ const data=decoder.write(chunk);
+ pending+=data;
+ while(true){
+  const end=pending.indexOf('\n');
+  if(end<0)break;
+  const line=pending.slice(0,end);pending=pending.slice(end+1);
+  if(dropping){dropping=false;continue;}
+  if(Buffer.byteLength(line)>LIMIT){send(rpcError(null,-32700,'Message exceeds transport limit'));continue;}
+  let message;
+  try{message=JSON.parse(line);}catch{queue=queue.then(()=>send(rpcError(null,-32700,'Parse error')));continue;}
+  if(message&&typeof message==='object'&&!Array.isArray(message)&&!Object.hasOwn(message,'method')&&awaiting.has(message.id)){
+   // A client answer to our own approval dialog: never queued behind the tool call that waits for it.
+   const done=awaiting.get(message.id);awaiting.delete(message.id);done(message.error?{action:'cancel'}:message.result);continue;
+  }
+  if(message?.method==='notifications/cancelled'&&['string','number'].includes(typeof message.params?.requestId)){
+   // A cancelled tool call must not stay approvable, whether its dialog is open, pending or not yet shown.
+   const call=message.params.requestId;
+   if(cancelled.size>=1000)cancelled.clear();
+   cancelled.add(call);
+   const dialog=dialogs.get(call);const done=awaiting.get(dialog);awaiting.delete(dialog);done?.({action:'cancel'});continue;
+  }
+  queue=queue.then(async()=>{
+   try{send(await handle(message));}catch(error){send(toolFailure(message,error));}
+  });
+ }
+ if(Buffer.byteLength(pending)>LIMIT){pending='';dropping=true;send(rpcError(null,-32700,'Message exceeds transport limit'));}
+});
+let closing=false;
+function shutdown(){
+ if(closing)return;closing=true;process.stdin.pause();
+ for(const resolve of awaiting.values())resolve({action:'cancel'});awaiting.clear();
+ queue.finally(()=>{
+  if(usedBackend){
+   try{
+    const launch=launcher();
+    const env={...process.env,...(launch.env||{}),PYTHONPATH:codeRoot,PYTHONDONTWRITEBYTECODE:'1',
+     BLINK_CONNECTOR_ID:connector,BLINK_CONNECTOR_PID:String(process.pid),PYTHONUTF8:'1',PYTHONIOENCODING:'utf-8'};
+    delete env.PYTHONHOME;
+    spawnSync(launch.command,[...launch.args,'-m','blink.client','--retire-idle','--plugin-root',root,
+     ...(process.env.BLINK_STATE_DIR?['--state-dir',process.env.BLINK_STATE_DIR]:[])],
+     {cwd,env,stdio:'ignore',windowsHide:true,timeout:5000});
+   }catch{}
+  }
+ });
+}
+process.stdin.on('end',()=>{if(pending.trim()&&!dropping)send(rpcError(null,-32700,'Incomplete message'));shutdown();});
+process.on('SIGTERM',shutdown);
+process.on('SIGINT',shutdown);

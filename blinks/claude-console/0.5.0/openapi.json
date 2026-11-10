@@ -1,0 +1,2390 @@
+{
+  "openapi": "3.1.0",
+  "x-blink-schema": {
+    "version": "1.4.0"
+  },
+  "info": {
+    "title": "Claude Console (Managed Agents, experimental)",
+    "version": "0.5.0",
+    "description": "Managed Agents in the Anthropic Claude Console: deployments, agents, environments, vaults, runs, sessions, memory stores and skills. Uses your signed-in browser session."
+  },
+  "servers": [
+    {
+      "url": "https://platform.claude.com"
+    }
+  ],
+  "x-blink-service": {
+    "id": "claude-console",
+    "version": "0.5.0",
+    "history": [
+      {
+        "version": "0.1.0",
+        "date": "2026-11-09",
+        "note": "Managed Agents read operations and an identity read, learned from a recording."
+      },
+      {
+        "version": "0.2.0",
+        "date": "2026-11-09",
+        "note": "Console header parameters and optional beta/limit queries."
+      },
+      {
+        "version": "0.3.0",
+        "date": "2026-11-09",
+        "note": "18 Managed Agents read operations; workspace identity read."
+      },
+      {
+        "version": "0.4.0",
+        "date": "2026-11-09",
+        "note": "Writes: create environment, vault, agent and deployment; update and run deployments; archive vault credentials. Creating vault credentials is excluded by design (secret fields never pass through Blink)."
+      },
+      {
+        "version": "0.5.0",
+        "date": "2026-11-09",
+        "note": "Public bundled edition: workspace, organization and Console header values are your own private variables; beta=true is the default."
+      }
+    ],
+    "requestedOrigins": [
+      "https://platform.claude.com"
+    ],
+    "appOrigin": "https://platform.claude.com",
+    "auth": {
+      "cookies": [
+        "sessionKey",
+        "sessionKeyLC",
+        "sessionKeyV3",
+        "sessionKeyV3LC",
+        "lastActiveOrg",
+        "routingHint"
+      ],
+      "kind": "cookie-session",
+      "probe": "getVault"
+    },
+    "exec": {
+      "allowed": [
+        "in_page"
+      ],
+      "preferred": "in_page"
+    },
+    "variables": {
+      "workspaceId": {
+        "description": "Your Console workspace ID, from the private Blink",
+        "in": [
+          "header"
+        ]
+      },
+      "organizationUuid": {
+        "description": "Your Console organization UUID, from the private Blink",
+        "in": [
+          "header"
+        ]
+      },
+      "anthropicVersion": {
+        "description": "The anthropic-version header your Console session sends",
+        "in": [
+          "header"
+        ]
+      },
+      "anthropicBeta": {
+        "description": "The anthropic-beta header your Console session sends",
+        "in": [
+          "header"
+        ]
+      },
+      "clientPlatform": {
+        "description": "The anthropic-client-platform header your Console session sends",
+        "in": [
+          "header"
+        ]
+      },
+      "directBrowserAccess": {
+        "description": "The anthropic-dangerous-direct-browser-access header your Console session sends",
+        "in": [
+          "header"
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/v1/deployments": {
+      "get": {
+        "operationId": "listDeployments",
+        "x-blink-effect": "read",
+        "summary": "listDeployments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      },
+      "post": {
+        "operationId": "createDeployment",
+        "x-blink-effect": "write",
+        "summary": "createDeployment",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "budget": {
+                    "type": "object",
+                    "properties": {
+                      "max_list_cost": {
+                        "type": "object",
+                        "properties": {
+                          "amount": {
+                            "type": "string"
+                          },
+                          "currency": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "environment_id": {
+                    "type": "string"
+                  },
+                  "initial_events": {
+                    "items": {
+                      "properties": {
+                        "content": {
+                          "items": {
+                            "properties": {
+                              "text": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "type": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "properties": {}
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "resources": {
+                    "items": {},
+                    "type": "array"
+                  },
+                  "vault_ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/deployments/{id}": {
+      "get": {
+        "operationId": "getDeployment",
+        "x-blink-effect": "read",
+        "summary": "getDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      },
+      "post": {
+        "operationId": "updateDeployment",
+        "x-blink-effect": "write",
+        "summary": "updateDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "operationId": "listAgents",
+        "x-blink-effect": "read",
+        "summary": "listAgents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      },
+      "post": {
+        "operationId": "createAgent",
+        "x-blink-effect": "write",
+        "summary": "createAgent",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "mcp_servers": {
+                    "items": {},
+                    "type": "array"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "properties": {}
+                  },
+                  "model": {
+                    "type": "object",
+                    "properties": {
+                      "effort": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "speed": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "skills": {
+                    "items": {},
+                    "type": "array"
+                  },
+                  "system": {
+                    "type": "string"
+                  },
+                  "tools": {
+                    "items": {
+                      "properties": {
+                        "configs": {
+                          "items": {
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "permission_policy": {
+                                "properties": {
+                                  "type": {
+                                    "type": "string"
+                                  }
+                                },
+                                "type": "object"
+                              },
+                              "type": {
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "default_config": {
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "permission_policy": {
+                              "properties": {
+                                "type": {
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "multiagent": {
+                    "properties": {
+                      "agents": {
+                        "items": {
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "type": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "number"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{id}": {
+      "get": {
+        "operationId": "getAgent",
+        "x-blink-effect": "read",
+        "summary": "getAgent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/environments": {
+      "get": {
+        "operationId": "listEnvironments",
+        "x-blink-effect": "read",
+        "summary": "listEnvironments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      },
+      "post": {
+        "operationId": "createEnvironment",
+        "x-blink-effect": "write",
+        "summary": "createEnvironment",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "config": {
+                    "properties": {
+                      "networking": {
+                        "properties": {
+                          "allow_mcp_servers": {
+                            "type": "boolean"
+                          },
+                          "allow_package_managers": {
+                            "type": "boolean"
+                          },
+                          "allowed_hosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "type": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "packages": {
+                        "properties": {
+                          "apt": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "cargo": {
+                            "items": {},
+                            "type": "array"
+                          },
+                          "gem": {
+                            "items": {},
+                            "type": "array"
+                          },
+                          "go": {
+                            "items": {},
+                            "type": "array"
+                          },
+                          "npm": {
+                            "items": {},
+                            "type": "array"
+                          },
+                          "pip": {
+                            "items": {},
+                            "type": "array"
+                          },
+                          "type": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "properties": {
+                      "owner": {
+                        "type": "string"
+                      },
+                      "purpose": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/environments/{id}": {
+      "get": {
+        "operationId": "getEnvironment",
+        "x-blink-effect": "read",
+        "summary": "getEnvironment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/vaults": {
+      "get": {
+        "operationId": "listVaults",
+        "x-blink-effect": "read",
+        "summary": "listVaults",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      },
+      "post": {
+        "operationId": "createVault",
+        "x-blink-effect": "write",
+        "summary": "createVault",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "metadata": {
+                    "properties": {},
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/vaults/{id}": {
+      "get": {
+        "operationId": "getVault",
+        "x-blink-effect": "read",
+        "summary": "getVault",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": [],
+        "x-blink-notes": "Identity read for binding. Limitation: it confirms access to your workspace vault, not which person is signed in, so another Console user with the same workspace would also pass. Before writes, record a current-user read with Blink (blink_start_recording on platform.claude.com) and bind to it."
+      }
+    },
+    "/v1/agents/{id}/versions": {
+      "get": {
+        "operationId": "listAgentVersions",
+        "x-blink-effect": "read",
+        "summary": "listAgentVersions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/vaults/{id}/credentials": {
+      "get": {
+        "operationId": "listVaultCredentials",
+        "x-blink-effect": "read",
+        "summary": "listVaultCredentials",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/deployment_runs": {
+      "get": {
+        "operationId": "listDeploymentRuns",
+        "x-blink-effect": "read",
+        "summary": "listDeploymentRuns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deployment_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/memory_stores": {
+      "get": {
+        "operationId": "listMemoryStores",
+        "x-blink-effect": "read",
+        "summary": "listMemoryStores",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/skills": {
+      "get": {
+        "operationId": "listSkills",
+        "x-blink-effect": "read",
+        "summary": "listSkills",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/sessions/{id}": {
+      "get": {
+        "operationId": "getSession",
+        "x-blink-effect": "read",
+        "summary": "getSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/sessions/{id}/events": {
+      "get": {
+        "operationId": "listSessionEvents",
+        "x-blink-effect": "read",
+        "summary": "listSessionEvents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Most items to return"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/vaults/{id}/credentials/{id2}/archive": {
+      "post": {
+        "operationId": "archiveVaultCredential",
+        "x-blink-effect": "write",
+        "summary": "archiveVaultCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id2",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": []
+      }
+    },
+    "/v1/deployments/{id}/run": {
+      "post": {
+        "operationId": "runDeployment",
+        "x-blink-effect": "write",
+        "summary": "runDeployment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "beta",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "true",
+              "description": "Console beta flag (always true)"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-workspace-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "workspaceId"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicVersion"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-beta",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "anthropicBeta"
+          },
+          {
+            "in": "header",
+            "name": "x-organization-uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "organizationUuid"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-client-platform",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "clientPlatform"
+          },
+          {
+            "in": "header",
+            "name": "anthropic-dangerous-direct-browser-access",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-blink-variable": "directBrowserAccess"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

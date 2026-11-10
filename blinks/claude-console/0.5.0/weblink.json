@@ -1,0 +1,16 @@
+{
+  "$schema": "urn:web-blink:schema:weblink:1",
+  "schemaVersion": 1,
+  "id": "claude-console",
+  "version": "0.5.0",
+  "name": "Claude Console (Managed Agents)",
+  "description": "Experimental. 22 operations for Managed Agents in the Anthropic Claude Console (platform.claude.com), learned from a recording. Uses your signed-in browser session; your workspace, organization and Console header values are private variables. Its identity read checks the workspace vault, not the signed-in person: record a current-user read before writes. No account data is included.",
+  "artifacts": [
+    {
+      "role": "openapi",
+      "path": "openapi.json",
+      "sha256": "b55e5790af978a0015f34c26ae7d3193b8ebab8e376c779199cb47506b7e5246",
+      "mediaType": "application/json"
+    }
+  ]
+}

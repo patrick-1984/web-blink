@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:web-blink:schema:weblink:1",
+  "title": "Web Blink weblink distribution contract v1 (draft)",
+  "x-blink-schema": {
+    "version": "1.1.0",
+    "released": "2026-10-30"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "id",
+    "version",
+    "name",
+    "description",
+    "artifacts"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "urn:web-blink:schema:weblink:1"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?![\\s\\S])"
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 60,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "path",
+          "sha256",
+          "mediaType"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "openapi",
+              "arazzo"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.json(?![\\s\\S])"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+          },
+          "mediaType": {
+            "const": "application/json"
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 2,
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "openapi"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "arazzo"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "minContains": 0,
+          "maxContains": 1
+        }
+      ]
+    },
+    "x-blink-schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "released": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?![\\s\\S])"
+        }
+      }
+    },
+    "x-blink-ext": {
+      "type": "object",
+      "maxProperties": 100,
+      "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+    }
+  },
+  "patternProperties": {
+    "^x-(?!blink-)": {}
+  }
+}

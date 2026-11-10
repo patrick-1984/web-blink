@@ -1,0 +1,117 @@
+{
+  "openapi": "3.1.0",
+  "x-blink-schema": {
+    "version": "1.4.0"
+  },
+  "info": {
+    "title": "US federal agency budgets (USAspending.gov)",
+    "version": "0.1.0",
+    "description": "Budgetary resources of every federal agency, read through the JSON the USAspending.gov Agency Profiles page itself uses. Read-only; no account."
+  },
+  "servers": [
+    {
+      "url": "https://api.usaspending.gov"
+    }
+  ],
+  "x-blink-service": {
+    "id": "usaspending-gov",
+    "version": "0.1.0",
+    "history": [
+      {
+        "version": "0.1.0",
+        "date": "2026-11-09",
+        "note": "Learned from a recording of www.usaspending.gov/agency"
+      }
+    ],
+    "requestedOrigins": [
+      "https://api.usaspending.gov"
+    ],
+    "appOrigin": "https://www.usaspending.gov",
+    "auth": {
+      "kind": "none"
+    },
+    "exec": {
+      "allowed": [
+        "direct"
+      ],
+      "preferred": "direct"
+    }
+  },
+  "paths": {
+    "/api/v2/references/toptier_agencies/": {
+      "get": {
+        "operationId": "agencyBudgets",
+        "x-blink-effect": "read",
+        "summary": "Budget of every federal agency for the current fiscal year",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "percentage_of_total_budget_authority",
+              "description": "What to sort by (default: share of the total budget)",
+              "enum": [
+                "percentage_of_total_budget_authority",
+                "budget_authority_amount",
+                "obligated_amount",
+                "outlay_amount",
+                "agency_name"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "description": "Largest first (desc) or smallest first (asc)",
+              "enum": [
+                "desc",
+                "asc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed in the recording"
+          }
+        },
+        "x-blink-verified": [],
+        "x-blink-notes": "Public US federal website (OMB M-23-22 permits scraping of federal public web content). Current fiscal year; amounts in US dollars; share is the part of total federal budgetary resources.",
+        "x-blink-display": {
+          "rows": "/results",
+          "columns": [
+            {
+              "path": "/agency_name",
+              "label": "Agency"
+            },
+            {
+              "path": "/budget_authority_amount",
+              "label": "Budgetary resources",
+              "format": "usd"
+            },
+            {
+              "path": "/percentage_of_total_budget_authority",
+              "label": "Share",
+              "format": "percent"
+            },
+            {
+              "path": "/obligated_amount",
+              "label": "Obligated",
+              "format": "usd"
+            },
+            {
+              "path": "/active_fy",
+              "label": "Fiscal year"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

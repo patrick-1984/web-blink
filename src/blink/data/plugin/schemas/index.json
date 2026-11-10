@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "schemas": [
+    {
+      "id": "urn:web-blink:schema:sources:1",
+      "path": "v1/sources.schema.json",
+      "version": "1.2.0",
+      "released": "2026-11-10",
+      "sha256": "a8e75bbff65a13323b9375061fffdba8ad61eaa99679ea3676ea12fdf89b01b4"
+    },
+    {
+      "id": "urn:web-blink:schema:catalog:1",
+      "path": "v1/catalog.schema.json",
+      "version": "1.1.0",
+      "released": "2026-10-30",
+      "sha256": "17c0c35296a5b38afe2f7f83c59a18a5b5adfa8e9d09b73874b8ed4d49ff03b2"
+    },
+    {
+      "id": "urn:web-blink:schema:weblink:1",
+      "path": "v1/weblink.schema.json",
+      "version": "1.1.0",
+      "released": "2026-10-30",
+      "sha256": "e482347f4c21c0bcc28c4694e9e6f9162f22d8fd09e079dfee02e76915abdeff"
+    },
+    {
+      "id": "urn:web-blink:schema:source-lock:1",
+      "path": "v1/source-lock.schema.json",
+      "version": "1.2.0",
+      "released": "2026-11-10",
+      "sha256": "7ddbe20dfd0b2fce817317e16778dfc9a070d6f7c82feadcad5f83b5f0f47ee3"
+    }
+  ],
+  "executionProfile": {
+    "status": "implemented",
+    "version": 1,
+    "support": "supported-subset",
+    "format": "OpenAPI 3.1 plus x-blink-*; restricted Arazzo 1.1",
+    "note": "The bundled compilers implement the explicitly bounded execution-v1 schemas; unsupported constructs fail closed.",
+    "schemas": [
+      {
+        "id": "urn:web-blink:schema:execution:1",
+        "path": "execution-v1/openapi.schema.json",
+        "version": "1.4.0",
+        "released": "2026-11-09",
+        "sha256": "11403a313fab38a52dd04e9b09f2a444ecc86ca468a182b839485e3a03d56bb0"
+      },
+      {
+        "id": "urn:web-blink:schema:arazzo-execution:1",
+        "path": "execution-v1/arazzo.schema.json",
+        "version": "1.0.0",
+        "released": "2026-10-30",
+        "sha256": "a51a6d7379580fde2cd9a3c8f561279daa7a16ba9f319c9dafa285ca630a748b"
+      }
+    ]
+  },
+  "configProfile": {
+    "status": "implemented",
+    "version": 1,
+    "schemas": [
+      {
+        "id": "urn:web-blink:schema:settings:1",
+        "path": "config-v1/settings.schema.json",
+        "version": "1.2.0",
+        "released": "2026-11-03",
+        "sha256": "49b85f533cfbd1574262a4103d800bd00012ff7fd6d6dfa9ea0caea7d9ec57ed"
+      }
+    ]
+  },
+  "privateProfile": {
+    "status": "implemented",
+    "version": 1,
+    "note": "Per-user private Blink data (identity, defaults, preferences, process notes, separately stored secrets); never part of a shared Blink.",
+    "schemas": [
+      {
+        "id": "urn:web-blink:schema:private-blink:1",
+        "path": "v1/private-blink.schema.json",
+        "version": "1.1.0",
+        "released": "2026-10-30",
+        "sha256": "71e2163115a9a44988004e223a46ed5c8e40bd168c419c6e29a2dff61a59f01f"
+      }
+    ]
+  },
+  "compatibility": {
+    "rule": "Editions are MAJOR.MINOR.PATCH with a release date. Newer readers accept older documents; a document may declare a higher MINOR edition (additive fields only) and is still read; removing or renaming a field requires a new MAJOR edition, which older readers refuse.",
+    "extensions": "x- prefixed keys (except the reserved x-blink- namespace) and the reserved x-blink-ext object are accepted and ignored where the schema allows them."
+  }
+}

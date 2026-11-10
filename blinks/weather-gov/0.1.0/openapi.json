@@ -1,0 +1,116 @@
+{
+  "openapi": "3.1.0",
+  "x-blink-schema": {
+    "version": "1.4.0"
+  },
+  "info": {
+    "title": "US weather alerts (National Weather Service)",
+    "version": "0.1.0",
+    "description": "Active watches, warnings and advisories from the National Weather Service. Read-only; no account."
+  },
+  "servers": [
+    {
+      "url": "https://api.weather.gov"
+    }
+  ],
+  "x-blink-service": {
+    "id": "weather-gov",
+    "version": "0.1.0",
+    "history": [
+      {
+        "version": "0.1.0",
+        "date": "2026-11-09",
+        "note": "Written from the public NWS alerts service (api.weather.gov/alerts/active); quick-start example"
+      }
+    ],
+    "requestedOrigins": [
+      "https://api.weather.gov"
+    ],
+    "appOrigin": "https://www.weather.gov",
+    "auth": {
+      "kind": "none"
+    },
+    "exec": {
+      "allowed": [
+        "direct"
+      ],
+      "preferred": "direct"
+    }
+  },
+  "paths": {
+    "/alerts/active": {
+      "get": {
+        "operationId": "activeAlerts",
+        "summary": "Active weather alerts for one state, optionally of one severity or kind",
+        "x-blink-effect": "read",
+        "x-blink-notes": "Public US federal service (OMB M-23-22). Each call is one on-demand read for a person, not a crawler. A state is required: the whole-country list is larger than one Blink response may be.",
+        "parameters": [
+          {
+            "name": "area",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 2,
+              "description": "Two-letter state or territory code, e.g. TX or FL"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Extreme",
+                "Severe",
+                "Moderate",
+                "Minor",
+                "Unknown"
+              ],
+              "description": "Only this severity"
+            }
+          },
+          {
+            "name": "event",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "description": "Only this kind of alert, e.g. \"Flood Warning\""
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active alerts (GeoJSON features), newest first"
+          }
+        },
+        "x-blink-display": {
+          "rows": "/features",
+          "columns": [
+            {
+              "path": "/properties/event",
+              "label": "Alert"
+            },
+            {
+              "path": "/properties/severity",
+              "label": "Severity"
+            },
+            {
+              "path": "/properties/areaDesc",
+              "label": "Area"
+            },
+            {
+              "path": "/properties/expires",
+              "label": "Until",
+              "format": "date"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
