@@ -1,0 +1,478 @@
+"""Bounded public daemon client with safe singleton autostart."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import socket
+import stat
+import subprocess
+import sys
+import time
+import re
+import uuid
+
+from .doctor import secure_state_directory
+
+PUBLIC_METHODS = frozenset({'find', 'services', 'search', 'describe', 'call_read', 'prepare', 'execute', 'verify', 'admin', 'doctor'})
+MAX_MESSAGE = 1_048_576
+
+
+def connect(path):
+    if os.name == 'nt':
+        from .windows import connect as pipe_connect
+        return pipe_connect(path)
+    info = path.lstat()
+    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+        raise ValueError('daemon socket ownership or permissions are unsafe')
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(35)
+    try:
+        sock.connect(str(path))
+    except Exception:
+        sock.close()
+        raise
+    return sock
+
+
+def _version(value):
+    try:
+        return tuple(int(part) for part in str(value).split('.')[:3])
+    except ValueError:
+        return None
+
+
+def _own_identity(plugin_root):
+    from . import __version__
+    from .paths import plugin_root as locate_root
+    return {'version': __version__, 'pluginRoot': str(locate_root(plugin_root))}
+
+
+def _start_daemon(state, plugin_root):
+    from .installation import current_root, external_python, register_root, snapshot, work_dir
+    from .paths import plugin_root as locate_root
+    trusted_root = current_root(locate_root(plugin_root))
+    if state.resolve().is_relative_to(trusted_root):
+        raise ValueError('state must be outside the plugin tree')
+    register_root(trusted_root)
+    source = trusted_root / 'src/blink'
+    code = snapshot(source if source.is_dir() else None)
+    command = [external_python(trusted_root), '-m', 'blink.daemon', '--state-dir', str(state),
+               '--plugin-root', str(trusted_root)]
+    environment = dict(os.environ)
+    environment['PYTHONUTF8'] = '1'
+    environment['PYTHONIOENCODING'] = 'utf-8'
+    environment.pop('PYTHONHOME', None)
+    environment['PYTHONPATH'] = str(code)
+    environment['PYTHONDONTWRITEBYTECODE'] = '1'
+    options = ({'creationflags': subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP}
+               if os.name == 'nt' else {'start_new_session': True})
+    subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, cwd=work_dir(state), env=environment,
+                     close_fds=True, **options)
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        try:
+            return connect(state / 'runtime.sock')
+        except (FileNotFoundError, ConnectionRefusedError):
+            time.sleep(0.05)
+    return None
+
+
+def _exchange(sock, method, params):
+    wire = json.dumps({'method': method, 'params': params or {}}, allow_nan=False).encode() + b'\n'
+    if len(wire) > MAX_MESSAGE:
+        raise ValueError('request exceeds transport limit')
+    sock.sendall(wire)
+    response = sock.makefile('rb').readline(MAX_MESSAGE + 1)
+    if len(response) > MAX_MESSAGE or not response.endswith(b'\n'):
+        raise ValueError('invalid daemon response size')
+    result = json.loads(response)
+    if not isinstance(result, dict) or not isinstance(result.get('status'), str):
+        raise ValueError('invalid daemon response')
+    return result
+
+
+def _legacy_daemon_pids(state):
+    """PIDs of this user's `blink.daemon --state-dir <state>` processes, matched exactly (paths may contain spaces)."""
+    target, pids = str(state), []
+    proc = Path('/proc')
+    if proc.is_dir():
+        for entry in proc.iterdir():
+            if not entry.name.isdigit() or int(entry.name) == os.getpid():
+                continue
+            try:
+                if entry.stat().st_uid != os.getuid():
+                    continue
+                argv = (entry / 'cmdline').read_bytes().decode('utf-8', 'replace').split('\0')
+            except OSError:
+                continue
+            if 'blink.daemon' in argv and '--state-dir' in argv and argv[argv.index('--state-dir') + 1:][:1] == [target]:
+                pids.append(int(entry.name))
+        return pids
+    try:
+        listing = subprocess.run(['ps', '-U', str(os.getuid()), '-o', 'pid=,args='], capture_output=True,
+                                 text=True, timeout=5, cwd=state).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    for line in listing.splitlines():
+        pid, _, args = line.strip().partition(' ')
+        if pid.isdigit() and int(pid) != os.getpid() and ' -m blink.daemon ' in f' {args} ' and (
+                args.endswith(f'--state-dir {target}') or f'--state-dir {target} --' in args):
+            pids.append(int(pid))
+    return pids
+
+
+def _lock_free(state):
+    from .filelock import acquire, release
+    try:
+        fd = os.open(state / 'runtime.lock', os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0))
+    except FileNotFoundError:
+        return True
+    try:
+        acquire(fd)
+        release(fd)
+        return True
+    except BlockingIOError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def _wait_lock_free(state, seconds=8):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if _lock_free(state):
+            return True
+        time.sleep(0.1)
+    return _lock_free(state)
+
+
+def _probe(state):
+    """The running daemon's handshake identity: a dict, 'legacy' (a pre-0.2.8 daemon without one) or None."""
+    try:
+        sock = connect(state / 'runtime.sock')
+        try:
+            doctor = _exchange(sock, 'doctor', {})
+        finally:
+            sock.close()
+    except Exception:
+        return None
+    if doctor.get('status') == 'daemon_retiring':
+        return 'retiring'
+    identity = doctor.get('data', {}).get('daemon') if isinstance(doctor.get('data'), dict) else None
+    return identity if isinstance(identity, dict) else 'legacy'
+
+
+def _outdated(identity, own):
+    if identity == 'legacy':
+        return True
+    if not isinstance(identity, dict):
+        return False
+    daemon, mine = _version(identity.get('version')), _version(own['version'])
+    return daemon is None or (mine is not None and daemon < mine)
+
+
+LEGACY_NOTICE = ('The running Web Blink daemon is from before version 0.2.8 and could not be replaced automatically; '
+                 'request restart_daemon through blink_request_approval, then record again.')
+
+
+def _replace_if_outdated(state, plugin_root):
+    """Handshake. An older current-style daemon is asked to retire: it checks under its own call lock that it is
+    idle and not recording, then refuses all new work and exits. A pre-0.2.8 daemon is never killed automatically.
+    A newer daemon is kept, so two installed versions never take turns restarting each other."""
+    own = _own_identity(plugin_root)
+    identity = _probe(state)
+    if identity == 'retiring':
+        return 'restarted' if _wait_lock_free(state) else 'The daemon is still retiring; call again shortly.'
+    if not _outdated(identity, own):
+        return None
+    if identity == 'legacy':
+        # Pre-0.2.8 daemons cannot report a recording; they are replaced in the background (owner decision).
+        result = _stop_legacy(state)
+        return 'restarted' if result is True else result
+    try:
+        sock = connect(state / 'runtime.sock')
+        try:
+            answer = _exchange(sock, 'retire', {'ifOlderThan': own['version']})
+        finally:
+            sock.close()
+    except Exception:
+        answer = {'status': 'error'}
+    if answer.get('status') == 'ok' and _wait_lock_free(state):
+        return 'restarted'
+    if answer.get('status') == 'recording':
+        return (f'The local daemon runs Web Blink {identity.get("version")} while this plugin is {own["version"]}; it is '
+                'recording, so it keeps running. Stop the recording; the next call starts the current daemon.')
+    return (f'The local daemon runs Web Blink {identity.get("version")} while this plugin is {own["version"]} and did '
+            'not step down; call blink_doctor again shortly.')
+
+
+def _stop_legacy(state):
+    import signal
+    pids = _legacy_daemon_pids(state)
+    if _probe(state) != 'legacy' or not pids:  # re-check right before stopping, so a replacement is never hit
+        return LEGACY_NOTICE
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return True if _wait_lock_free(state) else LEGACY_NOTICE
+
+
+def restart_legacy_daemon(state_dir=None, plugin_root=None):
+    """Explicit restart (restart_daemon): always replaces the running daemon and verifies a different PID.
+
+    Separate from automatic upgrade retirement (``_replace_if_outdated``), which only retires an idle, older daemon.
+    A current daemon stops on an exact-command permit (``shutdown_daemon``); an older current-style daemon retires;
+    a pre-0.2.8 daemon is stopped by exact same-owner/state process matching. Dispatching intents are never
+    resubmitted: the new daemon's startup recovery marks them outcome_unknown."""
+    import signal
+    state = secure_state_directory(state_dir)
+    # The caller is the current connector/CLI, never the old daemon's reported root.
+    from .paths import plugin_root as locate_root
+    from .installation import current_root
+    plugin_root = current_root(locate_root(plugin_root))
+    if not plugin_root.is_dir():
+        return {'status': 'not_restarted', 'summary': 'Current plugin root is missing; restart from the updated connector',
+                'warnings': []}
+    own = _own_identity(plugin_root)
+    identity = _probe(state)
+    if identity is None:
+        result = request('doctor', state_dir=state, plugin_root=plugin_root)
+        if result.get('status') not in ('ok', 'degraded'):
+            return result
+        return {'status': 'ok', 'summary': 'No daemon was running; the current one was started',
+                'data': result.get('data'), 'warnings': result.get('warnings', [])}
+    before = identity.get('pid') if isinstance(identity, dict) else None
+    if isinstance(identity, dict) and not _outdated(identity, own):
+        daemon, mine = _version(identity.get('version')), _version(own['version'])
+        if daemon is not None and mine is not None and daemon > mine:
+            return {'status': 'not_restarted', 'summary': f'The running daemon is Web Blink {identity.get("version")}, newer '
+                    f'than this plugin ({own["version"]}); restart it from the newer installation', 'warnings': []}
+        answer = control_request('shutdown_daemon', {}, state_dir=state, plugin_root=plugin_root, autostart=False)
+        if answer.get('status') not in ('ok', 'control_outcome_unknown'):
+            return {'status': 'not_restarted', 'summary': 'The daemon did not accept the restart: ' + str(answer.get('summary', '')),
+                    'warnings': answer.get('warnings', [])}
+        if not _wait_lock_free(state, 20):
+            return {'status': 'not_restarted', 'summary': 'The daemon did not stop', 'warnings': []}
+    elif isinstance(identity, dict):
+        notice = _replace_if_outdated(state, plugin_root)
+        if notice != 'restarted':
+            return {'status': 'not_restarted', 'summary': notice, 'warnings': []}
+    else:
+        pids = _legacy_daemon_pids(state)
+        if _probe(state) != 'legacy' or not pids:  # re-check right before stopping, so a replacement is never hit
+            return {'status': 'not_restarted', 'summary': 'The old daemon could not be identified safely', 'warnings': []}
+        before = pids[0] if len(pids) == 1 else None
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+        if not _wait_lock_free(state):
+            return {'status': 'not_restarted', 'summary': 'The old daemon did not stop', 'warnings': []}
+    result = request('doctor', state_dir=state_dir, plugin_root=plugin_root)  # a default folder may move first
+    if result.get('status') not in ('ok', 'degraded'):
+        return {'status': 'not_restarted', 'summary': 'The old daemon stopped but the current one did not start: '
+                + str(result.get('summary', '')), 'data': result.get('data'), 'warnings': result.get('warnings', [])}
+    after = ((result.get('data') or {}).get('daemon') or {}).get('pid')
+    if not isinstance(after, int) or (before is not None and after == before):
+        return {'status': 'not_restarted', 'summary': 'The daemon process was not replaced',
+                'data': result.get('data'), 'warnings': result.get('warnings', [])}
+    data = dict(result.get('data') or {}, previousPid=before)
+    return {'status': 'ok', 'summary': 'The daemon was restarted on the current version (new process)',
+            'data': data, 'warnings': result.get('warnings', [])}
+
+
+def request(method, params=None, *, state_dir=None, plugin_root=None, autostart=True):
+    if params is None:
+        params = {}
+    if method not in PUBLIC_METHODS or not isinstance(params, dict):
+        raise ValueError('only public runtime methods can use this client')
+    state = secure_state_directory(state_dir)
+    path = state / 'runtime.sock'
+    sock, notice, restarted = None, None, False
+    try:
+        sock = connect(path)
+    except (FileNotFoundError, ConnectionRefusedError):
+        if not autostart:
+            raise
+    if sock is not None and autostart:
+        notice = _replace_if_outdated(state, plugin_root)
+        if notice == 'restarted':
+            sock.close()
+            sock, notice, restarted = None, None, True
+            if not state_dir:  # the old daemon let go of its folder: a deferred move to ~/.web-blink happens now
+                state = secure_state_directory()
+    if sock is None:
+        sock = _start_daemon(state, plugin_root)
+        if sock is None:
+            return {'status': 'env_unavailable', 'summary': 'Local daemon did not become available', 'warnings': []}
+        # Another, older installation may have won the start race: check what actually answers.
+        if _outdated(_probe(state), _own_identity(plugin_root)):
+            notice = LEGACY_NOTICE if _probe(state) == 'legacy' else (
+                'An older Web Blink daemon answered after start; call blink_doctor again to replace it.')
+    try:
+        connector = os.environ.get('BLINK_CONNECTOR_ID')
+        if connector:
+            _exchange(sock, 'connector', {'id': connector, 'pid': int(os.environ['BLINK_CONNECTOR_PID'])})
+            sock.close()
+            sock = connect(state / 'runtime.sock')
+        result = _exchange(sock, method, params)
+    finally:
+        sock.close()
+    if notice:
+        result.setdefault('warnings', []).append(notice)
+        if isinstance(result.get('data'), dict):
+            result['data']['daemonOutdated'] = True
+    if method == 'doctor' and isinstance(result.get('data'), dict):
+        own = _own_identity(plugin_root)
+        daemon = result['data'].get('daemon')
+        result['data']['client'] = own
+        from .home import home_dir
+        result['data']['homeDir'] = str(home_dir())
+        result['data']['daemonMatchesClient'] = isinstance(daemon, dict) and daemon.get('version') == own['version']
+        from .installation import update_diagnostic
+        diagnostic = update_diagnostic(daemon, own['pluginRoot'])
+        if diagnostic:
+            result['data']['updateBlocker'] = diagnostic
+            result.setdefault('warnings', []).append(diagnostic['remedy'])
+        if restarted:
+            result['data']['daemonRestarted'] = True
+    return result
+
+
+def retire_idle(state_dir=None, plugin_root=None):
+    """Connector shutdown: no autostart, no permit, no interruption of work or recordings."""
+    state = secure_state_directory(state_dir)
+    sock = connect(state / 'runtime.sock')
+    try:
+        return _exchange(sock, 'retire', {'ifIdle': True, 'pluginRoot': str(_own_identity(plugin_root)['pluginRoot']),
+                                         'connector': os.environ.get('BLINK_CONNECTOR_ID')})
+    finally:
+        sock.close()
+
+
+def stop_daemon(state_dir=None, plugin_root=None):
+    """Explicit local CLI stop, including deployed 0.12 daemons that lack ifIdle retirement."""
+    state = secure_state_directory(state_dir)
+    if _probe(state) is None:
+        return {'status': 'ok', 'summary': 'No Blink daemon is running', 'warnings': []}
+    try:
+        result = control_request('shutdown_daemon', {}, state_dir=state, plugin_root=plugin_root, autostart=False)
+    except (OSError, ValueError):
+        if _wait_lock_free(state, 20):
+            return {'status': 'ok', 'summary': 'Blink daemon stopped', 'warnings': []}
+        return {'status': 'not_stopped', 'summary': 'Blink daemon is not responding; restart Windows before updating',
+                'warnings': []}
+    if result.get('status') == 'ok':
+        if _wait_lock_free(state, 20):
+            return {'status': 'ok', 'summary': 'Blink daemon stopped', 'warnings': []}
+        return {'status': 'not_stopped', 'summary': 'Blink daemon has not stopped; restart Windows before updating',
+                'warnings': []}
+    return result
+
+
+def control_request(method, params=None, *, state_dir=None, plugin_root=None, autostart=True):
+    """Exact-command control helper for the CLI and the MCP control bridge (blink.approval apply).
+
+    The caller decides that this exact command is authorized (the user's order under the default
+    approval policy, or an accepted dialog/terminal confirmation when the user opted into one).
+    It is not reachable from blink.client's public stdin entry or the public MCP tools. A permit
+    stores only command identity/digest (single use, 60 s expiry); account material travels over
+    the private socket.
+    """
+    from .storage import Store, digest, encoded, strict_json
+    if params is None:
+        params = {}
+    if not isinstance(method, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,99}', method) or not isinstance(params, dict):
+        raise ValueError('invalid native command')
+    if method == 'browser_restart':
+        from .browser_process import RESTART_BLOCKED
+        from .browsers import failure_guidance
+        return {'status': 'restart_not_isolated', 'summary': RESTART_BLOCKED,
+                'data': failure_guidance('restart_not_isolated', params), 'warnings': []}
+    params = strict_json(encoded(params))  # Freeze the object used for both digest and wire bytes.
+    if len(encoded(params).encode()) > MAX_MESSAGE - 500:
+        raise ValueError('native command exceeds transport limit')
+    state = secure_state_directory(state_dir)
+    ready = request('doctor', {}, state_dir=state, plugin_root=plugin_root, autostart=autostart)
+    if ready.get('status') not in ('ok', 'degraded'):
+        return ready
+    store = Store(state)
+    now = time.time()
+    permit_id = uuid.uuid4().hex
+    permit = {'id': permit_id, 'method': method, 'paramsDigest': digest(params),
+              'issuedAt': now, 'expiresAt': now + 60, 'state': 'issued'}
+    with store.transaction() as db:
+        permits = store.list('human_permit', connection=db)
+        for previous in permits:
+            if previous.get('expiresAt', 0) <= now:
+                store.delete('human_permit', previous['id'], connection=db)
+        if sum(p.get('state') == 'issued' and p.get('expiresAt', 0) > now for p in permits) >= 100:
+            raise ValueError('too many outstanding native commands')
+        store.put('human_permit', permit_id, permit, connection=db)
+    sock = None
+    try:
+        sock = connect(state / 'control.sock')
+        if method in ('browser_setup', 'browser_connect', 'browser_restart', 'learn_start', 'learn_start_guided',
+                      'execution_run', 'routine_run', 'routine_step', 'learn_stop', 'learn_propose', 'learn_import_har',
+                      'learn_accept_partial', 'activate_blink', 'forget_service', 'purge_state', 'forget_capture'):
+            # Stopping drains and writes the whole session; proposals read it back. A short socket timeout
+            # reported these as lost although they completed.
+            sock.settimeout(540)
+    except (OSError, ValueError):
+        return {'status': 'env_unavailable', 'summary': 'Private native control socket is unavailable; restart the local daemon', 'warnings': []}
+    try:
+        wire = encoded({'method': method, 'params': params, 'permit': permit_id}).encode() + b'\n'
+        sock.sendall(wire)
+        response = sock.makefile('rb').readline(MAX_MESSAGE + 1)
+        if len(response) > MAX_MESSAGE or not response.endswith(b'\n'):
+            raise ValueError('invalid native response limit')
+        result = strict_json(response)
+        if not isinstance(result, dict) or not isinstance(result.get('status'), str):
+            raise ValueError('invalid native response')
+        for warning in ready.get('warnings', []):  # e.g. an outdated daemon: never dropped on approved actions
+            result.setdefault('warnings', []).append(warning)
+        if (ready.get('data') or {}).get('daemonOutdated') and isinstance(result.get('data'), dict):
+            result['data']['daemonOutdated'] = True
+        return result
+    except Exception:
+        return {'status': 'control_outcome_unknown',
+                'summary': 'Native command response was lost; inspect its existing state before issuing another command',
+                'warnings': []}
+    finally:
+        sock.close()
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--state-dir')
+    parser.add_argument('--plugin-root')
+    parser.add_argument('--retire-idle', action='store_true')
+    args = parser.parse_args(argv)
+    try:
+        if args.retire_idle:
+            try:
+                retire_idle(args.state_dir, args.plugin_root)
+            except (OSError, ValueError):
+                pass  # Closing an unused connector must never start a daemon.
+            return 0
+        raw = sys.stdin.buffer.readline(MAX_MESSAGE + 1)
+        if len(raw) > MAX_MESSAGE:
+            raise ValueError('request exceeds transport limit')
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or set(payload) - {'method', 'params'}:
+            raise ValueError('invalid request shape')
+        result = request(payload.get('method'), payload.get('params', {}), state_dir=args.state_dir, plugin_root=args.plugin_root)
+    except Exception:
+        result = {'status': 'invalid_request', 'summary': 'Request failed; check diagnostics and parameters', 'warnings': []}
+    print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

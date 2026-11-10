@@ -1,0 +1,16 @@
+{
+  "$schema": "urn:web-blink:schema:weblink:1",
+  "schemaVersion": 1,
+  "id": "entra-microsoft",
+  "version": "0.1.2",
+  "name": "Microsoft Entra (Graph)",
+  "description": "Experimental. 73 Microsoft Graph operations used by the Entra admin center: users, groups, members and owners, administrative units, roles, PIM requests, organization. 0.1.2: delete a group, remove a member or owner accept 204. 0.1.1: create a group inside an administrative unit with its description and owners in one request; add member/owner accepts 204. The sign-in recipe is account-specific and not shipped (auth.storage is empty): add it as a reviewed local patch from your own signed-in Entra browser before use. No tenant data is included.",
+  "artifacts": [
+    {
+      "role": "openapi",
+      "path": "openapi.json",
+      "sha256": "891ff241542eac3205ad588462ad9e0c15654780ee84595769c902ac0c6d63ec",
+      "mediaType": "application/json"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "urn:web-blink:schema:weblink:1",
+  "schemaVersion": 1,
+  "id": "nasa-gov",
+  "version": "0.1.0",
+  "name": "NASA news releases",
+  "description": "Newest public NASA news releases from www.nasa.gov. Read-only, no account, no browser needed.",
+  "artifacts": [
+    {
+      "role": "openapi",
+      "path": "openapi.json",
+      "sha256": "87d57dc8ea250e92069833b0bfc610641366ffe8078842c702c824511c366dce",
+      "mediaType": "application/json"
+    }
+  ]
+}

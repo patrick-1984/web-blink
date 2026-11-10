@@ -1,0 +1,2361 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "entra-microsoft",
+    "version": "0.1.2"
+  },
+  "servers": [
+    {
+      "url": "https://graph.microsoft.com"
+    }
+  ],
+  "x-blink-service": {
+    "id": "entra-microsoft",
+    "version": "0.1.2",
+    "requestedOrigins": [
+      "https://graph.microsoft.com"
+    ],
+    "appOrigin": "https://entra.microsoft.com",
+    "auth": {
+      "kind": "bearer-storage",
+      "storage": [],
+      "probe": "getSignedInUser"
+    },
+    "exec": {
+      "allowed": [
+        "in_page"
+      ],
+      "preferred": "in_page"
+    },
+    "history": [
+      {
+        "version": "0.1.0",
+        "date": "2026-11-03",
+        "note": "Graph operations extracted from two captures; documented group and PIM extensions. Authentication storage recipe and live identity verification pending."
+      },
+      {
+        "version": "0.1.1",
+        "date": "2026-11-10",
+        "note": "Create group in an administrative unit accepts description and owners@odata.bind; add member/owner by reference accepts 204 No Content. Tested live on 0.18.0: 19 groups with owners, 12 nestings."
+      },
+      {
+        "version": "0.1.2",
+        "date": "2026-11-10",
+        "note": "Delete group, remove member and remove owner accept Microsoft Graph 204 No Content responses."
+      }
+    ]
+  },
+  "paths": {
+    "/v1.0/organization/{id1}": {
+      "get": {
+        "operationId": "graph1GetV10OrganizationId1",
+        "summary": "GET /v1.0/organization/{id1}",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/me/photo/$value": {
+      "get": {
+        "operationId": "graph2GetV10MePhotoValue",
+        "summary": "GET /v1.0/me/photo/$value",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "404": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/organization": {
+      "get": {
+        "operationId": "graph3GetBetaOrganization",
+        "summary": "GET /beta/organization",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/admin/entra/uxsettings": {
+      "get": {
+        "operationId": "graph4GetBetaAdminEntraUxsettings",
+        "summary": "GET /beta/admin/entra/uxsettings",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/users/{id1}/photo/$value": {
+      "get": {
+        "operationId": "graph5GetV10UsersId1PhotoValue",
+        "summary": "GET /v1.0/users/{id1}/photo/$value",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "404": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/organization/": {
+      "get": {
+        "operationId": "graph6GetV10Organization",
+        "summary": "GET /v1.0/organization/",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/organization/{id1}/branding/localizations/0": {
+      "get": {
+        "operationId": "graph7GetBetaOrganizationId1BrandingLocalizations0",
+        "summary": "GET /beta/organization/{id1}/branding/localizations/0",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/identity/featureConfigurations/consumer": {
+      "get": {
+        "operationId": "graph8GetBetaIdentityFeatureconfigurationsConsumer",
+        "summary": "GET /beta/identity/featureConfigurations/consumer",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "404": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/subscribedSkus": {
+      "get": {
+        "operationId": "graph9GetBetaSubscribedskus",
+        "summary": "GET /beta/subscribedSkus",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/directory/recommendations": {
+      "get": {
+        "operationId": "graph10GetBetaDirectoryRecommendations",
+        "summary": "GET /beta/directory/recommendations",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "403": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/users/$count": {
+      "get": {
+        "operationId": "graph11GetV10UsersCount",
+        "summary": "GET /v1.0/users/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/groups/$count": {
+      "get": {
+        "operationId": "graph12GetV10GroupsCount",
+        "summary": "GET /v1.0/groups/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/applications/$count": {
+      "get": {
+        "operationId": "graph13GetV10ApplicationsCount",
+        "summary": "GET /v1.0/applications/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/devices/$count": {
+      "get": {
+        "operationId": "graph14GetV10DevicesCount",
+        "summary": "GET /v1.0/devices/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/roleManagement/directory/transitiveRoleAssignments": {
+      "get": {
+        "operationId": "graph15GetBetaRolemanagementDirectoryTransitiveroleassignments",
+        "summary": "GET /beta/roleManagement/directory/transitiveRoleAssignments",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/identityprotection/riskInsights": {
+      "get": {
+        "operationId": "graph16GetBetaIdentityprotectionRiskinsights",
+        "summary": "GET /beta/identityprotection/riskInsights",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "403": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/roleManagement/directory/roleDefinitions/{id1}": {
+      "get": {
+        "operationId": "graph17GetBetaRolemanagementDirectoryRoledefinitionsId1",
+        "summary": "GET /beta/roleManagement/directory/roleDefinitions/{id1}",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/roleManagement/directory/roleAssignments": {
+      "get": {
+        "operationId": "graph18GetBetaRolemanagementDirectoryRoleassignments",
+        "summary": "GET /beta/roleManagement/directory/roleAssignments",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/roleManagement/directory/roleDefinitions": {
+      "get": {
+        "operationId": "graph19GetBetaRolemanagementDirectoryRoledefinitions",
+        "summary": "GET /beta/roleManagement/directory/roleDefinitions",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/roleManagement/directory/roleDefinitions/{id1}/assignedPrincipals(transitive = true)/$count": {
+      "get": {
+        "operationId": "graph20GetBetaRolemanagementDirectoryRoledefinitionsId1AssignedprincipalsTransitiv",
+        "summary": "GET /beta/roleManagement/directory/roleDefinitions/{id1}/assignedPrincipals(transitive = true)/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/administrativeUnits": {
+      "get": {
+        "operationId": "graph21GetBetaAdministrativeunits",
+        "summary": "GET /beta/administrativeUnits",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/roleManagement/directory/roleEligibilityScheduleInstances/filterByCurrentUser(on='principal')": {
+      "get": {
+        "operationId": "graph22GetV10RolemanagementDirectoryRoleeligibilityscheduleinstancesFilterbycurren",
+        "summary": "GET /v1.0/roleManagement/directory/roleEligibilityScheduleInstances/filterByCurrentUser(on='principal')",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/administrativeUnits/{id1}": {
+      "get": {
+        "operationId": "graph23GetBetaAdministrativeunitsId1",
+        "summary": "GET /beta/administrativeUnits/{id1}",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/subscribedSkus": {
+      "get": {
+        "operationId": "graph24GetV10Subscribedskus",
+        "summary": "GET /v1.0/subscribedSkus",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/organization": {
+      "get": {
+        "operationId": "graph25GetV10Organization",
+        "summary": "GET /v1.0/organization",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/administrativeUnits/{id1}/members/$/microsoft.graph.user": {
+      "get": {
+        "operationId": "graph26GetBetaAdministrativeunitsId1MembersMicrosoftGraphUser",
+        "summary": "GET /beta/administrativeUnits/{id1}/members/$/microsoft.graph.user",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/roleManagement/directory/estimateAccess": {
+      "post": {
+        "operationId": "graph27PostBetaRolemanagementDirectoryEstimateaccess",
+        "summary": "POST /beta/roleManagement/directory/estimateAccess",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "resourceActionAuthorizationChecks": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "directoryScopeId": {
+                          "type": "string"
+                        },
+                        "resourceAction": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/directory/administrativeUnits": {
+      "get": {
+        "operationId": "graph28GetBetaDirectoryAdministrativeunits",
+        "summary": "GET /beta/directory/administrativeUnits",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/administrativeUnits/{id1}/members/$/microsoft.graph.group": {
+      "get": {
+        "operationId": "graph29GetBetaAdministrativeunitsId1MembersMicrosoftGraphGroup",
+        "summary": "GET /beta/administrativeUnits/{id1}/members/$/microsoft.graph.group",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/settings": {
+      "get": {
+        "operationId": "graph30GetBetaSettings",
+        "summary": "GET /beta/settings",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/domains": {
+      "get": {
+        "operationId": "graph31GetV10Domains",
+        "summary": "GET /v1.0/domains",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/directoryObjects/validateProperties": {
+      "post": {
+        "operationId": "graph32PostBetaDirectoryobjectsValidateproperties",
+        "summary": "POST /beta/directoryObjects/validateProperties",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "Observed response in capture"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "entityType": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "onBehalfOfUserId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/me/informationProtection/sensitivityLabels": {
+      "get": {
+        "operationId": "graph33GetBetaMeInformationprotectionSensitivitylabels",
+        "summary": "GET /beta/me/informationProtection/sensitivityLabels",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/groups": {
+      "get": {
+        "operationId": "graph34GetV10Groups",
+        "summary": "GET /v1.0/groups",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      },
+      "post": {
+        "operationId": "graph58PostV10Groups",
+        "summary": "POST /v1.0/groups",
+        "x-blink-effect": "write",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "mailEnabled": {
+                    "type": "boolean"
+                  },
+                  "mailNickname": {
+                    "type": "string"
+                  },
+                  "securityEnabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/beta/users": {
+      "get": {
+        "operationId": "graph35GetBetaUsers",
+        "summary": "GET /beta/users",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/servicePrincipals": {
+      "get": {
+        "operationId": "graph36GetBetaServiceprincipals",
+        "summary": "GET /beta/servicePrincipals",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/serviceprincipals/graph.agentIdentity": {
+      "get": {
+        "operationId": "graph37GetBetaServiceprincipalsGraphAgentidentity",
+        "summary": "GET /beta/serviceprincipals/graph.agentIdentity",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/users/": {
+      "get": {
+        "operationId": "graph38GetBetaUsers",
+        "summary": "GET /beta/users/",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/serviceprincipals(appId='{id1}')": {
+      "get": {
+        "operationId": "graph39GetV10ServiceprincipalsAppidId1",
+        "summary": "GET /v1.0/serviceprincipals(appId='{id1}')",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/servicePrincipals/{id1}/info/logoUrl": {
+      "get": {
+        "operationId": "graph40GetBetaServiceprincipalsId1InfoLogourl",
+        "summary": "GET /beta/servicePrincipals/{id1}/info/logoUrl",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          },
+          "404": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/users/{id1}/photos/48x48/$value": {
+      "get": {
+        "operationId": "graph41GetBetaUsersId1Photos48x48Value",
+        "summary": "GET /beta/users/{id1}/photos/48x48/$value",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          },
+          "404": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/devices": {
+      "get": {
+        "operationId": "graph42GetV10Devices",
+        "summary": "GET /v1.0/devices",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/directory/administrativeUnits/{id1}/members": {
+      "post": {
+        "operationId": "graph43PostBetaDirectoryAdministrativeunitsId1Members",
+        "summary": "POST /beta/directory/administrativeUnits/{id1}/members",
+        "x-blink-effect": "write",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "201": {
+            "description": "Observed response in capture"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "mailEnabled": {
+                    "type": "boolean"
+                  },
+                  "mailNickname": {
+                    "type": "string"
+                  },
+                  "securityEnabled": {
+                    "type": "boolean"
+                  },
+                  "@odata.type": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "owners@odata.bind": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 20
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/owners/$ref": {
+      "post": {
+        "operationId": "graph44PostBetaGroupsId1OwnersRef",
+        "summary": "POST /beta/groups/{id1}/owners/$ref",
+        "x-blink-effect": "write",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "No Content: the reference was added (Microsoft Graph documented success)."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "@odata.id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/members/$ref": {
+      "post": {
+        "operationId": "graph45PostBetaGroupsId1MembersRef",
+        "summary": "POST /beta/groups/{id1}/members/$ref",
+        "x-blink-effect": "write",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "Observed response in capture"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "@odata.id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}": {
+      "get": {
+        "operationId": "graph46GetBetaGroupsId1",
+        "summary": "GET /beta/groups/{id1}",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/members/$count": {
+      "get": {
+        "operationId": "graph47GetBetaGroupsId1MembersCount",
+        "summary": "GET /beta/groups/{id1}/members/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/members/$/Microsoft.Graph.User/$count": {
+      "get": {
+        "operationId": "graph48GetBetaGroupsId1MembersMicrosoftGraphUserCount",
+        "summary": "GET /beta/groups/{id1}/members/$/Microsoft.Graph.User/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/members/$/Microsoft.Graph.Group/$count": {
+      "get": {
+        "operationId": "graph49GetBetaGroupsId1MembersMicrosoftGraphGroupCount",
+        "summary": "GET /beta/groups/{id1}/members/$/Microsoft.Graph.Group/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/members/$/Microsoft.Graph.Device/$count": {
+      "get": {
+        "operationId": "graph50GetBetaGroupsId1MembersMicrosoftGraphDeviceCount",
+        "summary": "GET /beta/groups/{id1}/members/$/Microsoft.Graph.Device/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/memberOf/$count": {
+      "get": {
+        "operationId": "graph51GetBetaGroupsId1MemberofCount",
+        "summary": "GET /beta/groups/{id1}/memberOf/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/owners/$count": {
+      "get": {
+        "operationId": "graph52GetBetaGroupsId1OwnersCount",
+        "summary": "GET /beta/groups/{id1}/owners/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/transitivemembers/$count": {
+      "get": {
+        "operationId": "graph53GetBetaGroupsId1TransitivemembersCount",
+        "summary": "GET /beta/groups/{id1}/transitivemembers/$count",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/members": {
+      "get": {
+        "operationId": "graph54GetBetaGroupsId1Members",
+        "summary": "GET /beta/groups/{id1}/members",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/transitiveMembers": {
+      "get": {
+        "operationId": "graph55GetBetaGroupsId1Transitivemembers",
+        "summary": "GET /beta/groups/{id1}/transitiveMembers",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/beta/groups/{id1}/owners": {
+      "get": {
+        "operationId": "graph56GetBetaGroupsId1Owners",
+        "summary": "GET /beta/groups/{id1}/owners",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$select",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$top",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$orderby",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "$count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/groups/{id1}": {
+      "delete": {
+        "operationId": "graph57DeleteV10GroupsId1",
+        "summary": "DELETE /v1.0/groups/{id1}",
+        "x-blink-effect": "destructive",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "id1",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "Observed response in capture"
+          }
+        },
+        "x-blink-notes": "Observed in network capture; direct replay and identity binding have not been tested. "
+      }
+    },
+    "/v1.0/groups/{groupId}": {
+      "get": {
+        "operationId": "graph59GetV10GroupsGroupid",
+        "summary": "GET /v1.0/groups/{groupId}",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      },
+      "patch": {
+        "operationId": "graph60PatchV10GroupsGroupid",
+        "summary": "PATCH /v1.0/groups/{groupId}",
+        "x-blink-effect": "write",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      },
+      "delete": {
+        "operationId": "graph61DeleteV10GroupsGroupid",
+        "summary": "DELETE /v1.0/groups/{groupId}",
+        "x-blink-effect": "destructive",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "No Content (Microsoft Graph documented success)"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/members": {
+      "get": {
+        "operationId": "graph62GetV10GroupsGroupidMembers",
+        "summary": "GET /v1.0/groups/{groupId}/members",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/members/$ref": {
+      "post": {
+        "operationId": "graph63PostV10GroupsGroupidMembersRef",
+        "summary": "POST /v1.0/groups/{groupId}/members/$ref",
+        "x-blink-effect": "write",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "No Content: the reference was added (Microsoft Graph documented success)."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "@odata.id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/members/{directoryObjectId}/$ref": {
+      "delete": {
+        "operationId": "graph64DeleteV10GroupsGroupidMembersDirectoryobjectidRef",
+        "summary": "DELETE /v1.0/groups/{groupId}/members/{directoryObjectId}/$ref",
+        "x-blink-effect": "destructive",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "directoryObjectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "No Content (Microsoft Graph documented success)"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/owners": {
+      "get": {
+        "operationId": "graph65GetV10GroupsGroupidOwners",
+        "summary": "GET /v1.0/groups/{groupId}/owners",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/owners/$ref": {
+      "post": {
+        "operationId": "graph66PostV10GroupsGroupidOwnersRef",
+        "summary": "POST /v1.0/groups/{groupId}/owners/$ref",
+        "x-blink-effect": "write",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "No Content: the reference was added (Microsoft Graph documented success)."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "@odata.id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/owners/{directoryObjectId}/$ref": {
+      "delete": {
+        "operationId": "graph67DeleteV10GroupsGroupidOwnersDirectoryobjectidRef",
+        "summary": "DELETE /v1.0/groups/{groupId}/owners/{directoryObjectId}/$ref",
+        "x-blink-effect": "destructive",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "directoryObjectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          },
+          "204": {
+            "description": "No Content (Microsoft Graph documented success)"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/memberOf": {
+      "get": {
+        "operationId": "graph68GetV10GroupsGroupidMemberof",
+        "summary": "GET /v1.0/groups/{groupId}/memberOf",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/transitiveMembers": {
+      "get": {
+        "operationId": "graph69GetV10GroupsGroupidTransitivemembers",
+        "summary": "GET /v1.0/groups/{groupId}/transitiveMembers",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/groups/{groupId}/transitiveMemberOf": {
+      "get": {
+        "operationId": "graph70GetV10GroupsGroupidTransitivememberof",
+        "summary": "GET /v1.0/groups/{groupId}/transitiveMemberOf",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/roleManagement/directory/roleAssignmentScheduleRequests": {
+      "post": {
+        "operationId": "graph71PostV10RolemanagementDirectoryRoleassignmentschedulerequests",
+        "summary": "POST /v1.0/roleManagement/directory/roleAssignmentScheduleRequests",
+        "x-blink-effect": "write",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "type": "string"
+                  },
+                  "principalId": {
+                    "type": "string"
+                  },
+                  "roleDefinitionId": {
+                    "type": "string"
+                  },
+                  "directoryScopeId": {
+                    "type": "string"
+                  },
+                  "justification": {
+                    "type": "string"
+                  },
+                  "scheduleInfo": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "startDateTime": {
+                        "type": "string"
+                      },
+                      "expiration": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "duration": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/rbacapplication-post-roleassignmentschedulerequests?view=graph-rest-1.0"
+      },
+      "get": {
+        "operationId": "graph72GetV10RolemanagementDirectoryRoleassignmentschedulerequests",
+        "summary": "GET /v1.0/roleManagement/directory/roleAssignmentScheduleRequests",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/rbacapplication-list-roleassignmentschedulerequests?view=graph-rest-1.0"
+      }
+    },
+    "/v1.0/me": {
+      "get": {
+        "operationId": "getSignedInUser",
+        "summary": "GET /v1.0/me",
+        "x-blink-effect": "read",
+        "x-blink-verified": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unverified response"
+          }
+        },
+        "x-blink-notes": "Documentation-derived; not observed or tested in this account. Sources: https://learn.microsoft.com/en-us/graph/api/user-get?view=graph-rest-1.0"
+      }
+    }
+  }
+}

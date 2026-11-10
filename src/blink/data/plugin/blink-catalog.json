@@ -1,0 +1,279 @@
+{
+  "$schema": "urn:web-blink:schema:catalog:1",
+  "schemaVersion": 1,
+  "name": "Example team Web Links",
+  "weblinks": [
+    {
+      "id": "com.banana",
+      "version": "1.0.0",
+      "descriptor": "blinks/com.banana/1.0.0/weblink.json",
+      "sha256": "430a00040efa7fe3a6919c37e02069de885d93972f6eaddde8fa9c681533c6f2",
+      "x-blink-ext": {
+        "discovery": {
+          "version": 1,
+          "title": "Banana example read-only Web Link",
+          "hosts": [
+            "api.banana.example",
+            "banana.example"
+          ],
+          "operations": [
+            "list_products"
+          ],
+          "authKind": "none",
+          "browserRecipeComplete": true
+        }
+      }
+    },
+    {
+      "id": "ruddr-com",
+      "version": "0.6.0",
+      "descriptor": "blinks/ruddr-com/0.6.0/weblink.json",
+      "sha256": "7b8b8588ad8f9d9ece117ee65c9ba423555f61951c7c30c8994ad86398116906",
+      "x-blink-ext": {
+        "discovery": {
+          "version": 1,
+          "title": "ruddr-com",
+          "hosts": [
+            "www.ruddr.io"
+          ],
+          "operations": [
+            "deleteTimesheetRow",
+            "getDashboardAllocatedHours",
+            "getDashboardRealizationRate",
+            "getDashboardTimeSummary",
+            "getDashboardUtilization",
+            "getDashboardVariance",
+            "getIntegrationsStatus",
+            "getLastAccessedWorkspace",
+            "getMemberHolidays",
+            "getPendingExpenseApprovalsCount",
+            "getPendingTimeApprovalsCount",
+            "getPreviousWeek",
+            "getProductUpdates",
+            "getProjectDetailsCard",
+            "getRatingEligibility",
+            "getRunningTimer",
+            "getSession",
+            "getSsoAuthorizeUrl",
+            "getSubmissionSummary",
+            "getTaskAncestors",
+            "getTimeEntryApprovalWorkflow",
+            "getTimeEntryProject",
+            "getTimeEntryRole",
+            "getTimeZone",
+            "getTimesheetWeek",
+            "getWeekUtilizationSummary",
+            "listProjectRoles",
+            "listTimeEntryProjects",
+            "listTimesheets",
+            "listWorkspaces",
+            "logout",
+            "lookupLoginMethods",
+            "saveDayEntry",
+            "selectWorkspace",
+            "submitTimesheet",
+            "unsubmitTimesheet"
+          ],
+          "authKind": "cookie-session",
+          "browserRecipeComplete": true
+        }
+      }
+    },
+    {
+      "id": "entra-microsoft",
+      "version": "0.1.2",
+      "descriptor": "blinks/entra-microsoft/0.1.2/weblink.json",
+      "sha256": "674d82d2ff536a470ddd4197bc344fe8901d65a6d3a544082eb38cdacf7608ce",
+      "x-blink-ext": {
+        "discovery": {
+          "version": 1,
+          "title": "entra-microsoft",
+          "hosts": [
+            "entra.microsoft.com",
+            "graph.microsoft.com"
+          ],
+          "operations": [
+            "getSignedInUser",
+            "graph10GetBetaDirectoryRecommendations",
+            "graph11GetV10UsersCount",
+            "graph12GetV10GroupsCount",
+            "graph13GetV10ApplicationsCount",
+            "graph14GetV10DevicesCount",
+            "graph15GetBetaRolemanagementDirectoryTransitiveroleassignments",
+            "graph16GetBetaIdentityprotectionRiskinsights",
+            "graph17GetBetaRolemanagementDirectoryRoledefinitionsId1",
+            "graph18GetBetaRolemanagementDirectoryRoleassignments",
+            "graph19GetBetaRolemanagementDirectoryRoledefinitions",
+            "graph1GetV10OrganizationId1",
+            "graph20GetBetaRolemanagementDirectoryRoledefinitionsId1AssignedprincipalsTransitiv",
+            "graph21GetBetaAdministrativeunits",
+            "graph22GetV10RolemanagementDirectoryRoleeligibilityscheduleinstancesFilterbycurren",
+            "graph23GetBetaAdministrativeunitsId1",
+            "graph24GetV10Subscribedskus",
+            "graph25GetV10Organization",
+            "graph26GetBetaAdministrativeunitsId1MembersMicrosoftGraphUser",
+            "graph27PostBetaRolemanagementDirectoryEstimateaccess",
+            "graph28GetBetaDirectoryAdministrativeunits",
+            "graph29GetBetaAdministrativeunitsId1MembersMicrosoftGraphGroup",
+            "graph2GetV10MePhotoValue",
+            "graph30GetBetaSettings",
+            "graph31GetV10Domains",
+            "graph32PostBetaDirectoryobjectsValidateproperties",
+            "graph33GetBetaMeInformationprotectionSensitivitylabels",
+            "graph34GetV10Groups",
+            "graph35GetBetaUsers",
+            "graph36GetBetaServiceprincipals",
+            "graph37GetBetaServiceprincipalsGraphAgentidentity",
+            "graph38GetBetaUsers",
+            "graph39GetV10ServiceprincipalsAppidId1",
+            "graph3GetBetaOrganization",
+            "graph40GetBetaServiceprincipalsId1InfoLogourl",
+            "graph41GetBetaUsersId1Photos48x48Value",
+            "graph42GetV10Devices",
+            "graph43PostBetaDirectoryAdministrativeunitsId1Members",
+            "graph44PostBetaGroupsId1OwnersRef",
+            "graph45PostBetaGroupsId1MembersRef",
+            "graph46GetBetaGroupsId1",
+            "graph47GetBetaGroupsId1MembersCount",
+            "graph48GetBetaGroupsId1MembersMicrosoftGraphUserCount",
+            "graph49GetBetaGroupsId1MembersMicrosoftGraphGroupCount",
+            "graph4GetBetaAdminEntraUxsettings",
+            "graph50GetBetaGroupsId1MembersMicrosoftGraphDeviceCount",
+            "graph51GetBetaGroupsId1MemberofCount",
+            "graph52GetBetaGroupsId1OwnersCount",
+            "graph53GetBetaGroupsId1TransitivemembersCount",
+            "graph54GetBetaGroupsId1Members",
+            "graph55GetBetaGroupsId1Transitivemembers",
+            "graph56GetBetaGroupsId1Owners",
+            "graph57DeleteV10GroupsId1",
+            "graph58PostV10Groups",
+            "graph59GetV10GroupsGroupid",
+            "graph5GetV10UsersId1PhotoValue",
+            "graph60PatchV10GroupsGroupid",
+            "graph61DeleteV10GroupsGroupid",
+            "graph62GetV10GroupsGroupidMembers",
+            "graph63PostV10GroupsGroupidMembersRef",
+            "graph64DeleteV10GroupsGroupidMembersDirectoryobjectidRef",
+            "graph65GetV10GroupsGroupidOwners",
+            "graph66PostV10GroupsGroupidOwnersRef",
+            "graph67DeleteV10GroupsGroupidOwnersDirectoryobjectidRef",
+            "graph68GetV10GroupsGroupidMemberof",
+            "graph69GetV10GroupsGroupidTransitivemembers",
+            "graph6GetV10Organization",
+            "graph70GetV10GroupsGroupidTransitivememberof",
+            "graph71PostV10RolemanagementDirectoryRoleassignmentschedulerequests",
+            "graph72GetV10RolemanagementDirectoryRoleassignmentschedulerequests",
+            "graph7GetBetaOrganizationId1BrandingLocalizations0",
+            "graph8GetBetaIdentityFeatureconfigurationsConsumer",
+            "graph9GetBetaSubscribedskus"
+          ],
+          "authKind": "bearer-storage",
+          "browserRecipeComplete": false
+        }
+      }
+    },
+    {
+      "id": "nasa-gov",
+      "version": "0.1.0",
+      "descriptor": "blinks/nasa-gov/0.1.0/weblink.json",
+      "sha256": "32865abc2c40aba3267daaeecd3741959f10715c8b6a3ad2fe9c7a2bfbc5b300",
+      "x-blink-ext": {
+        "discovery": {
+          "version": 1,
+          "title": "NASA news releases",
+          "hosts": [
+            "www.nasa.gov"
+          ],
+          "operations": [
+            "latestNews"
+          ],
+          "authKind": "none",
+          "browserRecipeComplete": true
+        }
+      }
+    },
+    {
+      "id": "usaspending-gov",
+      "version": "0.1.0",
+      "descriptor": "blinks/usaspending-gov/0.1.0/weblink.json",
+      "sha256": "4e5a0c7f57da2870bcb1ffb131b2884ab097c140df288b4b037a008d56b36a2f",
+      "x-blink-ext": {
+        "discovery": {
+          "version": 1,
+          "title": "US federal agency budgets (USAspending.gov)",
+          "hosts": [
+            "api.usaspending.gov",
+            "www.usaspending.gov"
+          ],
+          "operations": [
+            "agencyBudgets"
+          ],
+          "authKind": "none",
+          "browserRecipeComplete": true
+        }
+      }
+    },
+    {
+      "id": "weather-gov",
+      "version": "0.1.0",
+      "descriptor": "blinks/weather-gov/0.1.0/weblink.json",
+      "sha256": "73b10f8662a2c0ea93b686c43fbe569e0c8b734da6216e880ddab65bcb516dc0",
+      "x-blink-ext": {
+        "discovery": {
+          "version": 1,
+          "title": "US weather alerts (National Weather Service)",
+          "hosts": [
+            "api.weather.gov",
+            "www.weather.gov"
+          ],
+          "operations": [
+            "activeAlerts"
+          ],
+          "authKind": "none",
+          "browserRecipeComplete": true
+        }
+      }
+    },
+    {
+      "id": "claude-console",
+      "version": "0.5.0",
+      "descriptor": "blinks/claude-console/0.5.0/weblink.json",
+      "sha256": "f292af3beea90730c1a338d74da1402bb476b69c62a23bb606659980b15ebcd0",
+      "x-blink-ext": {
+        "discovery": {
+          "version": 1,
+          "title": "Claude Console (Managed Agents, experimental)",
+          "hosts": [
+            "platform.claude.com"
+          ],
+          "operations": [
+            "archiveVaultCredential",
+            "createAgent",
+            "createDeployment",
+            "createEnvironment",
+            "createVault",
+            "getAgent",
+            "getDeployment",
+            "getEnvironment",
+            "getSession",
+            "getVault",
+            "listAgentVersions",
+            "listAgents",
+            "listDeploymentRuns",
+            "listDeployments",
+            "listEnvironments",
+            "listMemoryStores",
+            "listSessionEvents",
+            "listSkills",
+            "listVaultCredentials",
+            "listVaults",
+            "runDeployment",
+            "updateDeployment"
+          ],
+          "authKind": "cookie-session",
+          "browserRecipeComplete": true
+        }
+      }
+    }
+  ]
+}

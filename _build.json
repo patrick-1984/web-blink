@@ -1,0 +1,697 @@
+{
+  "files": [
+    {
+      "bytes": 392,
+      "path": ".claude-plugin/plugin.json",
+      "sha256": "ea63b99114dff4d10af1d4d831490b148f902cc3751269c45ef8bc07a0685dce"
+    },
+    {
+      "bytes": 576,
+      "path": ".codex-plugin/plugin.json",
+      "sha256": "db83686a8e9a7286c3fa7668733b34766f0eda4da572d27e9a5f2d79d55f68ba"
+    },
+    {
+      "bytes": 94,
+      "path": ".gitattributes",
+      "sha256": "eb4123e1e97726a6ae7d2d52ba45c5faab318ccd532f827107fa2f89e48c582b"
+    },
+    {
+      "bytes": 188,
+      "path": ".mcp.json",
+      "sha256": "c1fefac0b78c73d372cf5320132de5bf84cea4a315249da3e799a1ae3576cfde"
+    },
+    {
+      "bytes": 1069,
+      "path": "LICENSE",
+      "sha256": "b645385b4fd24278a3688f278f3191d943140859723ef4e9a6ec6db9497ec0c5"
+    },
+    {
+      "bytes": 19202,
+      "path": "README.md",
+      "sha256": "dfb846f09d8fc2c892a4b2710701d63b8459de7efd87a97ae51f86e32e21bab1"
+    },
+    {
+      "bytes": 9983,
+      "path": "blink-catalog.json",
+      "sha256": "d8eadc0d7736828a5ffb1234510f1c14b6001d7a505048e7d326704b02ef5c26"
+    },
+    {
+      "bytes": 3369,
+      "path": "blinks/README.md",
+      "sha256": "f3cea6c527f54cdfd8fcb49ed202d9300e397e07d08c2944e23c966aee401535"
+    },
+    {
+      "bytes": 66104,
+      "path": "blinks/claude-console/0.5.0/openapi.json",
+      "sha256": "b55e5790af978a0015f34c26ae7d3193b8ebab8e376c779199cb47506b7e5246"
+    },
+    {
+      "bytes": 782,
+      "path": "blinks/claude-console/0.5.0/weblink.json",
+      "sha256": "f292af3beea90730c1a338d74da1402bb476b69c62a23bb606659980b15ebcd0"
+    },
+    {
+      "bytes": 1819,
+      "path": "blinks/com.banana/1.0.0/openapi.json",
+      "sha256": "fd35674eb86a5956f8059dc17043a6d133a0e23d05f77432d3ecde8e34c51156"
+    },
+    {
+      "bytes": 461,
+      "path": "blinks/com.banana/1.0.0/weblink.json",
+      "sha256": "430a00040efa7fe3a6919c37e02069de885d93972f6eaddde8fa9c681533c6f2"
+    },
+    {
+      "bytes": 68415,
+      "path": "blinks/entra-microsoft/0.1.0/openapi.json",
+      "sha256": "fb6761a3fa3f6e250da9a47057e652f051db1d10fa2cfef984524b2ebec52e06"
+    },
+    {
+      "bytes": 688,
+      "path": "blinks/entra-microsoft/0.1.0/weblink.json",
+      "sha256": "5f0351e57b83436901eda94039a1769126e27de26fba4e2cc2b5d312ed31708f"
+    },
+    {
+      "bytes": 69852,
+      "path": "blinks/entra-microsoft/0.1.2/openapi.json",
+      "sha256": "891ff241542eac3205ad588462ad9e0c15654780ee84595769c902ac0c6d63ec"
+    },
+    {
+      "bytes": 938,
+      "path": "blinks/entra-microsoft/0.1.2/weblink.json",
+      "sha256": "674d82d2ff536a470ddd4197bc344fe8901d65a6d3a544082eb38cdacf7608ce"
+    },
+    {
+      "bytes": 3326,
+      "path": "blinks/nasa-gov/0.1.0/openapi.json",
+      "sha256": "87d57dc8ea250e92069833b0bfc610641366ffe8078842c702c824511c366dce"
+    },
+    {
+      "bytes": 471,
+      "path": "blinks/nasa-gov/0.1.0/weblink.json",
+      "sha256": "32865abc2c40aba3267daaeecd3741959f10715c8b6a3ad2fe9c7a2bfbc5b300"
+    },
+    {
+      "bytes": 36253,
+      "path": "blinks/ruddr-com/0.6.0/openapi.json",
+      "sha256": "91298fc6a2dbbbc7ee9fba4bee2f82d1ca93a45d16cdfb2338e6e1f91148f6ef"
+    },
+    {
+      "bytes": 599,
+      "path": "blinks/ruddr-com/0.6.0/weblink.json",
+      "sha256": "7b8b8588ad8f9d9ece117ee65c9ba423555f61951c7c30c8994ad86398116906"
+    },
+    {
+      "bytes": 3272,
+      "path": "blinks/usaspending-gov/0.1.0/openapi.json",
+      "sha256": "cea61bdb75869e7c3bd85a55ba022ef4f4f333bd917a178cb232a66c82d01526"
+    },
+    {
+      "bytes": 537,
+      "path": "blinks/usaspending-gov/0.1.0/weblink.json",
+      "sha256": "4e5a0c7f57da2870bcb1ffb131b2884ab097c140df288b4b037a008d56b36a2f"
+    },
+    {
+      "bytes": 3109,
+      "path": "blinks/weather-gov/0.1.0/openapi.json",
+      "sha256": "45efef28d221229db47f77698e2a300147f119bd1f0e51af2a8bc65cb4f79fc4"
+    },
+    {
+      "bytes": 514,
+      "path": "blinks/weather-gov/0.1.0/weblink.json",
+      "sha256": "73b10f8662a2c0ea93b686c43fbe569e0c8b734da6216e880ddab65bcb516dc0"
+    },
+    {
+      "bytes": 18347,
+      "path": "docs/07-web-link-repositories.md",
+      "sha256": "36c62f2b0e9872e9c89b96af4c7e862c932f39193a150e92be6df215806df47e"
+    },
+    {
+      "bytes": 14269,
+      "path": "docs/browser-sessions.md",
+      "sha256": "3df8ba4352f23d3d46c0bfcd26f7796ebf6e0d9d74c045a7c9022d724520a188"
+    },
+    {
+      "bytes": 6664,
+      "path": "docs/claude-compatibility.md",
+      "sha256": "3c30b4c4287bf5bba9b833adbbad1a09c25a8c7b82da4701cff996c629296497"
+    },
+    {
+      "bytes": 15180,
+      "path": "docs/cli-reference.md",
+      "sha256": "b7e4b90e32c25ac5b0aea50d1b84a6ea18d4326205dff4e97a993a81c5c6e8aa"
+    },
+    {
+      "bytes": 7123,
+      "path": "docs/custody-provider.md",
+      "sha256": "7955596c6a201bfd83c6ebf0382eee1cabac67c9ddcc8a359024b4f6dc4fd273"
+    },
+    {
+      "bytes": 18276,
+      "path": "docs/execution-profile.md",
+      "sha256": "d5a95cb062b22373ae483062c452a1ae9d2e8e349fe72ab8414d2f749676b8f6"
+    },
+    {
+      "bytes": 5333,
+      "path": "docs/recording-flow.md",
+      "sha256": "2c683b447fd62472d6eac3de0059a1f7fa748f152fb762511bece8e5332e5716"
+    },
+    {
+      "bytes": 9773,
+      "path": "docs/release-updates.md",
+      "sha256": "56d481d0b825a7acaa7b97afb71641a9d348d9fad448be80b969083ffa16c0d2"
+    },
+    {
+      "bytes": 3100,
+      "path": "docs/result-verification.md",
+      "sha256": "791eb24409db5f194c506916fe077acbfbd2f7712a788d03e1470d83e3d211cc"
+    },
+    {
+      "bytes": 34207,
+      "path": "docs/runtime-guide.md",
+      "sha256": "be801978e908186544c525a94dec060ab6ee5a239c1f47861361b8c0d819b26b"
+    },
+    {
+      "bytes": 11336,
+      "path": "docs/source-commands.md",
+      "sha256": "ba899645be6775fbf6b5949a273c1b2a581c0e373f94716500d1e6dc18d03c2e"
+    },
+    {
+      "bytes": 7252,
+      "path": "docs/state-lifecycle.md",
+      "sha256": "5166ba5e8c096642768153eb73fd434594b926240e8168344662db7b839afb0f"
+    },
+    {
+      "bytes": 3371,
+      "path": "mcp/bootstrap-uv.mjs",
+      "sha256": "c3f0c17eb11064adaa55ee95d3d312ca90f7b4e9f65d88ae3b78102678ca8518"
+    },
+    {
+      "bytes": 14056,
+      "path": "mcp/browsers.mjs",
+      "sha256": "4df74851c0f503204a960dd7951dc3b96ea58cb75a3fa0f60814665cdfe4bf89"
+    },
+    {
+      "bytes": 1218,
+      "path": "mcp/private-dir.mjs",
+      "sha256": "dac2463dddeb541c9c32caa48ea63ac107075858b19f1fd7be4cd29aab0e9be6"
+    },
+    {
+      "bytes": 4020,
+      "path": "mcp/process-paths.mjs",
+      "sha256": "8e74ec3c2a648c12cf687e1f9e008cd27c08197266305d509d01eb6ab865a715"
+    },
+    {
+      "bytes": 1454,
+      "path": "mcp/profile-host.mjs",
+      "sha256": "f90ba9a56f2471029389c6a1ca2a37d4c1cf7387ce311ba2e3ae9fb2e0d3f506"
+    },
+    {
+      "bytes": 40820,
+      "path": "mcp/server.mjs",
+      "sha256": "8a9691a96ada39bec46b4ded514aad11f70683afce80436f826b12383b1091bc"
+    },
+    {
+      "bytes": 3225,
+      "path": "mcp/setup-runtime.mjs",
+      "sha256": "a539a36820127d8bff6069673fafe42316d7ea2f04128024127725ae01de1f58"
+    },
+    {
+      "bytes": 1102,
+      "path": "mcp/uv-assets.json",
+      "sha256": "86fe0142fe73f968603710b37ca6915c15ca98debcaf956a88a6b3e4eb7df3e3"
+    },
+    {
+      "bytes": 633,
+      "path": "pyproject.toml",
+      "sha256": "9fb592bc68dcfe12b1b0ed5003ec2c0876d8b08e1afe63611755bc6db74b2e8a"
+    },
+    {
+      "bytes": 12305,
+      "path": "requirements.lock",
+      "sha256": "848b319ed090a0f0feb8cd286289ef0ab781d9eaa5d33ae1ca8a7c06b7cf51a0"
+    },
+    {
+      "bytes": 4635,
+      "path": "schemas/README.md",
+      "sha256": "9cc3a3471a5fc6014aba55a58517c32f73830271aad9ab3caabd243d3b861dec"
+    },
+    {
+      "bytes": 8179,
+      "path": "schemas/config-v1/settings.schema.json",
+      "sha256": "49b85f533cfbd1574262a4103d800bd00012ff7fd6d6dfa9ea0caea7d9ec57ed"
+    },
+    {
+      "bytes": 4946,
+      "path": "schemas/execution-v1/arazzo.schema.json",
+      "sha256": "a51a6d7379580fde2cd9a3c8f561279daa7a16ba9f319c9dafa285ca630a748b"
+    },
+    {
+      "bytes": 98135,
+      "path": "schemas/execution-v1/openapi.schema.json",
+      "sha256": "11403a313fab38a52dd04e9b09f2a444ecc86ca468a182b839485e3a03d56bb0"
+    },
+    {
+      "bytes": 3244,
+      "path": "schemas/index.json",
+      "sha256": "f959645474edcdb4313d0868b0f501006823629934d11ae269d6df331532e567"
+    },
+    {
+      "bytes": 2658,
+      "path": "schemas/v1/catalog.schema.json",
+      "sha256": "17c0c35296a5b38afe2f7f83c59a18a5b5adfa8e9d09b73874b8ed4d49ff03b2"
+    },
+    {
+      "bytes": 4733,
+      "path": "schemas/v1/private-blink.schema.json",
+      "sha256": "71e2163115a9a44988004e223a46ed5c8e40bd168c419c6e29a2dff61a59f01f"
+    },
+    {
+      "bytes": 5715,
+      "path": "schemas/v1/source-lock.schema.json",
+      "sha256": "7ddbe20dfd0b2fce817317e16778dfc9a070d6f7c82feadcad5f83b5f0f47ee3"
+    },
+    {
+      "bytes": 2958,
+      "path": "schemas/v1/sources.schema.json",
+      "sha256": "a8e75bbff65a13323b9375061fffdba8ad61eaa99679ea3676ea12fdf89b01b4"
+    },
+    {
+      "bytes": 3234,
+      "path": "schemas/v1/weblink.schema.json",
+      "sha256": "e482347f4c21c0bcc28c4694e9e6f9162f22d8fd09e079dfee02e76915abdeff"
+    },
+    {
+      "bytes": 242,
+      "path": "scripts/blink.py",
+      "sha256": "6f7dc3c0f269e5e11537e6b3c3c098f15f0ff65d6666f74620b85c5642cea609"
+    },
+    {
+      "bytes": 9749,
+      "path": "scripts/demo.py",
+      "sha256": "7c2a58b5bf0b4d698856dca4df89fedd573a4b554da0deaded0d3e2c70c03e57"
+    },
+    {
+      "bytes": 26378,
+      "path": "skills/blink-learn/SKILL.md",
+      "sha256": "378d704b4d214811251c285756d44d31e201ad643bc7b1355dce3958b4e00464"
+    },
+    {
+      "bytes": 1234,
+      "path": "skills/blink-review/SKILL.md",
+      "sha256": "eb58a5e8a3bad84c1ab6699a942ea795e21d8809e6725573e0e3237ff6cc67bb"
+    },
+    {
+      "bytes": 8882,
+      "path": "skills/blink-troubleshoot/SKILL.md",
+      "sha256": "63468f0971bf0b56b2329303ca5cf53d2f6ed4addc7a72e80542e5d9dff2fc5c"
+    },
+    {
+      "bytes": 14136,
+      "path": "skills/blink-use/SKILL.md",
+      "sha256": "2865064ed99ef863d7c10040fb9e34810e25abd789cb74729a7adc861844dc46"
+    },
+    {
+      "bytes": 70,
+      "path": "src/blink/__init__.py",
+      "sha256": "d676914cd2bb4842de2f1bd5b741756f7de3fc350ba32977d50438b7ea8b3f13"
+    },
+    {
+      "bytes": 48,
+      "path": "src/blink/__main__.py",
+      "sha256": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d"
+    },
+    {
+      "bytes": 24904,
+      "path": "src/blink/approval.py",
+      "sha256": "b5dad1194e97d641f26f8d20d4f73d10776723efcf2fedecff25db1c0d4427f4"
+    },
+    {
+      "bytes": 19918,
+      "path": "src/blink/broker.py",
+      "sha256": "971182cba7a5286b7115ef3d11bc5c77d66cf5f6c5df50c7f8c509744ecee839"
+    },
+    {
+      "bytes": 52626,
+      "path": "src/blink/browser.py",
+      "sha256": "91980e650866e0b5190ae4576929332a67483f73afe1e6f1c1fc74c6b91d4510"
+    },
+    {
+      "bytes": 11037,
+      "path": "src/blink/browser_process.py",
+      "sha256": "1cdf78a472a7c76260cc139ff0d7597f1379f548fdb97fd92787accd6167144c"
+    },
+    {
+      "bytes": 38084,
+      "path": "src/blink/browsers.py",
+      "sha256": "94843b4a7475397a545443fa208f45e7a71616565a6ef53271f69ea9dbd9842e"
+    },
+    {
+      "bytes": 9881,
+      "path": "src/blink/bundled.py",
+      "sha256": "0daf18d009dc6a481ff607b03230b1e2ebe10a8c75f44bfdfcb3882b930ce150"
+    },
+    {
+      "bytes": 28728,
+      "path": "src/blink/cleanup.py",
+      "sha256": "b18474e68ebd5480e9d44d1b943f5d278bb564dc0ea7f8b2eaf1a23f847b41a5"
+    },
+    {
+      "bytes": 30358,
+      "path": "src/blink/cli.py",
+      "sha256": "748fbce8e18d3905486ff47629b02dbcb9a76b3880381aa064149bea64c0b0ac"
+    },
+    {
+      "bytes": 22942,
+      "path": "src/blink/client.py",
+      "sha256": "39cc23f517b7536f7ecadc801e5cd35aa52ea6c1adf2502dba277490df6d21b7"
+    },
+    {
+      "bytes": 16497,
+      "path": "src/blink/config.py",
+      "sha256": "a378985dc210501cb8cdc07435806f21cd8783900c2a932cf20990609fd4bc90"
+    },
+    {
+      "bytes": 8121,
+      "path": "src/blink/contexts.py",
+      "sha256": "a026a741ec4b3b3dfa613844e515d7baf2f9b3edc94bce26c9adfb52e49b7ffd"
+    },
+    {
+      "bytes": 7276,
+      "path": "src/blink/control.py",
+      "sha256": "6d61f603a177594de246493d4df898f88b6e1a7a045cc8be672bb93a59eddc97"
+    },
+    {
+      "bytes": 31762,
+      "path": "src/blink/custody.py",
+      "sha256": "c87308ce6200f679df3cb54834b237c5456e771a9d6ac934c67aacbdb2a13740"
+    },
+    {
+      "bytes": 20156,
+      "path": "src/blink/daemon.py",
+      "sha256": "47a04a46ec1702a11f179e0a3b99c7c717a3ab194e2592ebdf7528b6a32a3112"
+    },
+    {
+      "bytes": 9983,
+      "path": "src/blink/data/plugin/blink-catalog.json",
+      "sha256": "d8eadc0d7736828a5ffb1234510f1c14b6001d7a505048e7d326704b02ef5c26"
+    },
+    {
+      "bytes": 66104,
+      "path": "src/blink/data/plugin/blinks/claude-console/0.5.0/openapi.json",
+      "sha256": "b55e5790af978a0015f34c26ae7d3193b8ebab8e376c779199cb47506b7e5246"
+    },
+    {
+      "bytes": 782,
+      "path": "src/blink/data/plugin/blinks/claude-console/0.5.0/weblink.json",
+      "sha256": "f292af3beea90730c1a338d74da1402bb476b69c62a23bb606659980b15ebcd0"
+    },
+    {
+      "bytes": 1819,
+      "path": "src/blink/data/plugin/blinks/com.banana/1.0.0/openapi.json",
+      "sha256": "fd35674eb86a5956f8059dc17043a6d133a0e23d05f77432d3ecde8e34c51156"
+    },
+    {
+      "bytes": 461,
+      "path": "src/blink/data/plugin/blinks/com.banana/1.0.0/weblink.json",
+      "sha256": "430a00040efa7fe3a6919c37e02069de885d93972f6eaddde8fa9c681533c6f2"
+    },
+    {
+      "bytes": 68415,
+      "path": "src/blink/data/plugin/blinks/entra-microsoft/0.1.0/openapi.json",
+      "sha256": "fb6761a3fa3f6e250da9a47057e652f051db1d10fa2cfef984524b2ebec52e06"
+    },
+    {
+      "bytes": 688,
+      "path": "src/blink/data/plugin/blinks/entra-microsoft/0.1.0/weblink.json",
+      "sha256": "5f0351e57b83436901eda94039a1769126e27de26fba4e2cc2b5d312ed31708f"
+    },
+    {
+      "bytes": 69852,
+      "path": "src/blink/data/plugin/blinks/entra-microsoft/0.1.2/openapi.json",
+      "sha256": "891ff241542eac3205ad588462ad9e0c15654780ee84595769c902ac0c6d63ec"
+    },
+    {
+      "bytes": 938,
+      "path": "src/blink/data/plugin/blinks/entra-microsoft/0.1.2/weblink.json",
+      "sha256": "674d82d2ff536a470ddd4197bc344fe8901d65a6d3a544082eb38cdacf7608ce"
+    },
+    {
+      "bytes": 3326,
+      "path": "src/blink/data/plugin/blinks/nasa-gov/0.1.0/openapi.json",
+      "sha256": "87d57dc8ea250e92069833b0bfc610641366ffe8078842c702c824511c366dce"
+    },
+    {
+      "bytes": 471,
+      "path": "src/blink/data/plugin/blinks/nasa-gov/0.1.0/weblink.json",
+      "sha256": "32865abc2c40aba3267daaeecd3741959f10715c8b6a3ad2fe9c7a2bfbc5b300"
+    },
+    {
+      "bytes": 36253,
+      "path": "src/blink/data/plugin/blinks/ruddr-com/0.6.0/openapi.json",
+      "sha256": "91298fc6a2dbbbc7ee9fba4bee2f82d1ca93a45d16cdfb2338e6e1f91148f6ef"
+    },
+    {
+      "bytes": 599,
+      "path": "src/blink/data/plugin/blinks/ruddr-com/0.6.0/weblink.json",
+      "sha256": "7b8b8588ad8f9d9ece117ee65c9ba423555f61951c7c30c8994ad86398116906"
+    },
+    {
+      "bytes": 3272,
+      "path": "src/blink/data/plugin/blinks/usaspending-gov/0.1.0/openapi.json",
+      "sha256": "cea61bdb75869e7c3bd85a55ba022ef4f4f333bd917a178cb232a66c82d01526"
+    },
+    {
+      "bytes": 537,
+      "path": "src/blink/data/plugin/blinks/usaspending-gov/0.1.0/weblink.json",
+      "sha256": "4e5a0c7f57da2870bcb1ffb131b2884ab097c140df288b4b037a008d56b36a2f"
+    },
+    {
+      "bytes": 3109,
+      "path": "src/blink/data/plugin/blinks/weather-gov/0.1.0/openapi.json",
+      "sha256": "45efef28d221229db47f77698e2a300147f119bd1f0e51af2a8bc65cb4f79fc4"
+    },
+    {
+      "bytes": 514,
+      "path": "src/blink/data/plugin/blinks/weather-gov/0.1.0/weblink.json",
+      "sha256": "73b10f8662a2c0ea93b686c43fbe569e0c8b734da6216e880ddab65bcb516dc0"
+    },
+    {
+      "bytes": 1454,
+      "path": "src/blink/data/plugin/mcp/profile-host.mjs",
+      "sha256": "f90ba9a56f2471029389c6a1ca2a37d4c1cf7387ce311ba2e3ae9fb2e0d3f506"
+    },
+    {
+      "bytes": 8179,
+      "path": "src/blink/data/plugin/schemas/config-v1/settings.schema.json",
+      "sha256": "49b85f533cfbd1574262a4103d800bd00012ff7fd6d6dfa9ea0caea7d9ec57ed"
+    },
+    {
+      "bytes": 4946,
+      "path": "src/blink/data/plugin/schemas/execution-v1/arazzo.schema.json",
+      "sha256": "a51a6d7379580fde2cd9a3c8f561279daa7a16ba9f319c9dafa285ca630a748b"
+    },
+    {
+      "bytes": 98135,
+      "path": "src/blink/data/plugin/schemas/execution-v1/openapi.schema.json",
+      "sha256": "11403a313fab38a52dd04e9b09f2a444ecc86ca468a182b839485e3a03d56bb0"
+    },
+    {
+      "bytes": 3244,
+      "path": "src/blink/data/plugin/schemas/index.json",
+      "sha256": "f959645474edcdb4313d0868b0f501006823629934d11ae269d6df331532e567"
+    },
+    {
+      "bytes": 2658,
+      "path": "src/blink/data/plugin/schemas/v1/catalog.schema.json",
+      "sha256": "17c0c35296a5b38afe2f7f83c59a18a5b5adfa8e9d09b73874b8ed4d49ff03b2"
+    },
+    {
+      "bytes": 4733,
+      "path": "src/blink/data/plugin/schemas/v1/private-blink.schema.json",
+      "sha256": "71e2163115a9a44988004e223a46ed5c8e40bd168c419c6e29a2dff61a59f01f"
+    },
+    {
+      "bytes": 5715,
+      "path": "src/blink/data/plugin/schemas/v1/source-lock.schema.json",
+      "sha256": "7ddbe20dfd0b2fce817317e16778dfc9a070d6f7c82feadcad5f83b5f0f47ee3"
+    },
+    {
+      "bytes": 2958,
+      "path": "src/blink/data/plugin/schemas/v1/sources.schema.json",
+      "sha256": "a8e75bbff65a13323b9375061fffdba8ad61eaa99679ea3676ea12fdf89b01b4"
+    },
+    {
+      "bytes": 3234,
+      "path": "src/blink/data/plugin/schemas/v1/weblink.schema.json",
+      "sha256": "e482347f4c21c0bcc28c4694e9e6f9162f22d8fd09e079dfee02e76915abdeff"
+    },
+    {
+      "bytes": 48952,
+      "path": "src/blink/discovery.py",
+      "sha256": "08880da4fffe254ed454faca9e691014f5ed2e3adecc129d59d35770c176db5d"
+    },
+    {
+      "bytes": 11298,
+      "path": "src/blink/distribution.py",
+      "sha256": "ff517ac64653af0a4190fb6cb4affd555a6be9fa24452ee10ad90a48ff16936f"
+    },
+    {
+      "bytes": 4055,
+      "path": "src/blink/doctor.py",
+      "sha256": "5832f17df7cc48fb14696555e3d18ed50753322c8d85c859d6718f655f814f3b"
+    },
+    {
+      "bytes": 56671,
+      "path": "src/blink/dynamic_cli.py",
+      "sha256": "f6048a741a4555b43f161293312b1c82d0394fc43320df88e09d4cc69aeea5a4"
+    },
+    {
+      "bytes": 2234,
+      "path": "src/blink/errors.py",
+      "sha256": "954e69592f82a8ed3e9fedcbe2d81781149e8f3561f97d49381cd55d3f22fef9"
+    },
+    {
+      "bytes": 31314,
+      "path": "src/blink/execution.py",
+      "sha256": "bcea227450705e05b3c1ed3308dff815c51279680593c756cef6e0ec7590ee96"
+    },
+    {
+      "bytes": 8908,
+      "path": "src/blink/executor.py",
+      "sha256": "24c849a1fcdd27c4ade7457800d8a3fc4a7bddb7e9d539cd4f2675e605bc9dd2"
+    },
+    {
+      "bytes": 56208,
+      "path": "src/blink/extensions.py",
+      "sha256": "affd4555487ec8447bda44dd16b6ab8aa13e56d82e0651af7d9c11d7131c3062"
+    },
+    {
+      "bytes": 798,
+      "path": "src/blink/filelock.py",
+      "sha256": "951530d201544768de78c10729e45b6cd5d27400e347c338f1ef0f63919b2ecd"
+    },
+    {
+      "bytes": 6032,
+      "path": "src/blink/headless.py",
+      "sha256": "255f96e2e0cb7c167973a89fdee10f69181845ed25998b5e60f46e2cc5edd426"
+    },
+    {
+      "bytes": 9803,
+      "path": "src/blink/home.py",
+      "sha256": "3d7a93b728e3dacb7ddc4c5d80db508d2bdb70076894d07fecba858aebedb4a0"
+    },
+    {
+      "bytes": 9703,
+      "path": "src/blink/installation.py",
+      "sha256": "5dc1133d14c4345b20b74c51cc0e89518406a806745108951886fc6d8b877a08"
+    },
+    {
+      "bytes": 102439,
+      "path": "src/blink/learner.py",
+      "sha256": "0a6f5507e8758408b9d3e4305c431155118a6d6c27eeb28fa4443184692bac36"
+    },
+    {
+      "bytes": 7556,
+      "path": "src/blink/onboarding.py",
+      "sha256": "659c85a7bbc29f6671e6caded608ab59f1025a5b8463261b85e8ad4a1e851c86"
+    },
+    {
+      "bytes": 14868,
+      "path": "src/blink/overlays.py",
+      "sha256": "d2c216dde3da0ca39bbc1aee53bd076b109c4735e5a9216a7aab7e81a464ee31"
+    },
+    {
+      "bytes": 482,
+      "path": "src/blink/paths.py",
+      "sha256": "46eba97e4ccf518f79584ceee6f711a83241b4477de44e6c96cce106d31719f4"
+    },
+    {
+      "bytes": 8678,
+      "path": "src/blink/preflight.py",
+      "sha256": "418c02a33e62c0ac9fd199babca55eaf28a0522c6f8af474266111fa1465d7a4"
+    },
+    {
+      "bytes": 9254,
+      "path": "src/blink/private.py",
+      "sha256": "dc05f2f64d7b1f60c01733534353b8d9a2b096505e2be22ab3dd50f989a20196"
+    },
+    {
+      "bytes": 32729,
+      "path": "src/blink/profile.py",
+      "sha256": "b053998fe7e749eab8ead61a7e68b4f91c91e41d5744062f3c922d47779aef0f"
+    },
+    {
+      "bytes": 10844,
+      "path": "src/blink/profile_names.py",
+      "sha256": "b742e946e554d53d03db484b7b0f4d56b201082dc3bb9dc2692d9cfb5f2dfc3d"
+    },
+    {
+      "bytes": 19739,
+      "path": "src/blink/routines.py",
+      "sha256": "e80807581aa6e61139da73f24ca817a6017bb6ff727459020680ef3977c3084f"
+    },
+    {
+      "bytes": 81691,
+      "path": "src/blink/runtime.py",
+      "sha256": "3c3cc7b1138d73a03177f8ecccbd03aa7d5fb73b06855e1e6c0b76fba10766f1"
+    },
+    {
+      "bytes": 21180,
+      "path": "src/blink/scheduler.py",
+      "sha256": "1bcfa76afa188fbfd1402d4f820439df8c5030314efb9afdd35eb58ea293eef9"
+    },
+    {
+      "bytes": 3162,
+      "path": "src/blink/schemaver.py",
+      "sha256": "19771f47c03d6dd3f1f457c9e573878fb4bf0aedcac71d700c2ec98e6cb429f6"
+    },
+    {
+      "bytes": 2615,
+      "path": "src/blink/signatures.py",
+      "sha256": "a087907e1c1d10a4b8ac40bd6883dedcc857b3379e28b3bd2e6c880503c72fd3"
+    },
+    {
+      "bytes": 50969,
+      "path": "src/blink/sources.py",
+      "sha256": "e7804baa68c47d4739c88bf5a08118968060ab2b1846a9c3b8b83d1ec1bdab7d"
+    },
+    {
+      "bytes": 16316,
+      "path": "src/blink/specifics.py",
+      "sha256": "975aaa165a0be5f484ac7755535c760e04417a800ac7c6dcd9c297c6f2054880"
+    },
+    {
+      "bytes": 7606,
+      "path": "src/blink/storage.py",
+      "sha256": "5d853df7d52dece4ef701259e8173665ae0a7ad4166972400f9f342b6c214962"
+    },
+    {
+      "bytes": 10814,
+      "path": "src/blink/verification.py",
+      "sha256": "e8fdea4ca37e43e7100a96d7d5c6aaaafcc4878886c2a1c19e35513b6906f250"
+    },
+    {
+      "bytes": 8351,
+      "path": "src/blink/windows.py",
+      "sha256": "c8e8e314ec4158b7185296de9384aaa3ba9792056c1a9ec7141c073592842575"
+    },
+    {
+      "bytes": 13895,
+      "path": "src/blink/workflows.py",
+      "sha256": "6424c536099ab966bbb02d99df57a0397df91ab4133e3f7432e7405a5a5ec80b"
+    }
+  ],
+  "formatVersion": 1,
+  "plugin": {
+    "author": {
+      "name": "Web Blink project"
+    },
+    "description": "Learn and use reviewed Web Link integrations with local account custody and durable execution policy.",
+    "displayName": "Web Blink",
+    "homepage": "https://github.com/patrick-1984/web-blink",
+    "license": "MIT",
+    "name": "web-blink",
+    "repository": "https://github.com/patrick-1984/web-blink",
+    "version": "0.18.2"
+  }
+}
