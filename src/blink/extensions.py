@@ -524,7 +524,8 @@ class Extensions:
                     return issue
                 if method == 'bundled_stage':
                     from .bundled import stage
-                    return stage(self.runtime, params['name'], params['version'], params['expectedDescriptorSha256'])
+                    return stage(self.runtime, params['name'], params['version'], params['expectedDescriptorSha256'],
+                                 **({'deployment': params['deployment']} if 'deployment' in params else {}))
                 if method == 'source_add':
                     return self.sources.add(params['id'], params['repository'], params.get('ref', 'main'),
                                             params.get('catalogPath', 'blink-catalog.json'), replace=params.get('replace', False))
@@ -536,7 +537,8 @@ class Extensions:
                     return self.sources.sync(params['source'], enrich=params.get('enrich', False))
                 return self.sources.install(params['source'], params['integration'], params['version'],
                     expected_commit=params.get('expectedCommit'), expected_catalog_sha256=params['expectedCatalogSha256'],
-                    expected_descriptor_sha256=params['expectedDescriptorSha256'])
+                    expected_descriptor_sha256=params['expectedDescriptorSha256'],
+                    **({'deployment': params['deployment']} if 'deployment' in params else {}))
             if method in ('execution_run', 'execution_observe', 'context_save', 'routine_save', 'routine_run', 'routine_begin', 'routine_step'):
                 from .execution import validate_action
                 issue = validate_action(method, params, native=True)

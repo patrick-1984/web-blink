@@ -1376,7 +1376,10 @@ class Learner:
                 raise ProposalError('Delta learning preserves authentication; use a reviewed full-document patch with exact parent fields to change it')
             if execution is not None and execution != meta['exec']:
                 raise ProposalError('Delta learning preserves execution policy; use a reviewed full-document patch with exact parent fields to change it')
-            if app_origin is not None and app_origin != meta.get('appOrigin', base['servers'][0]['url']):
+            approved_apps = {meta.get('appOrigin', base['servers'][0]['url'])}
+            if meta.get('addresses'):
+                approved_apps.update(op['appOrigin'] for op in active['compiled']['operations'].values())
+            if app_origin is not None and app_origin not in approved_apps:
                 raise ProposalError('Delta learning preserves the application origin; use a reviewed full-document patch with exact parent fields to change it')
             auth = copy.deepcopy(meta['auth'])
             execution = copy.deepcopy(meta['exec'])
@@ -1398,6 +1401,7 @@ class Learner:
         paths, origins, operation_ids, endpoints = {}, set(), set(), set()
         positions = {}  # operationId -> its selection, for field paths
         anonymous_checks = {}
+        deployment_servers = {}
         for position, selection in enumerate(operations):
           try:
             if not isinstance(selection, dict):
@@ -1415,6 +1419,10 @@ class Learner:
             operation_id = selection.get('operationId')
             if not isinstance(operation_id, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,99}', operation_id) or operation_id in operation_ids:
                 raise ProposalError('Operation IDs must be valid and unique')
+            if base and base['x-blink-service'].get('addresses'):
+                from .deployment_learning import captured_destination
+                path, deployment_servers[operation_id] = captured_destination(
+                    active, record['origin'], path, concrete_path=record['path'])
             possible_auth = bool({'cookie', 'authorization'} & set(record.get('headerNames') or []))
             check = selection.get('anonymousCheck')
             if auth['kind'] == 'none' and (possible_auth or check is not None):
@@ -1559,8 +1567,22 @@ class Learner:
                 for method, operation in methods.items():
                     # The child document's default server is not the parent's default server. Bind exact capture routing.
                     operation = {**operation, 'servers': copy.deepcopy(document['servers'])}
-                    if method in base['paths'].get(path, {}):
-                        old = base['paths'][path][method]
+                    target_path = path
+                    if base['x-blink-service'].get('addresses'):
+                        operation['servers'] = [{'url': deployment_servers[operation['operationId']]}]
+                    if method in base['paths'].get(target_path, {}):
+                        old = base['paths'][target_path][method]
+                        if base['x-blink-service'].get('addresses'):
+                            slot = deployment_servers[operation['operationId']].partition(':')[2]
+                            selected = urlsplit(active['compiled']['addresses'][slot])
+                            old_route = active['compiled']['operations'][old['operationId']]
+                            if ((old_route['origin'], old_route['path']) !=
+                                    (selected.scheme + '://' + selected.netloc,
+                                     selected.path.rstrip('/') + target_path)):
+                                raise ProposalError(
+                                    'This relative path and method already belong to another approved address. '
+                                    'Use a reviewed full-document patch with distinct shared operation paths.',
+                                    code='deployment_mapping_required')
                         if not replace:
                             unchanged.append(old.get('operationId', operation['operationId']))
                             continue
@@ -1568,7 +1590,7 @@ class Learner:
                             raise ProposalError('An endpoint replacement must preserve its approved operationId',
                                                 code='operation_id_conflict', field_path='operations')
                         # Relearn only the selected endpoint; unrelated operations, auth, notes and variables survive.
-                        base['paths'][path][method] = _preserve_shared_notes(old, operation)
+                        base['paths'][target_path][method] = _preserve_shared_notes(old, operation)
                         added.add(operation['operationId'])
                         continue
                     if operation['operationId'] in existing_ids:
@@ -1576,7 +1598,7 @@ class Learner:
                         raise ProposalError('This operationId already names a different endpoint in the active Blink; '
                                             'give this selection its own operationId', code='operation_id_conflict',
                                             field_path=f"operations.{positions.get(operation['operationId'], 0)}.operationId")
-                    base['paths'].setdefault(path, {})[method] = copy.deepcopy(operation)
+                    base['paths'].setdefault(target_path, {})[method] = copy.deepcopy(operation)
                     added.add(operation['operationId'])
             if not added:
                 raise ProposalError('Every selected endpoint is already in the active Blink. Select a new endpoint, '
@@ -1615,8 +1637,10 @@ class Learner:
         if anonymous_checks:
             from .profile import compile_manifest
             from .storage import digest
+            from .deployment_learning import compiler_inputs
             compiled = compile_manifest(document, allow_http=self.runtime.allow_http,
-                                        variables={**stored, **new_values} if stored or new_values else None)
+                                        variables={**stored, **new_values} if stored or new_values else None,
+                                        **compiler_inputs(active))
             for opid, arguments in anonymous_checks.items():
                 operation = compiled['operations'][opid]
                 if (operation['effect'] != 'read' or operation['method'] not in ('GET', 'HEAD')

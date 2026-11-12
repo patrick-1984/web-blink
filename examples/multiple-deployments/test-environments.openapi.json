@@ -1,0 +1,80 @@
+{
+  "openapi": "3.1.0",
+  "x-blink-schema": {
+    "version": "1.5.0"
+  },
+  "info": {
+    "title": "Application with independent API and web deployments",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "blink-address:api"
+    }
+  ],
+  "x-blink-service": {
+    "id": "test-application",
+    "addresses": {
+      "api": {
+        "mode": "dynamic",
+        "config": "api",
+        "url": "https://api.original.example"
+      },
+      "web": {
+        "mode": "unspecified",
+        "config": "web"
+      },
+      "identity": {
+        "mode": "fixed",
+        "url": "https://login.original.example"
+      }
+    },
+    "requestedOrigins": [
+      "blink-address:api",
+      "blink-address:web"
+    ],
+    "appOrigin": "blink-address:web",
+    "loginOrigins": [
+      "blink-address:web",
+      "blink-address:identity"
+    ],
+    "auth": {
+      "kind": "none"
+    },
+    "exec": {
+      "allowed": [
+        "direct"
+      ],
+      "preferred": "direct"
+    }
+  },
+  "paths": {
+    "/status": {
+      "get": {
+        "operationId": "apiStatus",
+        "x-blink-effect": "read",
+        "responses": {
+          "200": {
+            "description": "API status"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "webStatus",
+        "x-blink-effect": "read",
+        "servers": [
+          {
+            "url": "blink-address:web"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Web application status"
+          }
+        }
+      }
+    }
+  }
+}

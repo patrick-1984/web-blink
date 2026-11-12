@@ -288,7 +288,7 @@ def resolve_variables(doc,values,*,require=True):
                          f'(private_set with {{"variables": {{"{sorted(missing)[0]}": "..."}}}}), then install it again')
 
 
-def compile_manifest(document, *, allow_http=False, variables=None, require_variables=True):
+def compile_manifest(document, *, allow_http=False, variables=None, require_variables=True, addresses=None, deployment=None):
     if len(encoded(document).encode())>2_000_000:
         raise BlinkError('invalid_manifest','Manifest exceeds the size limit')
     schema=json.loads(schema_path().read_text())
@@ -302,6 +302,8 @@ def compile_manifest(document, *, allow_http=False, variables=None, require_vari
     doc=copy.deepcopy(document)
     service=doc['x-blink-service']; auth=service['auth']
     declared=service.get('variables') or {}
+    from .addresses import resolve_addresses
+    address_snapshot=resolve_addresses(doc,addresses,deployment=deployment,require=require_variables,allow_http=allow_http)
     resolve_variables(doc,variables,require=require_variables)
     settings=settings_contract(service.get('settings',{'type':'object','properties':{},'additionalProperties':False}))
     blink_version,history=service_history(service)
@@ -475,5 +477,8 @@ def compile_manifest(document, *, allow_http=False, variables=None, require_vari
     if not ops:raise BlinkError('invalid_manifest','No operations')
     semantic={'id':service['id'],'title':visible_text(doc['info']['title']),'requestedOrigins':requested,'operations':ops}
     if declared:semantic['variables']=sorted(declared)
+    if service.get('addresses'):
+        semantic.update(addresses=address_snapshot['addresses'],deployment=address_snapshot['deployment'])
     return {**semantic,'settingsSchema':settings,'version':doc['info']['version'],'blinkVersion':blink_version,'history':history,
-            'digest':digest(semantic),'document':copy.deepcopy(document) if declared else doc}
+            'digest':digest(semantic),'document':copy.deepcopy(document) if declared or service.get('addresses') else doc,
+            **({'inspectionOnly':True,'unresolvedAddresses':address_snapshot['unresolvedAddresses']} if address_snapshot['unresolvedAddresses'] else {})}

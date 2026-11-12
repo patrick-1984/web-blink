@@ -3,8 +3,8 @@
   "$id": "urn:web-blink:schema:execution:1",
   "title": "Web Blink execution profile v1",
   "x-blink-schema": {
-    "version": "1.4.0",
-    "released": "2026-11-09"
+    "version": "1.5.0",
+    "released": "2026-11-12"
   },
   "type": "object",
   "additionalProperties": false,
@@ -484,6 +484,83 @@
                 "maxLength": 40
               }
             }
+          }
+        },
+        "addresses": {
+          "description": "Named fixed or privately resolved deployment base URLs. Whole destination fields may use blink-address:<slot>; dynamic original URLs are hints, never fallbacks.",
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 20,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode",
+                  "url"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "fixed"
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode",
+                  "config"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "dynamic"
+                  },
+                  "config": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])"
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode",
+                  "config"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "unspecified"
+                  },
+                  "config": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])"
+                  }
+                }
+              }
+            ]
           }
         }
       },

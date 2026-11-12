@@ -166,15 +166,17 @@ def validate_bridge(method, params):
             return "source_sync takes a source id and optional boolean enrich"
     elif method == "source_install":
         required = {"source", "integration", "version", "expectedCatalogSha256", "expectedDescriptorSha256"}
-        if (keys - required - {"expectedCommit"} or not required <= keys
+        if (keys - required - {"expectedCommit", "deployment"} or not required <= keys
                 or not text(params["source"], 100) or not text(params["integration"], 100)
                 or not text(params["version"], 100)
                 or not all(isinstance(params[name], str) and SHA256.fullmatch(params[name])
                            for name in ("expectedCatalogSha256", "expectedDescriptorSha256"))
                 or ("expectedCommit" in keys and not (isinstance(params["expectedCommit"], str)
-                                                      and COMMIT.fullmatch(params["expectedCommit"])))):
+                                                      and COMMIT.fullmatch(params["expectedCommit"])))
+                or ("deployment" in keys and not (isinstance(params["deployment"], str)
+                                                   and re.fullmatch('[a-z][a-z0-9-]{0,63}', params["deployment"])))):
             return ("source_install takes source, integration, version, expectedCatalogSha256 and "
-                    "expectedDescriptorSha256 (64 lowercase hex) and optional expectedCommit (40/64 hex)")
+                    "expectedDescriptorSha256 (64 lowercase hex), optional expectedCommit (40/64 hex) and deployment")
         if params["source"] != "official" and "expectedCommit" not in keys:
             return "Configured-source installation requires expectedCommit"
     else:
@@ -202,6 +204,8 @@ def offline_preview(plugin_root, action, values):
                            version=values.get("version"), expectedCommit=values.get("expected_commit"),
                            expectedCatalogSha256=values.get("expected_catalog_sha256"),
                            expectedDescriptorSha256=values.get("expected_descriptor_sha256"))
+            if values.get('deployment') is not None:
+                preview['deployment'] = values['deployment']
         preview["validation"] = "ok"
     except BlinkError as exc:
         preview["validation"] = exc.code
@@ -612,7 +616,7 @@ class SourceManager:
                 "expectedDescriptorSha256": matches[0]["sha256"]}
 
     def install(self, source_id, integration_id, version, *, expected_commit=None,
-                expected_catalog_sha256=None, expected_descriptor_sha256=None):
+                expected_catalog_sha256=None, expected_descriptor_sha256=None, deployment=None):
         if not (isinstance(expected_catalog_sha256, str) and SHA256.fullmatch(expected_catalog_sha256)
                 and isinstance(expected_descriptor_sha256, str) and SHA256.fullmatch(expected_descriptor_sha256)
                 and (expected_commit is None or isinstance(expected_commit, str) and COMMIT.fullmatch(expected_commit))):
@@ -693,7 +697,8 @@ class SourceManager:
                                                        provenance={"sourceCandidate": candidate_id,
                                                                    "publisherPolicyFingerprint": policy_fingerprint,
                                                                    "publisherVerification": verification, **pin},
-                                                       connection=connection)
+                                                       connection=connection,
+                                                       **({'deployment': deployment} if deployment is not None else {}))
                 data = result.get("data", {})
                 if result.get("status") not in ("ok", "quarantined") or not data.get("digest") or not data.get("candidate"):
                     raise _error("source_stage", "Core did not stage a reviewable manifest candidate")

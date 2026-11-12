@@ -1,0 +1,17 @@
+{
+  "service": "staging:wordpress",
+  "patch": {
+    "deployments": {
+      "staging": {
+        "addresses": {
+          "wordpress": "https://wp-staging.example/blog"
+        }
+      },
+      "production": {
+        "addresses": {
+          "wordpress": "https://wp-production.example:8443/company-blog"
+        }
+      }
+    }
+  }
+}

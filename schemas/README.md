@@ -69,3 +69,10 @@ exports all eight bundled schema files and the index.
 `privateProfile` publishes `v1/private-blink.schema.json`: one user's own data for one Blink (identity hints,
 field defaults, preferences, process notes, separately stored secrets). It is stored under
 `$BLINK_HOME/private/` (default `~/.web-blink/private/`) and is never part of a shared Blink.
+
+Execution edition 1.5.0 adds `x-blink-service.addresses`: fixed, dynamic and unspecified logical address
+slots referenced as `blink-address:NAME` in supported destination fields. Private `deployments` contain
+named address sets for test, production and custom installations. An explicit staging selection resolves
+local URLs/FQDNs to the concrete approved snapshot; private values never enter a shared schema or public
+catalog. Safe base URL prefixes support subdirectory installs. See [the deployment guide](../docs/deployments.md)
+and [routing templates](../examples/multiple-deployments/).

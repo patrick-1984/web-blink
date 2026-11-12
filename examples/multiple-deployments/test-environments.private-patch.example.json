@@ -1,0 +1,19 @@
+{
+  "service": "staging:test-application",
+  "patch": {
+    "deployments": {
+      "staging": {
+        "addresses": {
+          "api": "https://api.staging.example/v2",
+          "web": "web.staging.example"
+        }
+      },
+      "production": {
+        "addresses": {
+          "api": "https://api.production.example/v2",
+          "web": "web.production.example"
+        }
+      }
+    }
+  }
+}

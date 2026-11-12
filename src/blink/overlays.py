@@ -235,7 +235,7 @@ def check_new_target(store, source, *, connection=None):
         raise BlinkError('namespace_conflict', 'This namespace is still claimed by imported packages or pins')
 
 
-def manual_install(runtime, document, source, integration, *, base_candidate=None, base_digest=None):
+def manual_install(runtime, document, source, integration, *, base_candidate=None, base_digest=None, deployment=None):
     """The permit-gated install_manifest (`blink install` and the bridge)."""
     if not isinstance(source, str) or not ID.fullmatch(source) or not isinstance(integration, str) or not ID.fullmatch(integration):
         raise BlinkError('invalid_source', 'Source/integration IDs are invalid')
@@ -245,6 +245,7 @@ def manual_install(runtime, document, source, integration, *, base_candidate=Non
                                               for v in (base_candidate, base_digest)):
         raise BlinkError('invalid_arguments', 'baseCandidate and baseDigest must be nonempty bounded strings')
     service = f'{source}:{integration}'
+    selection = {'deployment': deployment} if deployment is not None else {}
     store = runtime.store
     with store.transaction() as db:
         current = store.get('active_manifest', service, connection=db)
@@ -254,7 +255,7 @@ def manual_install(runtime, document, source, integration, *, base_candidate=Non
                     or current['digest'] != base_digest):
                 raise BlinkError('approval_stale', 'baseCandidate/baseDigest do not match the active Blink')
             provenance = overlay_provenance(store, current, capture=None, connection=db)
-            return runtime.install_manifest(document, source, integration, provenance=provenance, connection=db)
+            return runtime.install_manifest(document, source, integration, provenance=provenance, connection=db, **selection)
         if source in INTERNAL_SOURCES:
             raise BlinkError('namespace_conflict', 'Internal source namespaces cannot be installed manually')
         if store.get('source_config', source, connection=db):
@@ -264,4 +265,4 @@ def manual_install(runtime, document, source, integration, *, base_candidate=Non
                              'version to stage a reviewed full-document patch', service=service,
                              active={'candidate': current['candidate'], 'digest': current['digest']})
         check_new_target(store, source, connection=db)
-        return runtime.install_manifest(document, source, integration, connection=db)
+        return runtime.install_manifest(document, source, integration, connection=db, **selection)

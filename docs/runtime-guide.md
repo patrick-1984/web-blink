@@ -346,6 +346,21 @@ Someone installing a shared Blink with variables first saves their own values
 The session catalog that proposals read holds real paths, path templates with `{id}` for id-like segments, query
 and body field names and types, never values.
 
+### Private installations and multiple environments
+
+Use named address slots when an installation can live at a different domain rather than within one fixed
+domain's tenant labels. The shared `x-blink-service.addresses` map declares fixed, dynamic or unspecified
+destinations. Whole-field `blink-address:NAME` references select them in server and origin fields. Private
+`deployments[NAME].addresses` sets supply custom URLs or FQDNs, selected explicitly with `--deployment`
+during installation. A WordPress base URL such as `https://private.example/blog` adds `/blog` to the
+corresponding operation paths while grants remain scoped to exact origins.
+
+Staging freezes the selected addresses into the reviewable candidate. Config edits cannot redirect it;
+restaging and approval are required. Use separate existing source namespaces and account bindings to keep
+test and production active together. Learning an extension preserves its exact parent's frozen deployment
+and maps recorded paths back to address references. See [the deployment guide](deployments.md) for schemas,
+private configuration, simultaneous installs and replacement commands.
+
 ## Approvals in Claude Code
 
 Your order is the authorization. When you tell Claude to record a site, propose or switch on a Blink, bind an
