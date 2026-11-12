@@ -57,6 +57,32 @@ def joined_path(parent: str, child: str) -> str:
     return relative_json_path(result)
 
 
+def package_base_artifact(document, primary_path, artifacts):
+    """Select a thin child's explicitly declared same-package base, without reading it.
+
+    Both package loaders use the pure instance validator before following a child-relative
+    path. Artifact byte hashes and the parsed-document base pin remain separate checks.
+    """
+    from .instances import is_instance, validate_definition
+    bases = [artifact for artifact in artifacts if artifact['role'] == 'base-openapi']
+    if len(bases) > 1:
+        raise ValueError('A package can contain only one instance base artifact')
+    if not is_instance(document):
+        if bases:
+            raise ValueError('Ordinary packages cannot contain an unused instance base artifact')
+        return None
+    validate_definition(document)
+    reference = document['base'].get('artifact')
+    if reference is None:
+        if bases:
+            raise ValueError('Embedded instances cannot contain an unused base artifact')
+        return None
+    expected = joined_path(primary_path, reference)
+    if len(bases) != 1 or bases[0]['path'] != expected:
+        raise ValueError('Instance base artifact must match its child-relative reference')
+    return bases[0]
+
+
 def regular_file(base: Path, relative: str) -> Path:
     relative_json_path(relative)
     base = Path(base).resolve()
@@ -94,8 +120,9 @@ def _index_entries(index):
         raise ValueError("Malformed execution schema entries")
     if profile.get("status") == "implemented":
         if profile.get("version") != 1 or {entry.get("id") for entry in execution if isinstance(entry, dict)} != {
-                "urn:web-blink:schema:execution:1", "urn:web-blink:schema:arazzo-execution:1"}:
-            raise ValueError("Implemented execution profile must publish both supported v1 schemas")
+                "urn:web-blink:schema:execution:1", "urn:web-blink:schema:arazzo-execution:1",
+                "urn:web-blink:schema:instance:1"}:
+            raise ValueError("Implemented execution profile must publish all three supported v1 schemas")
     elif execution:
         raise ValueError("Execution schemas require an implemented profile declaration")
     config = index.get('configProfile', {}).get('schemas', [])
@@ -144,11 +171,12 @@ def refresh_schema_index(plugin_root: Path) -> dict:
     index = strict_json(index_file.read_bytes())
     index["executionProfile"] = {
         "status": "implemented", "version": 1, "support": "supported-subset",
-        "format": "OpenAPI 3.1 plus x-blink-*; restricted Arazzo 1.1",
+        "format": "OpenAPI 3.1 plus x-blink-*; restricted Arazzo 1.1; pinned instance definitions",
         "note": "The bundled compilers implement the explicitly bounded execution-v1 schemas; unsupported constructs fail closed.",
         "schemas": [
             {"id": "urn:web-blink:schema:execution:1", "path": "execution-v1/openapi.schema.json"},
             {"id": "urn:web-blink:schema:arazzo-execution:1", "path": "execution-v1/arazzo.schema.json"},
+            {"id": "urn:web-blink:schema:instance:1", "path": "execution-v1/instance.schema.json"},
         ],
     }
     if (root / 'config-v1/settings.schema.json').is_file():

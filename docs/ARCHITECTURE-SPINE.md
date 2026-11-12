@@ -1,16 +1,16 @@
 ---
-name: Multiple deployment addresses
+name: Multiple deployment addresses and scoped instance schemas
 type: architecture-spine
 purpose: build-substrate
 altitude: feature
 paradigm: layered compiler with immutable authorization snapshots
-scope: shared address declarations, local deployment resolution and exact-service execution
+scope: shared addresses, pinned schema composition, instance scope and exact-service execution
 status: final
 created: '2026-11-12'
 updated: '2026-11-12'
-binds: [address-resolution, deployment-staging, private-configuration, discovery]
+binds: [address-resolution, deployment-staging, private-configuration, discovery, instance-composition]
 sources: [multiple-deployments-PLAN.md, ../src/blink/profile.py, ../src/blink/runtime.py, ../src/blink/sources.py]
-companions: [multiple-deployments-PLAN.md]
+companions: [multiple-deployments-PLAN.md, instance-overrides-PLAN.md]
 ---
 
 # Architecture Spine: multiple deployment addresses
@@ -21,7 +21,9 @@ The existing bounded OpenAPI compiler consumes a shared declaration and local co
 
 ```mermaid
 flowchart LR
-  Shared[Shared Blink declaration] --> Resolver[Address and host variable resolution]
+  Shared[Shared Blink or instance declaration] --> Composer[Pinned base and scoped operation composition]
+  Base[Verified base artifact or embedded snapshot] --> Composer
+  Composer --> Resolver[Address and host variable resolution]
   Private[Private named deployment] --> Resolver
   Resolver --> Compiler[Bounded profile compiler]
   Compiler --> Candidate[Immutable reviewed candidate]
@@ -75,6 +77,36 @@ flowchart LR
 - **Prevents:** learning reloading edited private endpoints, exposing private FQDNs in shared output or doubling WordPress path prefixes.
 - **Rule:** an exact-parent overlay with no explicit deployment inherits the checked parent's frozen address values and deployment name. Explicit native selection creates a fresh reviewed resolution. Delta learning maps captured exact origin/path back to a unique parent slot using longest matching prefix, strips that prefix, and writes the logical server reference. Ambiguous or missing mappings fail before staging with actionable guidance. Anonymous checks and staging use the same frozen values. New referenced keys require explicit deployment selection.
 
+### AD-8: instance schemas reference an immutable ordinary base
+
+- **Binds:** instance schema, composition, CLI and package loaders.
+- **Prevents:** mutable schema inheritance, arbitrary network resolution and divergent local/package composition.
+- **Rule:** an instance definition pins one ordinary base by ID, version and project parsed-document SHA-256 (storage.digest, including ensure_ascii=True). Its thin artifact path is relative to the primary child's directory; package descriptor translation is joined_path(primary.path, base.artifact). A standalone embedded snapshot is the equivalent transport form; exactly one is supplied. Validate the child before reading, compare the base pin before identity/schema/profile errors or permit preview, and return only value-free base failures. Reject both authored instances and annotated materialized snapshots as bases, and reject unused base_document on ordinary/embedded input. Verified loaders supply the base to a pure composer; the compiler never performs I/O. Package byte hashes are checked separately. The child has a distinct integration ID.
+
+### AD-9: whole-operation overrides have deterministic bounded meaning
+
+- **Binds:** composer, profile validation, workflows and review.
+- **Prevents:** JSON patch ambiguity, accidental route merges and hidden effect changes.
+- **Rule:** the instance operation map keys exact operation IDs and permits only complete add, replace or disable actions with lowercase method names. Existing/missing ID rules, matching operation IDs, unchanged replacement effect and financial/authentication/idempotency annotations, inherited global policy, remove-before-insert ordering and unique resulting method/path pairs follow instance-overrides-PLAN.md. Optional root variables appends only new existing-shape declarations actually used by added/replaced target operations through non-host x-blink-variable markers, within the combined 20-name limit; existing declarations and host usages cannot change. The result passes current profile probe/refresh/keepalive/prestate checks. Source/bundled loaders separately cross-check supplied workflows. Local exact-parent overlays drop active_workflow. No executable transformation or nested merge is accepted.
+
+### AD-10: a child is fixed to one exact installation
+
+- **Binds:** instance target, address resolution, learning and transport.
+- **Prevents:** installation-specific quirks leaking to another FQDN, port, path prefix or provider service.
+- **Rule:** a child targets the base's dynamic/unspecified root-server slot and replaces it with a fixed canonical URL. Added/replaced/disabled operations are confined to that slot; unrelated provider operations remain unchanged. Every annotated compilation requires root servers[0].url to reference exactly that slot and its fixed URL to equal the recorded canonical target, before address resolution. Annotation fields are exactly base{id,version,sha256}, definitionSha256, target{address,url}, actions{add,replace,disable}; they participate in digest. Flat exact-parent overlays preserve annotation, globals and non-target operations, except appending new target-only non-host private-input variables under AD-9; target edits preserve effect/protected annotations. Address-based learning recomputes actual non-host marker usage after logical mapping and drops unused captured host declarations. Broader global/provider edits outside a newly pinned base require a new ordinary integration ID without annotation. Private values cannot redirect the fixed target.
+
+### AD-11: composed children own their authority and lifecycle
+
+- **Binds:** runtime candidates, source pins, overlay ancestry and bindings/grants.
+- **Prevents:** base trust, accounts or credentials silently transferring to a customized child.
+- **Rule:** materialization precedes ordinary metadata/private-input compilation and produces the existing candidate/approval path. Its frozen return fields are document, optional instanceDefinition, optional instance and compositionStatus (verified, snapshot-claim or null). Only an authored definition composed against an actually checked base returns verified; an ordinary annotation is descriptive claimed lineage. Compiler results carry those same fields. Runtime sets provenance.instance/compositionStatus from these results, stores the ordinary document and optional authored definition separately, and labels review accordingly. Base publisher trust/accounts/grants never transfer. Changed pins/definitions change digest; base updates never mutate active children. Compiler combined inputs/result are capped at 2,000,000 bytes; native combined envelope remains 1,048,576 with current client headroom and no global limit increase. A fresh authored definition can be updated through local or package staging for the same child ID, base family and exact target. This exception derives only from actual verified composition, never caller JSON or provenance. All updates of an existing instance preserve that identity/scope; flat snapshots retain strict overlay guards.
+
+### AD-12: reusable package composition is verified offline
+
+- **Binds:** descriptor schema, configured/bundled loaders, catalog generation and distribution.
+- **Prevents:** one loader accepting an unverified base or discovery advertising uncomposed operations/hosts.
+- **Rule:** a thin packaged child has exactly one base-openapi artifact at the descriptor-relative translation of its child-relative reference, independently byte-hashed by the descriptor. Loader fields are document (raw primary), optional baseDocument, effectiveDocument (flat logical snapshot), and compiled. Metadata consumes effectiveDocument; Runtime receives raw document and explicit base_document. Every loader uses the same composer; unused/missing base artifacts fail closed. Public discovery derives effective child inventory and publisher-provided scope; private local definitions are never automatically exported or cataloged.
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -90,6 +122,7 @@ flowchart LR
 schemas/execution-v1/openapi.schema.json   shared declarations
 schemas/v1/private-blink.schema.json      local deployment sets
 src/blink/addresses.py                    bounded reference/base URL resolver
+src/blink/instances.py                    pinned base and scoped operation composition
 src/blink/profile.py                      concrete compilation and digest
 src/blink/private.py                      protected local persistence
 src/blink/runtime.py                      immutable candidate and approval
@@ -106,7 +139,12 @@ src/blink/discovery.py                    public hints and local readiness
 | Private WordPress under a subdirectory | Concrete operation compilation | AD-3, AD-5 |
 | Existing exact credential/approval authority | Runtime candidate, binding and grant | AD-3, AD-4 |
 | Discoverable reusable schemas | Public metadata and local inventory | AD-6 |
+| Reusing a base schema with instance quirks | Pure composition and verified package loading | AD-8, AD-9, AD-12 |
+| Exact FQDN/base-path specialization | Fixed child target and preserved learning scope | AD-10 |
+| Independent child approval and authority | Runtime, source provenance and bindings | AD-11 |
 
 ## Deferred
 
 Per-binding environment variants within one canonical service are deferred: existing independent source aliases already supply concurrent isolation without changing service-ID grammar or authority ownership. Automatic private-install discovery and credential-specific environment overrides remain outside this URL resolution feature. Live private WordPress verification depends on an owner-provided installation; deterministic local fixture checks cover routing and isolation.
+
+Recursive inheritance, cross-repository fetch resolution, fixed-domain/authentication-provider overrides and arbitrary transformation languages remain outside the first instance contract. A reusable base must first expose a dynamic/unspecified root-server address slot. Pinned same-package artifacts make a distributable child self-contained while preserving an explicit schema reference.

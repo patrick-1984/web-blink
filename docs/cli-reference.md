@@ -246,3 +246,9 @@ copies of those values elsewhere in the preview. The exact action digest still b
 `blink daemon stop` stops the running daemon without starting one, including a 0.12.0 daemon.
 Stop recording first. This command is useful before a Windows / Claude Desktop plugin update;
 see [Updating on Windows / Claude Desktop](release-updates.md#updating-on-windows--claude-desktop).
+
+`blink install <child-file> --source local --id <child-id>` also accepts a pinned instance definition.
+It reads a thin base reference relative to the selected child file, verifies the pin before confirmation,
+and stages the composed contract. Native MCP uses explicit `baseDocument` data instead of file lookup.
+Child IDs, approval and account grants remain independent of the reusable base. See
+[instance overrides](instance-overrides.md) for the WordPress example and exact URL scope.

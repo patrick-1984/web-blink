@@ -96,8 +96,21 @@ def validate_metadata(entry):
     if meta is None:
         return None
     required = {'version', 'title', 'hosts', 'operations', 'authKind', 'browserRecipeComplete'}
-    if not isinstance(meta, dict) or set(meta) != required or type(meta['version']) is not int or meta['version'] != 1:
+    if (not isinstance(meta, dict) or type(meta.get('version')) is not int
+            or meta['version'] not in (1, 2)
+            or set(meta) != (required | {'instanceTarget'} if meta['version'] == 2 else required)):
         raise ValueError('Unsupported discovery metadata')
+    if meta['version'] == 2:
+        from .addresses import NAME, base_url
+        target = meta['instanceTarget']
+        if (not isinstance(target, dict) or set(target) != {'address', 'url'}
+                or not isinstance(target['address'], str) or not NAME.fullmatch(target['address'])):
+            raise ValueError('Invalid instance discovery scope')
+        try:
+            if base_url(target['url'], allow_http=True) != target['url']:
+                raise ValueError('Invalid instance discovery scope')
+        except BlinkError:
+            raise ValueError('Invalid instance discovery scope') from None
     if (not isinstance(meta['title'], str) or not 1 <= len(meta['title']) <= 200
             or not isinstance(meta['hosts'], list) or len(meta['hosts']) > 100
             or not isinstance(meta['operations'], list) or len(meta['operations']) > 1000
@@ -146,15 +159,61 @@ def _metadata_for_compiled(document, compiled, *, local=False):
                                            else bool(auth.get('storage')))))
     result = {'version': 1, 'title': _text(compiled['title']), 'hosts': sorted(hosts),
               'operations': sorted(compiled['operations']), 'authKind': kind, 'browserRecipeComplete': recipe}
+    if compiled.get('instance'):
+        result.update(version=2, instanceTarget=dict(compiled['instance']['target']))
     return result
 
 
-def metadata_for_document(document):
+def metadata_for_document(document, *, base_document=None):
     """Derive bounded catalog metadata from public bytes, never private values or credentials."""
     from .profile import compile_manifest
-    result = _metadata_for_compiled(document, compile_manifest(document, require_variables=False))
+    compiled = compile_manifest(document, require_variables=False,
+                                **({'base_document': base_document} if base_document is not None else {}))
+    result = _metadata_for_compiled(compiled['document'], compiled)
     validate_metadata({'x-blink-ext': {'discovery': result}})
     return result
+
+
+def _url_scope(value):
+    """Canonical discovery origin/path; query and fragment never enter its scope or fingerprint."""
+    host = url_host(value)
+    parsed = urlsplit(value)
+    path = parsed.path or '/'
+    if (parsed.hostname.endswith('.') or '\\' in value or '%' in path or '//' in path
+            or any(segment in ('.', '..') for segment in path.split('/'))
+            or any(ord(char) < 32 or ord(char) == 127 for char in path)):
+        raise _invalid()
+    if ':' in host:
+        # Keep discovery origins identical to the execution address parser.
+        # Python's compressed mapped-IPv6 spelling can contain dotted IPv4,
+        # while browser origins and approved instance targets use hex groups.
+        from .addresses import base_url
+        try:
+            host = urlsplit(base_url('https://[' + host + ']')).hostname
+        except BlinkError:
+            raise _invalid() from None
+        host = '[' + host + ']'
+    elif host.rsplit('.', 1)[-1].isdigit() or re.fullmatch(r'0x[0-9a-f]*', host.rsplit('.', 1)[-1]):
+        # Short, octal and hexadecimal IPv4 aliases are browser URL numbers,
+        # not distinct DNS names. Reuse the strict address policy so a malformed
+        # lookup cannot masquerade as complete absence and start new learning.
+        from .addresses import base_url
+        try:
+            host = urlsplit(base_url('https://' + host)).hostname
+        except BlinkError:
+            raise _invalid() from None
+    default = 443 if parsed.scheme == 'https' else 80
+    port = parsed.port
+    canonical_origin = parsed.scheme + '://' + host + (f':{port}' if port is not None and port != default else '')
+    return {'origin': canonical_origin, 'path': path}
+
+
+def _instance_matches_url(target, scope):
+    parsed = urlsplit(target['url'])
+    if parsed.scheme + '://' + parsed.netloc != scope['origin']:
+        return False
+    prefix = parsed.path.rstrip('/')
+    return not prefix or scope['path'] == prefix or scope['path'].startswith(prefix + '/')
 
 
 def action(kind, tool, params, label):
@@ -326,6 +385,7 @@ class Discovery:
     @staticmethod
     def input_fingerprint(params):
         return digest({'service': params.get('service'), 'host': url_host(params['url']) if params.get('url') else None,
+                       'urlScope': _url_scope(params['url']) if params.get('url') else None,
                        'operation': params.get('operation'), 'offline': params.get('offline', False),
                        'forceLearn': params.get('forceLearn', False)})
 
@@ -358,6 +418,8 @@ class Discovery:
         if metadata and document is None:
             result['auth'].update(kind=metadata.get('authKind', 'unknown'),
                                   browserRecipe='complete' if metadata.get('browserRecipeComplete') else 'incomplete')
+        if metadata.get('instanceTarget'):
+            result['instanceTarget'] = dict(metadata['instanceTarget'])
         return result
 
     def _pending_reason(self, row, active, now):
@@ -503,6 +565,8 @@ class Discovery:
             if metadata is None and enriched and enriched.get('descriptorSha256') == entry['sha256']:
                 metadata = {'version': 1, **{k: enriched[k] for k in
                             ('title', 'hosts', 'operations', 'authKind', 'browserRecipeComplete')}}
+                if 'instanceTarget' in enriched:
+                    metadata.update(version=2, instanceTarget=enriched['instanceTarget'])
                 validate_metadata({'x-blink-ext': {'discovery': metadata}})
             rows.append(self._row(tier, source, entry['id'], metadata=metadata, version_value=entry['version'],
                                   eligible=eligible, reason=reason,
@@ -563,7 +627,9 @@ class Discovery:
         return query_value, selected_host
 
     @staticmethod
-    def _rank(row, query, host, all_rows):
+    def _rank(row, query, host, all_rows, url_scope=None):
+        if url_scope is not None and row.get('instanceTarget') and not _instance_matches_url(row['instanceTarget'], url_scope):
+            return None
         if all_rows:
             return 0
         integration, service = row['integration'], row['service']
@@ -680,6 +746,8 @@ class Discovery:
                 or offline and refresh or all and any(x is not None for x in (query, url, operation))
                 or not all and query is None and url is None):
             raise _invalid()
+        selected_url = url if url is not None else query if query and ('://' in query or query.startswith('//')) else None
+        scope = _url_scope(selected_url) if selected_url is not None else None
         query, host = self._lookup(query, url)
         now = time.time()
         checked = [self._checked('added', None, checked_at=now), self._checked('pending', None, checked_at=now)]
@@ -689,7 +757,8 @@ class Discovery:
             inventory = bundled.inventory(self.runtime.plugin_root)
             for entry in inventory['entries']:
                 rows.append(self._row('bundled', 'bundled', entry['id'], metadata=entry['metadata'],
-                                      document=entry['document'], compiled=entry['compiled'], version_value=entry['version'],
+                                      document=entry.get('effectiveDocument', entry['document']),
+                                      compiled=entry['compiled'], version_value=entry['version'],
                                       eligible=entry['id'] not in bundled.EXAMPLES,
                                       reason='format_example' if entry['id'] in bundled.EXAMPLES else None,
                                       package={'descriptorSha256': entry['descriptorSha256'],
@@ -702,7 +771,7 @@ class Discovery:
         checked.extend(source_checks)
         exact_local = bool(query and ':' in query and any(r['service'] == query for r in rows))
         local_host = None if exact_local else host
-        local_cover = any(r['eligible'] and self._rank(r, query, local_host, all) is not None
+        local_cover = any(r['eligible'] and self._rank(r, query, local_host, all, scope) is not None
                           and (operation is None or operation in (r['_operations'] or [])) for r in rows)
         official_rows, official_check = self._official(now, offline=offline, refresh=refresh,
                                                        skip=local_cover and not all and not refresh)
@@ -716,7 +785,7 @@ class Discovery:
         for row in rows:
             if row['integration'] in bundled.EXAMPLES and not (query == row['integration'] or query == row['service']):
                 continue
-            rank = self._rank(row, query, matched_host, all)
+            rank = self._rank(row, query, matched_host, all, scope)
             if rank is None:
                 continue
             row['_rank'] = rank

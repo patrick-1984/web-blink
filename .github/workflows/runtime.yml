@@ -29,6 +29,8 @@ jobs:
         run: |
           python tools/run_tests.py discover -s tests -p test_addresses.py -v
           python tools/run_tests.py discover -s tests -p "test_deployment*.py" -v
+      - name: Pinned instance composition and scoped native journeys
+        run: python tools/run_tests.py discover -s tests -p "test_instance*.py" -v
       - name: Running plugin rename/delete and connector death (Windows folder locks)
         run: python tools/run_tests.py discover -s tests -p test_plugin_updates.py -v
       - name: Profile labels, cache and numbered selection

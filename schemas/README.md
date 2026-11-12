@@ -64,7 +64,7 @@ independent of a source's latest observed snapshot. Custom sources cannot use th
 
 
 The index also publishes `configProfile` for private global/per-Blink CLI settings. `blink schemas export`
-exports all eight bundled schema files and the index.
+exports all nine bundled schema files and the index.
 
 `privateProfile` publishes `v1/private-blink.schema.json`: one user's own data for one Blink (identity hints,
 field defaults, preferences, process notes, separately stored secrets). It is stored under
@@ -76,3 +76,12 @@ named address sets for test, production and custom installations. An explicit st
 local URLs/FQDNs to the concrete approved snapshot; private values never enter a shared schema or public
 catalog. Safe base URL prefixes support subdirectory installs. See [the deployment guide](../docs/deployments.md)
 and [routing templates](../examples/multiple-deployments/).
+
+
+## Pinned installation-specific schemas
+
+`execution-v1/instance.schema.json` (edition 1.0.0) declares a pinned reusable base and operation overrides
+for one exact FQDN/base URL. Execution schema 1.6.0 also validates the materialized scope annotation.
+The descriptor schema 1.2.0 permits one hash-verified `base-openapi` artifact beside the primary child.
+Read [instance overrides](../docs/instance-overrides.md) for canonical versus artifact hashes, local
+file references, embedded snapshots and independent child approval.

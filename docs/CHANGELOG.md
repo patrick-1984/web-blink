@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.20.0 — 2026-11-12
+
+- Reuse a pinned shared Blink through a thin instance definition or an embedded base snapshot. Add,
+  replace or disable complete operations for one exact FQDN/base URL while preserving the shared base.
+- Verify canonical base identity/content pins and independent package artifact hashes before composition.
+  Child accounts, trust and grants remain independent. Imported flat snapshots report claimed lineage;
+  fresh verified composition is labeled separately.
+- Preserve target scope, provider operations and protected effects/annotations through learning and
+  reviewed local overlays. Allow new target-only private input declarations without exposing their values.
+- Recompose updated local child definitions against a checked base with exact parent selection. Preserve
+  child identity, base family and target, and invalidate old grants; flat lineage claims cannot bypass guards.
+- Add instance discovery metadata v2 with exact origin, port and path-prefix matching; preserve legacy v1.
+  Discovery recording checks now distinguish URL paths on the same host.
+- Publish instance schema 1.0.0, execution schema 1.6.0 and descriptor schema 1.2.0, plus reusable WordPress
+  and scoped custom-route/query/response examples with hashed base artifacts.
+
+### NOT tested in this release
+
+- Live private WordPress installations and third-party authentication plugins: no installation or
+  credentials were supplied. Native CLI, package integrity, account isolation and customized routes are
+  exercised with synthetic authenticated local services; no live private service mutations are performed.
+
 ## 0.19.0 — 2026-11-12
 
 - Declare several named deployment addresses in one shared Blink: fixed URLs, dynamic slots with an

@@ -30,8 +30,8 @@ Then quit the terminal app completely and open it again.
 **2. Get the news:**
 
 ```sh
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink add nasa-gov
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink nasa-gov latest-news
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink add nasa-gov
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink nasa-gov latest-news
 ```
 
 The first run takes a few seconds while uv downloads everything. You see:
@@ -48,7 +48,7 @@ Added the NASA news releases Blink (public, read-only). Next time it starts righ
 **3. Only releases that mention the Moon** (anywhere in the article, not only the title), ten of them:
 
 ```sh
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink nasa-gov latest-news --search moon --per-page 10
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink nasa-gov latest-news --search moon --per-page 10
 ```
 
 Why this is allowed: US federal websites are public by policy. The White House memo
@@ -56,16 +56,16 @@ Why this is allowed: US federal websites are public by policy. The White House m
 says their content “may be crawled, archived, or ‘scraped’ by anyone in the general public, at any time”.
 
 Tip: help and examples write commands as `blink …`. Until you install it (next steps), put the same
-`uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip` in front, for example
-`uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink nasa-gov latest-news --help`.
+`uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip` in front, for example
+`uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink nasa-gov latest-news --help`.
 
 ### Second example: the federal budget by agency
 
 How much each federal agency has to spend this fiscal year, from USAspending.gov (a US Treasury site):
 
 ```sh
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink add usaspending-gov
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink usaspending-gov agency-budgets
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink add usaspending-gov
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink usaspending-gov agency-budgets
 ```
 
 ```text
@@ -104,8 +104,8 @@ in Claude Code or Codex, and next time the same phrase runs the saved routine.
 Active National Weather Service watches, warnings and advisories for a state:
 
 ```sh
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink add weather-gov
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink weather-gov active-alerts --area TX
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink add weather-gov
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink weather-gov active-alerts --area TX
 ```
 
 ```text
@@ -120,10 +120,10 @@ Narrow it with `--severity Severe` or `--event "Flood Warning"`. A state is requ
 
 ### Next steps
 
-- Keep the `blink` command: `uv tool install https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip`, then `uv tool update-shell`, then reopen the terminal app.
+- Keep the `blink` command: `uv tool install https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip`, then `uv tool update-shell`, then reopen the terminal app.
   From then on: `blink nasa-gov latest-news`.
 - Scripts: add `--output json` for machine-readable results (see the [CLI reference](docs/cli-reference.md)).
-- More Blinks that ship with Web Blink (NASA news, the federal budget, weather alerts, Claude Console, …): `uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.19.0.zip blink add` (or `blink add` once installed).
+- More Blinks that ship with Web Blink (NASA news, the federal budget, weather alerts, Claude Console, …): `uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.20.0.zip blink add` (or `blink add` once installed).
 - Your own web apps: install the plugin (below) and ask Claude Code or Codex to do a task there. Blink learns
   the app while it works.
 
@@ -140,6 +140,9 @@ Narrow it with `--severity Severe` or `--event "Flood Warning"`. A state is requ
 - **One Blink across installations**: keep staging, production and custom domains in private named deployment
   configuration, including WordPress installs under a subdirectory. Shared schemas use address names;
   each installed service has its own approved URLs and account binding. See [multiple deployments](docs/deployments.md).
+- **Installation-specific quirks**: a child schema can pin a shared WordPress base and replace, add or disable
+  selected operations for one exact site URL. The base stays reusable; child accounts and grants are separate.
+  See [instance overrides](docs/instance-overrides.md) and the [complete WordPress example](examples/instance-overrides/README.md).
 
 ## Install in Claude Code
 

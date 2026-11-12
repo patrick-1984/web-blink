@@ -1607,14 +1607,19 @@ class Learner:
             additions = document['x-blink-service']
             meta = base['x-blink-service']
             # Only what the added operations use: skipped operations leave no variables, values or checks behind.
-            used = set(hosts.values()) | {name for methods in base['paths'].values() for op in methods.values()
-                                          if op.get('operationId') in added
-                                          for name in re.findall(r'"x-blink-variable": "([A-Za-z0-9_]+)"', json.dumps(op))}
+            from .deployment_learning import non_host_variable_uses
+            variable_uses = non_host_variable_uses(op for methods in base['paths'].values() for op in methods.values()
+                                                   if op.get('operationId') in added)
+            used = set(variable_uses)
+            if not meta.get('addresses'):
+                used.update(hosts.values())
             values = {k: v for k, v in values.items() if k in used}
             anonymous_checks = {k: v for k, v in anonymous_checks.items() if k in added}
             for key, declaration in additions.get('variables', {}).items():
                 if key not in used:
                     continue
+                if meta.get('addresses'):
+                    declaration = {**declaration, 'in': sorted(variable_uses[key])}
                 if key in meta.get('variables', {}) and meta['variables'][key] != declaration:
                     raise ProposalError('Delta variable conflicts with an existing declaration')
                 meta.setdefault('variables', {})[key] = copy.deepcopy(declaration)
@@ -1634,6 +1639,9 @@ class Learner:
             if conflicts and review is not None:
                 review['conflicts'] = conflicts
         evidence = []
+        if active:
+            from .instances import validate_instance_overlay
+            validate_instance_overlay(active['document'], document, parent_compiled=active['compiled'])
         if anonymous_checks:
             from .profile import compile_manifest
             from .storage import digest
@@ -1641,6 +1649,9 @@ class Learner:
             compiled = compile_manifest(document, allow_http=self.runtime.allow_http,
                                         variables={**stored, **new_values} if stored or new_values else None,
                                         **compiler_inputs(active))
+            if active:
+                validate_instance_overlay(active['document'], document,
+                                          parent_compiled=active['compiled'], compiled=compiled)
             for opid, arguments in anonymous_checks.items():
                 operation = compiled['operations'][opid]
                 if (operation['effect'] != 'read' or operation['method'] not in ('GET', 'HEAD')

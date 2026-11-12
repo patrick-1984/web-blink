@@ -596,10 +596,10 @@ class DistributionRuntimeTests(unittest.TestCase):
             self.assertEqual(index['executionProfile']['status'], 'implemented')
             self.assertEqual(index['executionProfile']['support'], 'supported-subset')
             self.assertEqual(result['distributionSchemas'], 4)
-            self.assertEqual(result['executionSchemas'], 2)
+            self.assertEqual(result['executionSchemas'], 3)  # OpenAPI, Arazzo and pinned instances.
             self.assertEqual(result['configurationSchemas'], 1)
             self.assertEqual(result['privateSchemas'], 1)
-            self.assertEqual(result['schemas'], 8)
+            self.assertEqual(result['schemas'], 9)  # Includes the new pinned-instance source schema.
             self.assertEqual((ROOT / 'schemas/index.json').read_bytes(), (destination / 'index.json').read_bytes())
             for entry in (index['schemas'] + index['executionProfile']['schemas'] + index['configProfile']['schemas']
                           + index['privateProfile']['schemas']):

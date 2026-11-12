@@ -1,5 +1,9 @@
 # Using Web Blink
 
+A site-specific schema can now reference a pinned reusable base and override selected operations for
+one exact FQDN/base URL. The [instance guide](instance-overrides.md) covers private WordPress quirks,
+independent child approvals, source packages, and scoped learning. The base remains unchanged.
+
 Web Blink is a local Claude plugin and a scriptable CLI. It executes reviewed JSON interaction
 definitions through a durable grant, identity and intent journal. New integrations start quarantined.
 

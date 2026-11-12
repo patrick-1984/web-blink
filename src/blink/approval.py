@@ -150,11 +150,21 @@ def validate(method, params):
             return _forbidden('install_manifest requires document, source and integration')
         from .control import closed, schema_issue, TEXT
         fields = {'document': {'type': 'object'}, 'source': TEXT, 'integration': TEXT,
+                  'baseDocument': {'type': 'object'},
                   'deployment': {'type': 'string', 'pattern': r'^[a-z][a-z0-9-]{0,63}(?![\s\S])'},
                   'baseCandidate': {**TEXT, 'pattern': '^[a-f0-9]{64}$'}, 'baseDigest': {**TEXT, 'pattern': '^[a-f0-9]{64}$'}}
         if ('baseCandidate' in params) != ('baseDigest' in params):
             return _forbidden('Provide both baseCandidate and baseDigest for a full-document local patch')
-        return schema_issue(closed(fields, ('document', 'source', 'integration')), params)
+        issue = schema_issue(closed(fields, ('document', 'source', 'integration')), params)
+        if issue:
+            return issue
+        from .instance_install import validate_install_parameters
+        from .errors import BlinkError, failure
+        try:
+            validate_install_parameters(params)
+        except BlinkError as exc:
+            return failure(exc, 'instance_install')
+        return None
     elif method == 'learn_propose':
         if ('baseCandidate' in params) != ('baseDigest' in params):
             return _forbidden('Provide both baseCandidate and baseDigest for an existing parent')
@@ -287,6 +297,9 @@ def _dialog(method, params, *, state_dir=None, plugin_root=None):
                                destinations=[{'operation': op['operation'], 'method': op['method'],
                                               'origin': op['origin'], 'path': op['path']}
                                              for op in review.get('operations', [])])
+            if 'instance' in review:
+                context.update(instance=review['instance'], compositionStatus=review['compositionStatus'],
+                               compositionReview=review['compositionReview'])
         grant = params.get('grant') if method == 'activate_blink' else None
         if isinstance(grant, dict) and grant.get('autoApprove') in ('writes', 'writes-and-deletes'):
             context = dict(context or {}, standingApproval=(

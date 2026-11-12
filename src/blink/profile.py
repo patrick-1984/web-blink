@@ -288,7 +288,10 @@ def resolve_variables(doc,values,*,require=True):
                          f'(private_set with {{"variables": {{"{sorted(missing)[0]}": "..."}}}}), then install it again')
 
 
-def compile_manifest(document, *, allow_http=False, variables=None, require_variables=True, addresses=None, deployment=None):
+def compile_manifest(document, *, allow_http=False, variables=None, require_variables=True, addresses=None, deployment=None, base_document=None):
+    from .instances import materialize_instance
+    composition=materialize_instance(document,base_document=base_document,allow_http=allow_http)
+    document=composition['document']
     if len(encoded(document).encode())>2_000_000:
         raise BlinkError('invalid_manifest','Manifest exceeds the size limit')
     schema=json.loads(schema_path().read_text())
@@ -479,6 +482,10 @@ def compile_manifest(document, *, allow_http=False, variables=None, require_vari
     if declared:semantic['variables']=sorted(declared)
     if service.get('addresses'):
         semantic.update(addresses=address_snapshot['addresses'],deployment=address_snapshot['deployment'])
+    if composition.get('instance'):
+        semantic['instance']=copy.deepcopy(composition['instance'])
     return {**semantic,'settingsSchema':settings,'version':doc['info']['version'],'blinkVersion':blink_version,'history':history,
             'digest':digest(semantic),'document':copy.deepcopy(document) if declared or service.get('addresses') else doc,
+            'compositionStatus':composition['compositionStatus'],
+            **({'instanceDefinition':composition['instanceDefinition']} if 'instanceDefinition' in composition else {}),
             **({'inspectionOnly':True,'unresolvedAddresses':address_snapshot['unresolvedAddresses']} if address_snapshot['unresolvedAddresses'] else {})}

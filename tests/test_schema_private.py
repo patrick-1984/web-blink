@@ -67,7 +67,7 @@ class SchemaEditionTests(unittest.TestCase):
         sections = [index['schemas'], index['executionProfile']['schemas'], index['configProfile']['schemas'],
                     index['privateProfile']['schemas']]
         entries = [entry for section in sections for entry in section]
-        self.assertEqual(len(entries), 8)
+        self.assertEqual(len(entries), 9)  # The instance source profile is the ninth bundled schema.
         for entry in entries:
             schema = json.loads((ROOT / 'schemas' / entry['path']).read_text())
             self.assertEqual((entry['version'], entry['released']), edition(schema))

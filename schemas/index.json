@@ -19,9 +19,9 @@
     {
       "id": "urn:web-blink:schema:weblink:1",
       "path": "v1/weblink.schema.json",
-      "version": "1.1.0",
-      "released": "2026-10-30",
-      "sha256": "e482347f4c21c0bcc28c4694e9e6f9162f22d8fd09e079dfee02e76915abdeff"
+      "version": "1.2.0",
+      "released": "2026-11-12",
+      "sha256": "828af1c7e423e86745bc8d5364ec2c0070f42db735323077cf37c2f318bc1734"
     },
     {
       "id": "urn:web-blink:schema:source-lock:1",
@@ -35,15 +35,15 @@
     "status": "implemented",
     "version": 1,
     "support": "supported-subset",
-    "format": "OpenAPI 3.1 plus x-blink-*; restricted Arazzo 1.1",
+    "format": "OpenAPI 3.1 plus x-blink-*; restricted Arazzo 1.1; pinned instance definitions",
     "note": "The bundled compilers implement the explicitly bounded execution-v1 schemas; unsupported constructs fail closed.",
     "schemas": [
       {
         "id": "urn:web-blink:schema:execution:1",
         "path": "execution-v1/openapi.schema.json",
-        "version": "1.5.0",
+        "version": "1.6.0",
         "released": "2026-11-12",
-        "sha256": "03f6f51c89dc3de6dc94f7c1ca0d43b42c66c8f5a14d5fb2dbf2da5c1de155cc"
+        "sha256": "2a078d7c7c9c4aee201d8c1b8d809aa5540c85424c50bbb7ee5f0491fc56a730"
       },
       {
         "id": "urn:web-blink:schema:arazzo-execution:1",
@@ -51,6 +51,13 @@
         "version": "1.0.0",
         "released": "2026-10-30",
         "sha256": "a51a6d7379580fde2cd9a3c8f561279daa7a16ba9f319c9dafa285ca630a748b"
+      },
+      {
+        "id": "urn:web-blink:schema:instance:1",
+        "path": "execution-v1/instance.schema.json",
+        "version": "1.0.0",
+        "released": "2026-11-12",
+        "sha256": "3bee3abc0a55bcd6fb7f152b16cda57df5f299712c7982af1ec5b97bff53b8a0"
       }
     ]
   },

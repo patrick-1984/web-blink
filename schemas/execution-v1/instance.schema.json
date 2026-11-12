@@ -1,0 +1,698 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:web-blink:schema:instance:1",
+  "title": "Pinned Web Blink instance definition v1",
+  "x-blink-schema": {
+    "version": "1.0.0",
+    "released": "2026-11-12"
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "base",
+    "instance"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "urn:web-blink:schema:instance:1"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "x-blink-schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "maxLength": 40,
+          "pattern": "^1\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "released": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?![\\s\\S])"
+        }
+      }
+    },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}(?![\\s\\S])"
+        },
+        "artifact": {
+          "type": "string",
+          "maxLength": 300,
+          "pattern": "^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.json(?![\\s\\S])"
+        },
+        "snapshot": {
+          "type": "object"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "artifact"
+          ],
+          "not": {
+            "required": [
+              "snapshot"
+            ]
+          }
+        },
+        {
+          "required": [
+            "snapshot"
+          ],
+          "not": {
+            "required": [
+              "artifact"
+            ]
+          }
+        }
+      ]
+    },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "version",
+        "target"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?![\\s\\S])"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 60,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "address",
+            "url"
+          ],
+          "properties": {
+            "address": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])"
+            },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "history": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "date"
+            ],
+            "properties": {
+              "version": {
+                "type": "string",
+                "maxLength": 60,
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+              },
+              "date": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(?![\\s\\S])"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 500
+              }
+            }
+          }
+        }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "maxProperties": 1000,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "operation"
+            ],
+            "properties": {
+              "action": {
+                "const": "replace"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048,
+                "pattern": "^/[^?#%\\\\\\r\\n]*(?![\\s\\S])"
+              },
+              "method": {
+                "enum": [
+                  "get",
+                  "head",
+                  "post",
+                  "put",
+                  "patch",
+                  "delete"
+                ]
+              },
+              "operation": {
+                "$ref": "#/$defs/operation"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "path",
+              "method",
+              "operation"
+            ],
+            "properties": {
+              "action": {
+                "const": "add"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048,
+                "pattern": "^/[^?#%\\\\\\r\\n]*(?![\\s\\S])"
+              },
+              "method": {
+                "enum": [
+                  "get",
+                  "head",
+                  "post",
+                  "put",
+                  "patch",
+                  "delete"
+                ]
+              },
+              "operation": {
+                "$ref": "#/$defs/operation"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action"
+            ],
+            "properties": {
+              "action": {
+                "const": "disable"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "variables": {
+      "description": "User- or company-specific values (tenant, workspace, login, user ID) kept out of the shared Blink. Each is filled from the user's private Blink (section variables). A server URL or requested origin may hold {name} as a whole host label in front of a fixed registrable domain; a parameter or top-level body field marks its value source with x-blink-variable.",
+      "type": "object",
+      "maxProperties": 20,
+      "propertyNames": {
+        "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x-(?!blink-)": {}
+        },
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "in": {
+            "type": "array",
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "host",
+                "path",
+                "query",
+                "header",
+                "body"
+              ]
+            }
+          },
+          "kind": {
+            "type": "string",
+            "maxLength": 40
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "x-blink-summary": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "x-blink-effect": {
+          "enum": [
+            "read",
+            "write",
+            "destructive",
+            "financial",
+            "maintenance"
+          ]
+        },
+        "parameters": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "in": {
+                "enum": [
+                  "path",
+                  "query",
+                  "header"
+                ]
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "schema": {
+                "type": [
+                  "object",
+                  "boolean"
+                ]
+              },
+              "x-blink-ext": {
+                "type": "object",
+                "maxProperties": 100,
+                "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+              },
+              "x-blink-notes": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
+              },
+              "x-blink-variable": {
+                "type": "string",
+                "pattern": "^[a-z][A-Za-z0-9_]{0,49}(?![\\s\\S])",
+                "description": "Filled from the user's private Blink variable of this name when the caller leaves it out."
+              }
+            },
+            "required": [
+              "name",
+              "in",
+              "schema"
+            ],
+            "patternProperties": {
+              "^x-(?!blink-)": {}
+            }
+          }
+        },
+        "requestBody": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "required": {
+              "type": "boolean"
+            },
+            "content": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "application/json": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema": {
+                      "type": [
+                        "object",
+                        "boolean"
+                      ]
+                    }
+                  },
+                  "required": []
+                },
+                "application/x-www-form-urlencoded": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "schema": {
+                      "type": [
+                        "object",
+                        "boolean"
+                      ]
+                    }
+                  },
+                  "required": []
+                }
+              },
+              "minProperties": 1,
+              "maxProperties": 1
+            }
+          },
+          "required": [
+            "content"
+          ]
+        },
+        "responses": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 20,
+          "patternProperties": {
+            "^(?:[1-5][0-9]{2}|default)(?![\\s\\S])": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                "content": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "application/json": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "schema": {
+                          "type": [
+                            "object",
+                            "boolean"
+                          ]
+                        }
+                      },
+                      "required": []
+                    }
+                  },
+                  "required": [
+                    "application/json"
+                  ]
+                }
+              },
+              "required": [
+                "description"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "x-blink-idempotency": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mechanism": {
+              "type": "string",
+              "maxLength": 150
+            },
+            "statusOp": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [
+            "mechanism"
+          ]
+        },
+        "x-blink-display": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How a person sees this read's result in a terminal table. Display only: never changes a request.",
+          "properties": {
+            "rows": {
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^(/[^/]*)*$"
+            },
+            "columns": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 12,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "pattern": "^(/[^/]*)*$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "format": {
+                    "enum": [
+                      "text",
+                      "number",
+                      "usd",
+                      "percent",
+                      "date"
+                    ]
+                  }
+                },
+                "required": [
+                  "path",
+                  "label"
+                ]
+              }
+            }
+          },
+          "required": [
+            "columns"
+          ]
+        },
+        "x-blink-money": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "amount": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "currency": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "amount",
+            "currency"
+          ]
+        },
+        "x-blink-params": {
+          "type": "object",
+          "maxProperties": 100
+        },
+        "x-blink-verified": {
+          "type": "array",
+          "maxItems": 100
+        },
+        "x-blink-auth-update": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "tokenPath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "refreshTokenPath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "expiresInPath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "x-blink-prestate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "arguments",
+            "amountPath",
+            "currencyPath",
+            "statePaths"
+          ],
+          "properties": {
+            "operation": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9_]{0,127}(?![\\s\\S])"
+            },
+            "arguments": {
+              "type": "object",
+              "maxProperties": 100,
+              "propertyNames": {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 200,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+              }
+            },
+            "amountPath": {
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+            },
+            "currencyPath": {
+              "type": "string",
+              "maxLength": 200,
+              "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+            },
+            "statePaths": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 20,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "maxLength": 200,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(?:\\.[A-Za-z_][A-Za-z0-9_-]*){0,15}(?![\\s\\S])"
+              }
+            }
+          }
+        },
+        "x-blink-setting-map": {
+          "type": "object",
+          "maxProperties": 100,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,99}(?![\\s\\S])"
+          }
+        },
+        "servers": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              }
+            }
+          }
+        },
+        "x-blink-ext": {
+          "type": "object",
+          "maxProperties": 100,
+          "description": "Reserved extension object for additive data; readers ignore what they do not understand."
+        },
+        "x-blink-notes": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Structural authoring note shown to the model, e.g. why a field is usually left empty."
+        }
+      },
+      "required": [
+        "operationId",
+        "x-blink-effect",
+        "responses"
+      ],
+      "patternProperties": {
+        "^x-(?!blink-)": {}
+      }
+    }
+  }
+}

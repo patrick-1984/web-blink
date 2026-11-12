@@ -144,7 +144,8 @@ class Handler(socketserver.StreamRequestHandler):
                 from .overlays import manual_install
                 return manual_install(self.server.runtime, params['document'], params['source'], params['integration'],
                                       base_candidate=params.get('baseCandidate'), base_digest=params.get('baseDigest'),
-                                      **({'deployment': params['deployment']} if 'deployment' in params else {}))
+                                      **({'deployment': params['deployment']} if 'deployment' in params else {}),
+                                      **({'base_document': params['baseDocument']} if 'baseDocument' in params else {}))
             result = self.server.extensions.dispatch(method, params, human=True) if self.server.extensions else None
             return self.server.runtime.dispatch(method, params, human=True) if result is None else result
         method, params = parse_request(raw)

@@ -409,11 +409,16 @@ def run(args):
         return bundled.add(args.name, state_dir=args.state_dir, root=args.plugin_root, **selection)
     if args.command == 'install':
         document = load_input(args.file)
+        from .instance_install import sibling_base, validate_install_parameters
+        base_document = sibling_base(document, args.file)
         params = {'document': document, 'source': args.source, 'integration': args.id}
+        if base_document is not None:
+            params['baseDocument'] = base_document
         if args.deployment is not None:
             params['deployment'] = args.deployment
         if args.base_candidate is not None or args.base_digest is not None:
             params.update(baseCandidate=args.base_candidate, baseDigest=args.base_digest)
+        validate_install_parameters(params)
         confirm('install_manifest', params, args.yes, preview={'source': args.source, 'integration': args.id,
                 **({'deployment': args.deployment} if args.deployment is not None else {}),
                 'manifestSha256': hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()}, mode=selected_approval_mode(args))
