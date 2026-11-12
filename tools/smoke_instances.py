@@ -16,11 +16,25 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import threading
 from urllib.parse import parse_qs, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class _FixtureDirectory(tempfile.TemporaryDirectory):
+    def cleanup(self):
+        # The daemon lock can close just before Windows releases its cwd handle.
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                return super().cleanup()
+            except PermissionError:
+                if os.name != 'nt' or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
 
 
 def document_digest(document):
@@ -89,7 +103,7 @@ def _journey(python, *, source):
             stack.callback(server.shutdown)
             sites[name] = f'http://127.0.0.1:{server.server_port}'
 
-        work = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='blink-instance-smoke-')))
+        work = Path(stack.enter_context(_FixtureDirectory(prefix='blink-instance-smoke-')))
         environment = dict(os.environ)
         for key in ('PYTHONPATH', 'PYTHONHOME', 'BLINK_PLUGIN_ROOT'):
             environment.pop(key, None)
