@@ -147,7 +147,7 @@ def _journey(python, *, source):
 
         def stored(kind, key=None):
             database = Path(environment['BLINK_STATE_DIR']) / 'blink.sqlite3'
-            with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as db:
+            with contextlib.closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as db:
                 if key is not None:
                     row = db.execute('SELECT value FROM objects WHERE kind=? AND id=?', (kind, key)).fetchone()
                     return json.loads(row[0]) if row else None
