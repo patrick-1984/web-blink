@@ -32,13 +32,13 @@ def catalog(root=None):
         except BlinkError:
             continue
         out.append({'id': entry['id'], 'version': found['version'], 'name': found['name'],
-                    'description': found['description'], 'publicReadOnly': public_read_only(found['document'])})
+                           'description': found['description'], 'publicReadOnly': public_read_only(found['effectiveDocument'])})
     return out
 
 
 def inventory(root=None, *, check_metadata=True):
     """Strict complete packaged inventory, including every version; corruption is never absence."""
-    from .distribution import Distribution, strict_json, regular_file, digest
+    from .distribution import Distribution, strict_json, regular_file, digest, package_base_artifact
     from .profile import compile_manifest
     from .discovery import metadata_for_document, validate_metadata
     base = Path(plugin_root(root))
@@ -55,25 +55,43 @@ def inventory(root=None, *, check_metadata=True):
             descriptor = distribution.validate('weblink', strict_json(descriptor_raw))
             if descriptor['id'] != entry['id'] or descriptor['version'] != entry['version']:
                 raise ValueError('Catalog/descriptor identity mismatch')
-            document, artifact_hash = None, None
-            for artifact in descriptor['artifacts']:
+            def read_artifact(artifact):
                 data = regular_file(descriptor_file.parent, artifact['path']).read_bytes()
                 if digest(data) != artifact['sha256']:
                     raise ValueError('Bundled artifact hash mismatch')
-                parsed = strict_json(data)
-                if artifact['role'] == 'openapi':
-                    document, artifact_hash = parsed, artifact['sha256']
-            if document is None:
-                raise ValueError('Bundled Blink has no supported OpenAPI artifact')
-            compiled = compile_manifest(document, require_variables=False)
+                return strict_json(data)
+            primary = next(artifact for artifact in descriptor['artifacts'] if artifact['role'] == 'openapi')
+            document, artifact_hash = read_artifact(primary), primary['sha256']
+            base_artifact = package_base_artifact(document, primary['path'], descriptor['artifacts'])
+            base_document = read_artifact(base_artifact) if base_artifact else None
+            base_input = {'base_document': base_document} if base_artifact else {}
+            compiled = compile_manifest(document, require_variables=False, **base_input)
+            effective = compiled['document']
             if compiled['id'] != entry['id'] or compiled.get('blinkVersion') != entry['version']:
                 raise ValueError('Descriptor/manifest identity mismatch')
-            metadata = metadata_for_document(document)
+            for artifact in descriptor['artifacts']:
+                if artifact['role'] != 'arazzo':
+                    continue
+                workflow_document = read_artifact(artifact)
+                from .workflows import compile_workflow
+                from jsonschema.exceptions import SchemaError, ValidationError
+                try:
+                    compile_workflow(workflow_document)
+                except (SchemaError, ValidationError, ValueError, BlinkError):
+                    raise ValueError('Workflow does not match the supported execution profile') from None
+                if workflow_document['sourceDescriptions'][0]['url'] != primary['path']:
+                    raise ValueError('Workflow source must be the declared OpenAPI artifact')
+                if any(step['operationId'] not in compiled['operations']
+                       for workflow in workflow_document['workflows'] for step in workflow['steps']):
+                    raise ValueError('Workflow references an undeclared operation')
+            metadata = metadata_for_document(document, **base_input)
             declared = validate_metadata(entry) if check_metadata else None
             if declared is not None and declared != metadata:
                 raise ValueError('Bundled discovery metadata does not describe its artifact')
             result.append({'id': entry['id'], 'version': entry['version'], 'name': descriptor.get('name', entry['id']),
-                           'description': descriptor.get('description', ''), 'document': document, 'compiled': compiled,
+                           'description': descriptor.get('description', ''), 'document': document,
+                           'effectiveDocument': effective, **({'baseDocument': base_document} if base_artifact else {}),
+                           'compiled': compiled,
                            'metadata': metadata, 'descriptorSha256': entry['sha256'], 'artifactSha256': artifact_hash})
         return {'entries': result, 'catalogSha256': digest(raw), 'complete': True}
     except (OSError, ValueError, KeyError, TypeError, BlinkError):
@@ -123,6 +141,7 @@ def stage(runtime, name, version, expected_descriptor_sha256, *, deployment=None
                                         provenance={'kind': 'bundled', 'version': version,
                                                     'descriptorSha256': found['descriptorSha256'],
                                                     'artifactSha256': found['artifactSha256']},
+                                        **({'base_document': found['baseDocument']} if 'baseDocument' in found else {}),
                                         **({'deployment': deployment} if deployment is not None else {}))
 
 
@@ -149,7 +168,7 @@ def add(name, *, state_dir=None, root=None, deployment=None):
         return staged
     params = {'service': f'{SOURCE}:{name}', 'digest': staged['data']['digest'], 'candidate': staged['data']['candidate']}
     # POST operations the shipped, reviewed Blink declares as reads need their exact IDs at approval.
-    post_reads = sorted(op['operationId'] for methods in found['document'].get('paths', {}).values()
+    post_reads = sorted(op['operationId'] for methods in found['effectiveDocument'].get('paths', {}).values()
                         for method, op in methods.items() if method == 'post' and op.get('x-blink-effect') == 'read')
     if post_reads:
         params['confirmReadOperations'] = post_reads
@@ -158,7 +177,7 @@ def add(name, *, state_dir=None, root=None, deployment=None):
     if approved.get('status') != 'ok':
         return approved
     data = {'service': f'{SOURCE}:{name}', 'version': found['version'], 'name': found['name'],
-            'publicReadOnly': public_read_only(found['document'])}
+            'publicReadOnly': public_read_only(found['effectiveDocument'])}
     if deployment is not None:
         data['deployment'] = deployment
     if not data['publicReadOnly']:

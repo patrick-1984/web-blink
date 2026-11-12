@@ -84,10 +84,11 @@ class Runtime:
         if not record:raise BlinkError('quarantined','No approved manifest is active for this service')
         return record
 
-    def install_manifest(self,document,source_id,integration_id,*,provenance=None,connection=None,variables=None,deployment=None):
+    def install_manifest(self,document,source_id,integration_id,*,provenance=None,connection=None,variables=None,deployment=None,base_document=None):
         if not isinstance(source_id,str) or not ID.fullmatch(source_id) or not isinstance(integration_id,str) or not ID.fullmatch(integration_id):
             raise BlinkError('invalid_source','Source/integration IDs are invalid')
         service=source_id+':'+integration_id
+        omitted_provenance = provenance is None
         with (contextlib.nullcontext(connection) if connection is not None else self.store.transaction()) as db:
             fence = self.store.get('cleanup_fence', service, connection=db)
             if fence and fence.get('state') == 'quiescing':
@@ -95,7 +96,17 @@ class Runtime:
             from .overlays import check_parent
             check_parent(self.store,service,provenance,connection=db)  # learned overlay: exact parent still active
             previous=self.store.get('active_manifest',service,connection=db)
-            meta = document.get('x-blink-service', {}) if isinstance(document, dict) else {}
+            from .instances import materialize_instance, validate_instance_overlay
+            materialized = materialize_instance(document, base_document=base_document, allow_http=self.allow_http)
+            effective_document = materialized['document']
+            fresh_composition = (materialized['compositionStatus'] == 'verified'
+                                 and 'instanceDefinition' in materialized)
+            is_overlay = (provenance or {}).get('kind') == 'learned-overlay' and previous
+            instance_parent = previous and previous.get('document', {}).get('x-blink-service', {}).get('instance')
+            if is_overlay or instance_parent:
+                validate_instance_overlay(previous['document'], effective_document, parent_compiled=previous['compiled'],
+                                          fresh_composition=fresh_composition)
+            meta = effective_document.get('x-blink-service', {}) if isinstance(effective_document, dict) else {}
             if not isinstance(meta, dict):
                 meta = {}
             inputs = {}
@@ -113,21 +124,39 @@ class Runtime:
                 from .addresses import snapshot_values
                 inputs.update(addresses=snapshot_values(previous['document'], previous['compiled']),
                               deployment=previous['compiled'].get('deployment'))
-            compiled=compile_manifest(document,allow_http=self.allow_http,**inputs)
+            compiled=compile_manifest(document,allow_http=self.allow_http,
+                                      **({'base_document': base_document} if base_document is not None else {}), **inputs)
             if compiled.get('inspectionOnly') or compiled.get('unresolvedAddresses'):
                 raise BlinkError('private_values_required', 'Resolve every referenced address before staging an executable Blink')
             if compiled['id']!=integration_id:raise BlinkError('invalid_manifest','Integration ID disagrees with the manifest')
+            if is_overlay or instance_parent:
+                validate_instance_overlay(previous['document'], effective_document,
+                                          parent_compiled=previous['compiled'], compiled=compiled,
+                                          fresh_composition=(compiled['compositionStatus'] == 'verified'
+                                                             and 'instanceDefinition' in compiled))
+            # Only this compilation can attest fresh composition. Imported JSON/provenance claims cannot.
+            provenance = copy.deepcopy(provenance or {})
+            provenance.pop('instance', None)
+            provenance.pop('compositionStatus', None)
+            if compiled.get('instance') is not None:
+                provenance.update(instance=copy.deepcopy(compiled['instance']),
+                                  compositionStatus=compiled['compositionStatus'])
             expected=previous['digest'] if previous else None
             old_history=(previous or {}).get('compiled',{}).get('history') or []
             new_history=compiled.get('history') or []
             if old_history and new_history[:len(old_history)]!=old_history:
                 raise BlinkError('invalid_manifest','Blink history is append-only: the new version must keep every earlier history entry unchanged')
-            candidate=digest({'service':service,'digest':compiled['digest'],'provenance':provenance,'expected':expected})
+            candidate=digest({'service':service,'digest':compiled['digest'],
+                              'provenance':None if omitted_provenance and not provenance else provenance,'expected':expected})
             record={'service':service,'digest':compiled['digest'],'candidate':candidate,'expectedOldDigest':expected,
-                    'document':copy.deepcopy(document),'compiled':compiled,'provenance':copy.deepcopy(provenance or {}),
+                    'document':copy.deepcopy(effective_document),'compiled':compiled,'provenance':provenance,
                     'createdAt':time.time(),'state':'quarantined'}
+            if 'instanceDefinition' in compiled:
+                record['instanceDefinition'] = copy.deepcopy(compiled['instanceDefinition'])
             self.store.put('manifest_candidate',candidate,record,connection=db)
         review={'service':service,'digest':compiled['digest'],'candidate':candidate}
+        if compiled.get('instance') is not None:
+            review.update(instance=copy.deepcopy(compiled['instance']), compositionStatus=compiled['compositionStatus'])
         if meta.get('addresses'):
             review.update(deployment=compiled.get('deployment'), addresses=copy.deepcopy(compiled.get('addresses', {})),
                           destinations=[{'operation': op['operationId'], 'method': op['method'],
@@ -1082,6 +1111,12 @@ class Runtime:
             candidate=self.store.get('manifest_candidate',p.get('candidate'))
             if not candidate:raise BlinkError('unknown_candidate','Candidate not found')
             return envelope('ok','Quarantined manifest review',{'service':candidate['service'],'digest':candidate['digest'],
+                **({'instance': copy.deepcopy(candidate['compiled']['instance']),
+                    'compositionStatus': candidate['compiled']['compositionStatus'],
+                    'compositionReview': ('Fresh composition: the pinned base was checked for this candidate.'
+                                          if candidate['compiled']['compositionStatus'] == 'verified' else
+                                          'Imported materialized snapshot: lineage is a claim; this install did not verify its base.')}
+                   if candidate['compiled'].get('instance') is not None else {}),
                 **({'deployment': candidate['compiled'].get('deployment'),
                     'addresses': copy.deepcopy(candidate['compiled'].get('addresses', {}))}
                    if candidate['compiled'].get('addresses') is not None else {}),

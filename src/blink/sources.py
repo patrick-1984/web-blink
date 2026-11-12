@@ -510,22 +510,31 @@ class SourceManager:
         descriptor = self.distribution.validate("weblink", strict_json(raw, limit=self.limits.file_bytes))
         if descriptor["id"] != entry["id"] or descriptor["version"] != entry["version"]:
             raise ValueError("Catalog/descriptor identity mismatch")
-        manifest = workflow_document = openapi_path = None
+        from .distribution import package_base_artifact
+        workflow_document = None
         artifact_hashes = {}
-        for artifact in descriptor["artifacts"]:
+        def read_artifact(artifact):
             raw_artifact = snapshot.read(joined_path(descriptor_path, artifact["path"]))
             if digest(raw_artifact) != artifact["sha256"]:
                 raise ValueError("Artifact checksum mismatch")
             artifact_hashes[artifact["path"]] = artifact["sha256"]
-            document = strict_json(raw_artifact, limit=self.limits.file_bytes)
-            if artifact["role"] == "openapi":
-                manifest, openapi_path = document, artifact["path"]
-            elif artifact["role"] == "arazzo":
+            return strict_json(raw_artifact, limit=self.limits.file_bytes)
+        primary = next(artifact for artifact in descriptor['artifacts'] if artifact['role'] == 'openapi')
+        manifest, openapi_path = read_artifact(primary), primary['path']
+        base_artifact = package_base_artifact(manifest, openapi_path, descriptor['artifacts'])
+        base_document = read_artifact(base_artifact) if base_artifact else None
+        base_input = {'base_document': base_document} if base_artifact else {}
+        from .profile import compile_manifest
+        compiled = compile_manifest(manifest, require_variables=False, **base_input)
+        for artifact in descriptor['artifacts']:
+            if artifact['role'] == 'arazzo':
+                workflow_document = read_artifact(artifact)
                 from .workflows import compile_workflow
-                compile_workflow(document)
-                workflow_document = document
-        from .profile import compile_manifest, visible_text
-        compiled = compile_manifest(manifest, require_variables=False)
+                from jsonschema.exceptions import SchemaError, ValidationError
+                try:
+                    compile_workflow(workflow_document)
+                except (SchemaError, ValidationError, ValueError, BlinkError):
+                    raise ValueError('Workflow does not match the supported execution profile') from None
         if compiled["id"] != entry["id"] or compiled["version"] != entry["version"]:
             raise _error("invalid_manifest", "OpenAPI identity/version differs from its verified descriptor")
         if workflow_document is not None:
@@ -535,9 +544,11 @@ class SourceManager:
                 if any(step["operationId"] not in compiled["operations"] for step in workflow["steps"]):
                     raise ValueError("Workflow references an undeclared operation")
         from .discovery import metadata_for_document
-        metadata = metadata_for_document(manifest)
+        metadata = metadata_for_document(manifest, **base_input)
         metadata.pop('version', None)
-        return {"document": manifest, "compiled": compiled, "workflows": workflow_document,
+        return {"document": manifest, "effectiveDocument": compiled['document'],
+                **({'baseDocument': base_document} if base_artifact else {}),
+                "compiled": compiled, "workflows": workflow_document,
                 "descriptor": descriptor, "artifactHashes": artifact_hashes, "metadata": metadata}
 
     def sync(self, source_id, *, enrich=False):
@@ -698,6 +709,7 @@ class SourceManager:
                                                                    "publisherPolicyFingerprint": policy_fingerprint,
                                                                    "publisherVerification": verification, **pin},
                                                        connection=connection,
+                                                       **({'base_document': package['baseDocument']} if 'baseDocument' in package else {}),
                                                        **({'deployment': deployment} if deployment is not None else {}))
                 data = result.get("data", {})
                 if result.get("status") not in ("ok", "quarantined") or not data.get("digest") or not data.get("candidate"):

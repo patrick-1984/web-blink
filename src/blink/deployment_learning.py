@@ -12,8 +12,12 @@ def captured_destination(record, origin, path, *, concrete_path=None):
     requires a segment boundary; equally specific slots require human mapping.
     """
     concrete_path = concrete_path if concrete_path is not None else path
+    instance = record['compiled'].get('instance')
+    target_slot = instance['target']['address'] if instance is not None else None
     matches = []
     for name, value in record['compiled'].get('addresses', {}).items():
+        if target_slot is not None and name != target_slot:
+            continue
         parsed = urlsplit(value)
         address_origin = parsed.scheme + '://' + parsed.netloc
         prefix = parsed.path.rstrip('/')
@@ -42,6 +46,10 @@ def captured_destination(record, origin, path, *, concrete_path=None):
                     relative = ''
             if relative.startswith('/'):
                 return relative, 'blink-address:' + name
+    if instance is not None:
+        raise BlinkError('instance_scope_violation',
+                         'Learned instance operations must stay on the approved target address and path prefix',
+                         stage='learn_propose')
     raise BlinkError(
         'deployment_mapping_required',
         'Map this endpoint to one unambiguous approved address slot using a reviewed '
@@ -56,3 +64,23 @@ def compiler_inputs(record):
     from .addresses import snapshot_values
     return {'addresses': snapshot_values(record['document'], record['compiled']),
             'deployment': record['compiled'].get('deployment')}
+
+
+def non_host_variable_uses(operations):
+    """Match the compiler's executable parameter/top-level body markers, not arbitrary JSON text."""
+    used = {}
+    for operation in operations:
+        for parameter in operation.get('parameters', []):
+            name = parameter.get('x-blink-variable')
+            location = parameter.get('in')
+            if isinstance(name, str) and location in ('path', 'query', 'header'):
+                used.setdefault(name, set()).add(location)
+        for media in operation.get('requestBody', {}).get('content', {}).values():
+            schema = media.get('schema')
+            if not isinstance(schema, dict):
+                continue
+            for shape in (schema.get('properties') or {}).values():
+                name = shape.get('x-blink-variable') if isinstance(shape, dict) else None
+                if isinstance(name, str):
+                    used.setdefault(name, set()).add('body')
+    return used

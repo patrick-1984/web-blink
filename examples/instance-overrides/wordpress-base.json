@@ -1,0 +1,93 @@
+{
+  "openapi": "3.1.0",
+  "x-blink-schema": {
+    "version": "1.5.0"
+  },
+  "info": {
+    "title": "Reusable WordPress public REST API",
+    "version": "1.1.0",
+    "description": "Routing template for publicly readable WordPress REST posts. Record and review the installation-specific authentication recipe before using authenticated content."
+  },
+  "servers": [
+    {
+      "url": "blink-address:site"
+    }
+  ],
+  "x-blink-service": {
+    "id": "wordpress",
+    "addresses": {
+      "site": {
+        "mode": "unspecified",
+        "config": "wordpress"
+      }
+    },
+    "requestedOrigins": [
+      "blink-address:site"
+    ],
+    "appOrigin": "blink-address:site",
+    "auth": {
+      "kind": "none"
+    },
+    "exec": {
+      "allowed": [
+        "direct"
+      ],
+      "preferred": "direct"
+    },
+    "version": "1.1.0",
+    "history": [
+      {
+        "version": "1.1.0",
+        "date": "2026-11-12",
+        "note": "Reusable list and single-post reads with a deployment address slot."
+      }
+    ]
+  },
+  "paths": {
+    "/wp-json/wp/v2/posts": {
+      "get": {
+        "operationId": "listPosts",
+        "summary": "List publicly readable posts",
+        "x-blink-effect": "read",
+        "parameters": [
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publicly readable posts from the selected installation"
+          }
+        }
+      }
+    },
+    "/wp-json/wp/v2/posts/{postId}": {
+      "get": {
+        "operationId": "getPost",
+        "summary": "Read a publicly visible WordPress post",
+        "x-blink-effect": "read",
+        "parameters": [
+          {
+            "name": "postId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public WordPress post"
+          }
+        }
+      }
+    }
+  }
+}

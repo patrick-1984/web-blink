@@ -1,0 +1,240 @@
+{
+  "$schema": "urn:web-blink:schema:instance:1",
+  "schemaVersion": 1,
+  "x-blink-schema": {
+    "version": "1.0.0"
+  },
+  "base": {
+    "id": "wordpress",
+    "version": "1.1.0",
+    "sha256": "3b6472311fa3b7cf1e08a227692d08557f1a658c875eefe4232d1a6e2e3e343d",
+    "snapshot": {
+      "openapi": "3.1.0",
+      "x-blink-schema": {
+        "version": "1.5.0"
+      },
+      "info": {
+        "title": "Reusable WordPress public REST API",
+        "version": "1.1.0",
+        "description": "Routing template for publicly readable WordPress REST posts. Record and review the installation-specific authentication recipe before using authenticated content."
+      },
+      "servers": [
+        {
+          "url": "blink-address:site"
+        }
+      ],
+      "x-blink-service": {
+        "id": "wordpress",
+        "addresses": {
+          "site": {
+            "mode": "unspecified",
+            "config": "wordpress"
+          }
+        },
+        "requestedOrigins": [
+          "blink-address:site"
+        ],
+        "appOrigin": "blink-address:site",
+        "auth": {
+          "kind": "none"
+        },
+        "exec": {
+          "allowed": [
+            "direct"
+          ],
+          "preferred": "direct"
+        },
+        "version": "1.1.0",
+        "history": [
+          {
+            "version": "1.1.0",
+            "date": "2026-11-12",
+            "note": "Reusable list and single-post reads with a deployment address slot."
+          }
+        ]
+      },
+      "paths": {
+        "/wp-json/wp/v2/posts": {
+          "get": {
+            "operationId": "listPosts",
+            "summary": "List publicly readable posts",
+            "x-blink-effect": "read",
+            "parameters": [
+              {
+                "name": "per_page",
+                "in": "query",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "description": "Publicly readable posts from the selected installation"
+              }
+            }
+          }
+        },
+        "/wp-json/wp/v2/posts/{postId}": {
+          "get": {
+            "operationId": "getPost",
+            "summary": "Read a publicly visible WordPress post",
+            "x-blink-effect": "read",
+            "parameters": [
+              {
+                "name": "postId",
+                "in": "path",
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            ],
+            "responses": {
+              "200": {
+                "description": "Public WordPress post"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "instance": {
+    "id": "wordpress-acme",
+    "title": "Acme WordPress custom REST API",
+    "version": "1.0.0",
+    "description": "Fictional site-specific quirks: custom article route, organization selector and response envelope. Authentication is inherited from the base.",
+    "target": {
+      "address": "site",
+      "url": "https://acme.example/blog"
+    },
+    "history": [
+      {
+        "version": "1.0.0",
+        "date": "2026-11-12",
+        "note": "Scope the reusable WordPress schema to Acme and replace its custom article contract."
+      }
+    ]
+  },
+  "variables": {
+    "organization": {
+      "description": "Your non-secret organization identifier for this installation",
+      "in": [
+        "query"
+      ]
+    }
+  },
+  "operations": {
+    "listPosts": {
+      "action": "replace",
+      "path": "/wp-json/acme/v1/articles",
+      "operation": {
+        "operationId": "listPosts",
+        "summary": "Read Acme articles using its custom route and response envelope",
+        "x-blink-effect": "read",
+        "parameters": [
+          {
+            "name": "organization",
+            "in": "query",
+            "required": true,
+            "x-blink-variable": "organization",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Acme article envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "headline": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "headline"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "entries",
+                    "count"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "getPost": {
+      "action": "disable"
+    },
+    "getHealth": {
+      "action": "add",
+      "method": "get",
+      "path": "/wp-json/acme/v1/health",
+      "operation": {
+        "operationId": "getHealth",
+        "summary": "Read the custom public plugin health endpoint",
+        "x-blink-effect": "read",
+        "responses": {
+          "200": {
+            "description": "Public health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

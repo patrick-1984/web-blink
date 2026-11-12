@@ -9,9 +9,15 @@ closed flat `application/x-www-form-urlencoded` bodies; responses remain JSON.
 
 ## Editions, versions, notes and extensions
 
-The profile schema states its edition (`x-blink-schema`, currently 1.5.0, released 2026-11-12). A manifest may
+The profile schema states its edition (`x-blink-schema`, currently 1.6.0, released 2026-11-12). A manifest may
 declare the edition it was written for with `"x-blink-schema": {"version": "1.x.y"}`: a higher MINOR is
 accepted, another MAJOR is refused (`unsupported_schema_version`). See `schemas/README.md` for the rule.
+
+`execution-v1/instance.schema.json` additionally describes a pinned base and a scoped child definition.
+It materializes into this same execution profile before address resolution. The closed
+`x-blink-service.instance` annotation records its exact target, base pin and authored-definition digest;
+an imported annotation is claimed lineage, while fresh composition is reported separately. See
+[instance overrides](instance-overrides.md) for complete action and package semantics.
 
 - **Blink version and history:** `x-blink-service.version` (MAJOR.MINOR.PATCH) and
   `x-blink-service.history: [{version, date: "YYYY-MM-DD", note}]`, strictly increasing and ending at

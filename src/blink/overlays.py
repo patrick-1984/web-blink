@@ -169,6 +169,11 @@ def overlay_provenance(store, parent_record, *, capture=None, connection=None, e
     provenance = {'kind': OVERLAY, 'capture': capture, 'parent': parent_of(parent_record),
                   'originalUpstreamPin': original_upstream_pin(store, parent_record, connection=connection),
                   'locallyModified': True, 'verified': False}
+    prior = parent_record.get('provenance') or {}
+    instance = parent_record.get('compiled', {}).get('instance')
+    if instance is not None:
+        provenance['instanceAncestry'] = copy.deepcopy(prior.get('instanceAncestry') or {
+            'instance': instance, 'compositionStatus': prior.get('compositionStatus', 'snapshot-claim')})
     for key, value in (extra or {}).items():
         if key not in provenance and key not in ('sourceCandidate', 'publisherVerification'):
             provenance[key] = copy.deepcopy(value)
@@ -235,7 +240,7 @@ def check_new_target(store, source, *, connection=None):
         raise BlinkError('namespace_conflict', 'This namespace is still claimed by imported packages or pins')
 
 
-def manual_install(runtime, document, source, integration, *, base_candidate=None, base_digest=None, deployment=None):
+def manual_install(runtime, document, source, integration, *, base_candidate=None, base_digest=None, deployment=None, base_document=None):
     """The permit-gated install_manifest (`blink install` and the bridge)."""
     if not isinstance(source, str) or not ID.fullmatch(source) or not isinstance(integration, str) or not ID.fullmatch(integration):
         raise BlinkError('invalid_source', 'Source/integration IDs are invalid')
@@ -246,6 +251,8 @@ def manual_install(runtime, document, source, integration, *, base_candidate=Non
         raise BlinkError('invalid_arguments', 'baseCandidate and baseDigest must be nonempty bounded strings')
     service = f'{source}:{integration}'
     selection = {'deployment': deployment} if deployment is not None else {}
+    if base_document is not None:
+        selection['base_document'] = base_document
     store = runtime.store
     with store.transaction() as db:
         current = store.get('active_manifest', service, connection=db)
@@ -255,6 +262,11 @@ def manual_install(runtime, document, source, integration, *, base_candidate=Non
                     or current['digest'] != base_digest):
                 raise BlinkError('approval_stale', 'baseCandidate/baseDigest do not match the active Blink')
             provenance = overlay_provenance(store, current, capture=None, connection=db)
+            from .instances import materialize_instance, validate_instance_overlay
+            effective = materialize_instance(document, base_document=base_document, allow_http=runtime.allow_http)
+            validate_instance_overlay(current['document'], effective['document'], parent_compiled=current['compiled'],
+                                      fresh_composition=(effective['compositionStatus'] == 'verified'
+                                                         and 'instanceDefinition' in effective))
             return runtime.install_manifest(document, source, integration, provenance=provenance, connection=db, **selection)
         if source in INTERNAL_SOURCES:
             raise BlinkError('namespace_conflict', 'Internal source namespaces cannot be installed manually')

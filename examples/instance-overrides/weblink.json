@@ -1,0 +1,25 @@
+{
+  "$schema": "urn:web-blink:schema:weblink:1",
+  "schemaVersion": 1,
+  "x-blink-schema": {
+    "version": "1.2.0"
+  },
+  "id": "wordpress-acme",
+  "version": "1.0.0",
+  "name": "Acme WordPress instance example",
+  "description": "Fictional URL-scoped WordPress customization with a pinned reusable base artifact.",
+  "artifacts": [
+    {
+      "role": "openapi",
+      "path": "acme.instance.json",
+      "sha256": "fa0d7ec6bf1c1ad22f61ae3e8e4c09614beb0737b19dab0d780ecf10f985b645",
+      "mediaType": "application/json"
+    },
+    {
+      "role": "base-openapi",
+      "path": "wordpress-base.json",
+      "sha256": "3cdb4e59fa55db7fdebc1c3825850f2afb67f360198a423d8d152de22190b1e9",
+      "mediaType": "application/json"
+    }
+  ]
+}
