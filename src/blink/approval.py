@@ -80,12 +80,15 @@ def validate(method, params):
         return _forbidden(issue) if issue else None
     if method == 'bundled_stage':
         import re
-        if (set(params) != {'name', 'version', 'expectedDescriptorSha256'}
+        required = {'name', 'version', 'expectedDescriptorSha256'}
+        if (not required <= set(params) or set(params) - required - {'deployment'}
                 or not isinstance(params['name'], str) or not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*', params['name'])
                 or not isinstance(params['version'], str) or not re.fullmatch(r'\d+\.\d+\.\d+', params['version'])
                 or not isinstance(params['expectedDescriptorSha256'], str)
-                or not re.fullmatch('[a-f0-9]{64}', params['expectedDescriptorSha256'])):
-            return _forbidden('bundled_stage requires the exact name, version and expectedDescriptorSha256')
+                or not re.fullmatch('[a-f0-9]{64}', params['expectedDescriptorSha256'])
+                or ('deployment' in params and (not isinstance(params['deployment'], str)
+                    or not re.fullmatch('[a-z][a-z0-9-]{0,63}', params['deployment'])))):
+            return _forbidden('bundled_stage requires the exact name, version and expectedDescriptorSha256, with optional deployment')
         return None
     if method in ('execution_run', 'execution_observe', 'context_save', 'routine_save', 'routine_run', 'routine_begin', 'routine_step'):
         from .execution import validate_action
@@ -147,6 +150,7 @@ def validate(method, params):
             return _forbidden('install_manifest requires document, source and integration')
         from .control import closed, schema_issue, TEXT
         fields = {'document': {'type': 'object'}, 'source': TEXT, 'integration': TEXT,
+                  'deployment': {'type': 'string', 'pattern': r'^[a-z][a-z0-9-]{0,63}(?![\s\S])'},
                   'baseCandidate': {**TEXT, 'pattern': '^[a-f0-9]{64}$'}, 'baseDigest': {**TEXT, 'pattern': '^[a-f0-9]{64}$'}}
         if ('baseCandidate' in params) != ('baseDigest' in params):
             return _forbidden('Provide both baseCandidate and baseDigest for a full-document local patch')
@@ -278,6 +282,11 @@ def _dialog(method, params, *, state_dir=None, plugin_root=None):
             context = {'operations': [f"{op['operation']}: {op['effect']} ({op['method']})" for op in review.get('operations', [])],
                        'postRequestsThatOnlyRead': (manifest or {}).get('confirmReadOperations', []),
                        'login': review.get('authRecipe', {}).get('kind') if isinstance(review.get('authRecipe'), dict) else None}
+            if 'addresses' in review:
+                context.update(deployment=review.get('deployment'), addresses=review['addresses'],
+                               destinations=[{'operation': op['operation'], 'method': op['method'],
+                                              'origin': op['origin'], 'path': op['path']}
+                                             for op in review.get('operations', [])])
         grant = params.get('grant') if method == 'activate_blink' else None
         if isinstance(grant, dict) and grant.get('autoApprove') in ('writes', 'writes-and-deletes'):
             context = dict(context or {}, standingApproval=(

@@ -111,12 +111,29 @@ def validate_metadata(entry):
     return meta
 
 
-def _metadata_for_compiled(document, compiled):
-    """Inspect public fields of an already validated profile without narrowing its runtime validity."""
+def _metadata_for_compiled(document, compiled, *, local=False):
+    """Derive public hints or local snapshot hosts without mixing their ownership.
+
+    Public inventory only reads publisher-supplied bytes. Local inventory reads the
+    concrete approved/quarantined snapshot, so private hostnames never enter a catalog.
+    """
     service = document['x-blink-service']
-    urls = list(service.get('requestedOrigins', []))
-    urls += [service.get('appOrigin', '')]
-    urls += [x.get('url', '') for x in document.get('servers', [])]
+    if local and not compiled.get('inspectionOnly'):
+        urls = list(compiled.get('requestedOrigins', []))
+        for operation in compiled['operations'].values():
+            urls += [operation.get('origin', ''), operation.get('appOrigin', '')]
+            urls += operation.get('loginOrigins', [])
+    else:
+        urls = list(service.get('requestedOrigins', []))
+        urls += [service.get('appOrigin', '')]
+        urls += service.get('loginOrigins', [])
+        urls += [x.get('url', '') for x in document.get('servers', [])]
+        for methods in document.get('paths', {}).values():
+            for operation in methods.values():
+                urls += [x.get('url', '') for x in operation.get('servers', [])]
+        declarations = service.get('addresses', {})
+        urls = [(declarations.get(value[len('blink-address:'):], {}).get('url', '')
+                 if value.startswith('blink-address:') else value) for value in urls]
     hosts = set()
     for value in urls:
         if value:
@@ -322,7 +339,7 @@ class Discovery:
         compiled = compiled or record.get('compiled')
         document = document or record.get('document')
         if metadata is None and document is not None:
-            metadata = (_metadata_for_compiled(document, compiled) if compiled and tier in ('added', 'pending')
+            metadata = (_metadata_for_compiled(document, compiled, local=True) if compiled and tier in ('added', 'pending')
                         else metadata_for_document(document))
         metadata = metadata or {}
         opids = list(compiled['operations']) if compiled else metadata.get('operations')
@@ -565,6 +582,8 @@ class Discovery:
             if integration == host.rsplit('.', 1)[0].replace('.', '-'):
                 return 4
         if query:
+            if any(query == operation.casefold() for operation in row['_operations'] or []):
+                return 5
             tokens = re.findall(r'[\w]+', query)
             text = (integration + ' ' + (row.get('title') or '')).casefold()
             if tokens and all(token in text for token in tokens):

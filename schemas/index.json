@@ -41,9 +41,9 @@
       {
         "id": "urn:web-blink:schema:execution:1",
         "path": "execution-v1/openapi.schema.json",
-        "version": "1.4.0",
-        "released": "2026-11-09",
-        "sha256": "11403a313fab38a52dd04e9b09f2a444ecc86ca468a182b839485e3a03d56bb0"
+        "version": "1.5.0",
+        "released": "2026-11-12",
+        "sha256": "03f6f51c89dc3de6dc94f7c1ca0d43b42c66c8f5a14d5fb2dbf2da5c1de155cc"
       },
       {
         "id": "urn:web-blink:schema:arazzo-execution:1",
@@ -75,9 +75,9 @@
       {
         "id": "urn:web-blink:schema:private-blink:1",
         "path": "v1/private-blink.schema.json",
-        "version": "1.1.0",
-        "released": "2026-10-30",
-        "sha256": "71e2163115a9a44988004e223a46ed5c8e40bd168c419c6e29a2dff61a59f01f"
+        "version": "1.2.0",
+        "released": "2026-11-12",
+        "sha256": "080ceb32862dec5dacac9f617dca7a458ad696c5273d84e7f8292ab8a3229db3"
       }
     ]
   },

@@ -84,15 +84,9 @@ class Runtime:
         if not record:raise BlinkError('quarantined','No approved manifest is active for this service')
         return record
 
-    def install_manifest(self,document,source_id,integration_id,*,provenance=None,connection=None,variables=None):
+    def install_manifest(self,document,source_id,integration_id,*,provenance=None,connection=None,variables=None,deployment=None):
         if not isinstance(source_id,str) or not ID.fullmatch(source_id) or not isinstance(integration_id,str) or not ID.fullmatch(integration_id):
             raise BlinkError('invalid_source','Source/integration IDs are invalid')
-        declares=isinstance(document,dict) and isinstance(document.get('x-blink-service'),dict) and document['x-blink-service'].get('variables')
-        if declares:
-            from .private import variables as private_variables
-            compiled=compile_manifest(document,allow_http=self.allow_http,variables=variables if variables is not None else private_variables(integration_id))
-        else:compiled=compile_manifest(document,allow_http=self.allow_http)
-        if compiled['id']!=integration_id:raise BlinkError('invalid_manifest','Integration ID disagrees with the manifest')
         service=source_id+':'+integration_id
         with (contextlib.nullcontext(connection) if connection is not None else self.store.transaction()) as db:
             fence = self.store.get('cleanup_fence', service, connection=db)
@@ -101,6 +95,28 @@ class Runtime:
             from .overlays import check_parent
             check_parent(self.store,service,provenance,connection=db)  # learned overlay: exact parent still active
             previous=self.store.get('active_manifest',service,connection=db)
+            meta = document.get('x-blink-service', {}) if isinstance(document, dict) else {}
+            if not isinstance(meta, dict):
+                meta = {}
+            inputs = {}
+            if meta.get('variables'):
+                from .private import variables as private_variables
+                inputs['variables'] = variables if variables is not None else private_variables(integration_id)
+            if deployment is not None:
+                if not meta.get('addresses'):
+                    raise BlinkError('invalid_arguments',
+                                     'This Blink has no address declarations; --deployment cannot change its fixed destinations')
+                from .private import deployment as private_deployment
+                inputs.update(addresses=private_deployment(integration_id, deployment), deployment=deployment)
+            elif meta.get('addresses') and (provenance or {}).get('kind') == 'learned-overlay' and previous:
+                # check_parent above makes this frozen snapshot authoritative, even if local config changed.
+                from .addresses import snapshot_values
+                inputs.update(addresses=snapshot_values(previous['document'], previous['compiled']),
+                              deployment=previous['compiled'].get('deployment'))
+            compiled=compile_manifest(document,allow_http=self.allow_http,**inputs)
+            if compiled.get('inspectionOnly') or compiled.get('unresolvedAddresses'):
+                raise BlinkError('private_values_required', 'Resolve every referenced address before staging an executable Blink')
+            if compiled['id']!=integration_id:raise BlinkError('invalid_manifest','Integration ID disagrees with the manifest')
             expected=previous['digest'] if previous else None
             old_history=(previous or {}).get('compiled',{}).get('history') or []
             new_history=compiled.get('history') or []
@@ -111,7 +127,13 @@ class Runtime:
                     'document':copy.deepcopy(document),'compiled':compiled,'provenance':copy.deepcopy(provenance or {}),
                     'createdAt':time.time(),'state':'quarantined'}
             self.store.put('manifest_candidate',candidate,record,connection=db)
-        return envelope('quarantined','Manifest staged for explicit local review',{'service':service,'digest':compiled['digest'],'candidate':candidate})
+        review={'service':service,'digest':compiled['digest'],'candidate':candidate}
+        if meta.get('addresses'):
+            review.update(deployment=compiled.get('deployment'), addresses=copy.deepcopy(compiled.get('addresses', {})),
+                          destinations=[{'operation': op['operationId'], 'method': op['method'],
+                                         'origin': op['origin'], 'path': op['path']}
+                                        for op in compiled['operations'].values()])
+        return envelope('quarantined','Manifest staged for explicit local review',review)
 
     def dispatch(self,method,params=None,*,human=False):
         if not isinstance(method,str) or not isinstance(params or {},dict):return envelope('invalid_arguments','Invalid runtime request')
@@ -1060,12 +1082,15 @@ class Runtime:
             candidate=self.store.get('manifest_candidate',p.get('candidate'))
             if not candidate:raise BlinkError('unknown_candidate','Candidate not found')
             return envelope('ok','Quarantined manifest review',{'service':candidate['service'],'digest':candidate['digest'],
+                **({'deployment': candidate['compiled'].get('deployment'),
+                    'addresses': copy.deepcopy(candidate['compiled'].get('addresses', {}))}
+                   if candidate['compiled'].get('addresses') is not None else {}),
                 'requestedOrigins': candidate['compiled']['requestedOrigins'],
                 'authRecipe': next(iter(candidate['compiled']['operations'].values()))['auth'],
                 'provenance': redact(candidate['provenance']),
                 'candidate':candidate['candidate'],'operations':[{'operation':op['operationId'],'effect':op['effect'],'summary':op['summary'],
                 'method': op['method'], 'requiresReadVerification': op.get('requiresReadVerification', False),
-                'origin': op['origin'], 'appOrigin': op.get('appOrigin'), 'execution': op['exec'],
+                'origin': op['origin'], 'path': op['path'], 'appOrigin': op.get('appOrigin'), 'execution': op['exec'],
                 'inputSchema':op['inputSchema']} for op in candidate['compiled']['operations'].values()]})
         if action=='private':
             from .private import blink_name,public_view

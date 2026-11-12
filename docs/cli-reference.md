@@ -25,6 +25,20 @@ already be installed, reviewed and granted for the selected account. Use a sourc
 name in scripts. A short integration ID is accepted only when exactly one approved source matches it.
 If a new source makes a short name ambiguous, the command fails instead of switching integrations.
 
+Shared Blinks can resolve named addresses for private installations and test environments. Save named
+URL sets through `private_set` under `deployments`, then select one while staging:
+
+```sh
+blink install wordpress.openapi.json --source staging --id wordpress --deployment staging --yes
+blink add NAME --deployment staging --yes
+blink sources install SOURCE ID --version VERSION --deployment staging --expected-commit COMMIT --expected-catalog-sha256 CATALOG_SHA256 --expected-descriptor-sha256 DESCRIPTOR_SHA256 --yes
+```
+
+The selection is a staging option; calls use the approved service snapshot. For simultaneous environments,
+use distinct local source names or registered Git source aliases, with separate bindings. Existing local
+services require `--base-candidate` and `--base-digest` for replacement. The native staging bridge accepts
+the same `deployment` field. See [deployment configuration and examples](deployments.md).
+
 The action accepts the exact `operationId` or a kebab-case spelling of an underscore/camel-case ID.
 Ambiguous aliases require the exact operation ID. `blink <integration> <action> --help` builds option help
 from the reviewed operation input schema. Scalar flags are converted to their declared types; objects and

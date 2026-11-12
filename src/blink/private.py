@@ -23,7 +23,8 @@ SCHEMA_ID = 'urn:web-blink:schema:private-blink:1'
 SCHEMA_FILE = 'schemas/v1/private-blink.schema.json'
 ID = re.compile(r'[a-z0-9]+(?:[.-][a-z0-9]+)*')
 SECRET_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,99}')
-SECTIONS = ('identity', 'defaults', 'variables', 'preferences', 'processNotes')
+SECTIONS = ('identity', 'defaults', 'variables', 'deployments', 'preferences', 'processNotes')
+DEPLOYMENT_NAME = re.compile(r'[a-z][a-z0-9-]{0,63}')
 MAX_BYTES = 256 * 1024
 
 
@@ -118,13 +119,24 @@ def _validate(document):
     errors = sorted(Draft202012Validator(schema).iter_errors(document), key=lambda e: len(list(e.absolute_path)))
     if errors:
         where = '/'.join(str(p) for p in errors[0].absolute_path) or '(document)'
-        raise BlinkError('invalid_private', f'Private Blink does not match its schema at {where}: {str(errors[0].message)[:300]}')
+        # jsonschema messages can include the rejected instance verbatim. Private
+        # values must not be copied into a model-visible validation error.
+        raise BlinkError('invalid_private', f'Private Blink does not match its schema at {where} ({errors[0].validator})')
     # Values that look like credentials belong in the separate secrets file, never in defaults/preferences.
     for operation in (document.get('defaults') or {}).values():
         if any(SENSITIVE.search(field.rsplit('.', 1)[-1]) for field in operation):
             raise BlinkError('invalid_private', 'Credential-like fields cannot be stored as defaults; use private_secret_set')
     if any(SENSITIVE.search(key) for key in document.get('preferences') or {}):
         raise BlinkError('invalid_private', 'Credential-like preferences are refused; use private_secret_set')
+    from .addresses import base_url
+    for deployment in (document.get('deployments') or {}).values():
+        for value in deployment['addresses'].values():
+            try:
+                # Storage can describe a loopback fixture before its runtime is
+                # enabled. Execution still enforces its own explicit HTTP opt-in.
+                base_url(value, allow_fqdn=True, allow_http=True)
+            except BlinkError:
+                raise BlinkError('invalid_private', 'Deployment addresses require safe URLs or FQDNs without credentials, queries or fragments') from None
     return document
 
 
@@ -151,6 +163,18 @@ def _secrets(name):
 def variables(name):
     """This user's values for the Blink's declared variables (tenant, workspace, login, user ID)."""
     return dict(load(name).get('variables') or {})
+
+
+def deployment(name, selected):
+    """Resolve one explicitly selected private deployment, without choosing a default."""
+    if not isinstance(selected, str) or not DEPLOYMENT_NAME.fullmatch(selected):
+        raise BlinkError('invalid_arguments', 'deployment must be a lowercase name of at most 64 letters, digits or hyphens')
+    value = (load(name).get('deployments') or {}).get(selected)
+    if value is None:
+        raise BlinkError('private_values_required',
+                         f'Save the {selected} deployment in this private Blink with private_set: '
+                         '{"deployments": {"' + selected + '": {"addresses": {"address-name": "https://your-host"}}}}')
+    return copy.deepcopy(value['addresses'])
 
 
 def public_view(name):

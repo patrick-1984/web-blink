@@ -9,7 +9,7 @@ closed flat `application/x-www-form-urlencoded` bodies; responses remain JSON.
 
 ## Editions, versions, notes and extensions
 
-The profile schema states its edition (`x-blink-schema`, currently 1.1.0, released 2026-10-30). A manifest may
+The profile schema states its edition (`x-blink-schema`, currently 1.5.0, released 2026-11-12). A manifest may
 declare the edition it was written for with `"x-blink-schema": {"version": "1.x.y"}`: a higher MINOR is
 accepted, another MAJOR is refused (`unsupported_schema_version`). See `schemas/README.md` for the rule.
 
@@ -30,8 +30,10 @@ accepted, another MAJOR is refused (`unsupported_schema_version`). See `schemas/
 
 An integration has a default exact server origin, explicit requested origins and unique operation IDs.
 A standard operation-level `servers: [{url: "https://login.example"}]` can select one other exact origin
-only when it is explicitly requested and separately granted for that operation. Server URLs cannot carry
-path prefixes, credentials, query strings, templates or runtime substitutions.
+only when it is explicitly requested and separately granted for that operation. Ordinary server URLs
+remain exact origins. Existing declared host-label variables resolve before compilation. Named address
+references additionally support explicit private deployment URLs and safe base-path prefixes, as below.
+Credentials and query strings are refused in destinations.
 GET/HEAD may be labelled read. POST may be read only after exact confirmation of the read operations (filled in by the plugin from the proposal) as described
 below; PUT/PATCH/DELETE require an explicit mutation or maintenance effect.
 Body arguments are under `arguments.body`; scalar path/query/header parameters use their declared names.
@@ -39,6 +41,28 @@ Parameter properties cannot target transport/auth/CSRF/idempotency headers. Dot 
 control characters and separators in path values are rejected. Requests/responses have fixed byte bounds;
 redirects are not followed, even to the same origin. HTTP is only supported for explicit loopback fixtures
 (`BLINK_ALLOW_HTTP_LOOPBACK=1` or the test constructor flag); production origins require HTTPS.
+
+## Named addresses and private deployments
+
+`x-blink-service.addresses` declares up to 20 named slots. A whole destination value such as
+`blink-address:site` refers to one slot. `fixed` requires a publisher URL and forbids `config`; `dynamic`
+requires a local `config` key and permits an original URL as a discovery hint; `unspecified` requires a
+local key and forbids a public URL. Dynamic and unspecified references always require an explicitly
+selected private deployment. An original dynamic URL never supplies an execution fallback.
+
+The user's private Blink holds `deployments[name].addresses[config]`. Native staging accepts
+`deployment: name` (CLI `--deployment NAME`) and resolves those values before bounded compilation.
+Slots can be used by root and operation servers, requested origins, the application origin and login
+origins. A local FQDN normalizes to HTTPS; a concrete base URL can add a safe prefix such as `/blog` to
+operations selected through that server slot. Origin fields discard the prefix and retain exact origins.
+No other manifest field performs address substitution.
+
+The candidate digest includes the selected name, effective referenced addresses and concrete operation
+paths. Active snapshots do not read changing local URL config during execution. Restaging a changed
+deployment requires exact approval and invalidates old grants on activation. Concurrent deployments use
+existing distinct source namespaces and bindings. Public metadata reads only publisher hints; local
+inventory can match approved concrete hosts. See [the deployment guide](deployments.md),
+[architecture spine](ARCHITECTURE-SPINE.md) and [complete examples](../examples/multiple-deployments/).
 
 ## Confirmed POST reads and identity probes
 

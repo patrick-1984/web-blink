@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.19.0 — 2026-11-12
+
+- Declare several named deployment addresses in one shared Blink: fixed URLs, dynamic slots with an
+  optional original URL hint, and unspecified slots without a public hostname. Resolve custom URLs or
+  FQDNs from private named deployments using `--deployment`; preserve existing host variables.
+- Compile safe deployment path prefixes for private WordPress subdirectory installs. Review snapshots
+  include the selected deployment, effective addresses and concrete operation destinations. Local config
+  edits cannot redirect approved operations; restaging changed destinations invalidates old grants.
+- Keep concurrent test and production environments isolated using existing source namespaces, bindings
+  and exact-origin grants. Discovery uses public hints for catalogs and resolved hosts for local inventory.
+- Preserve frozen deployment resolution during learned overlays and map recorded paths back to shared
+  address references. Ambiguous mappings require a reviewed full-document patch.
+- Publish execution schema 1.5.0 and private Blink schema 1.2.0, architecture decisions, deployment
+  documentation and fictional WordPress/test-environment examples.
+
+### NOT tested in this release
+
+- Live private WordPress authentication and third-party WordPress authentication plugins: no owner-provided
+  installation or credentials were supplied. Routing, approval isolation and learning are verified with
+  deterministic local fixtures; no private service mutations are performed for release validation.
+
 ## 0.18.2 — 2026-11-10
 
 - Enforce the agent's learning-first routing contract: a missing usable schema starts learning before page

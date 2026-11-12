@@ -3,8 +3,8 @@
   "$id": "urn:web-blink:schema:private-blink:1",
   "title": "Web Blink private Blink v1: one user's own data for one Blink, never shared",
   "x-blink-schema": {
-    "version": "1.1.0",
-    "released": "2026-10-30"
+    "version": "1.2.0",
+    "released": "2026-11-12"
   },
   "type": "object",
   "additionalProperties": false,
@@ -165,6 +165,41 @@
       "additionalProperties": {
         "type": "string",
         "maxLength": 4096
+      }
+    },
+    "deployments": {
+      "description": "Private named installation addresses, explicitly selected while staging. Values never alter an already staged or approved snapshot.",
+      "type": "object",
+      "maxProperties": 20,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "addresses"
+        ],
+        "properties": {
+          "addresses": {
+            "type": "object",
+            "maxProperties": 20,
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        }
       }
     }
   }

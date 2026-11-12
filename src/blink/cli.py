@@ -219,12 +219,14 @@ def build_parser():
     p.add_argument('--yes', action='store_true')
     p = sub.add_parser('add', help='Add a Blink that ships with Web Blink (no name: list them)')
     p.add_argument('name', nargs='?')
+    p.add_argument('--deployment', help='Named private deployment to resolve while staging')
     p.add_argument('--yes', action='store_true', help='Confirm under the opt-in approvals=dialog policy')
     p = sub.add_parser('install', help='Stage a local execution manifest in quarantine')
     p.add_argument('file')
     p.add_argument('--source', default='own')
     p.add_argument('--base-candidate')
     p.add_argument('--base-digest')
+    p.add_argument('--deployment', help='Named private deployment to resolve while staging')
     p.add_argument('--id', required=True)
     p.add_argument('--yes', action='store_true')
     p = sub.add_parser('approve-manifest')
@@ -260,6 +262,7 @@ def build_parser():
     item.add_argument('--expected-commit')
     item.add_argument('--expected-catalog-sha256')
     item.add_argument('--expected-descriptor-sha256')
+    item.add_argument('--deployment', help='Named private deployment to resolve while staging')
     item.add_argument('--yes', action='store_true')
     p = sub.add_parser('schemas')
     p.add_argument('schema_action', nargs='?', choices=('list', 'export'), default='list')
@@ -401,14 +404,18 @@ def run(args):
                     for e in bundled.catalog(args.plugin_root) if e['id'] not in bundled.EXAMPLES]
             return {'status': 'ok', 'summary': 'Blinks that ship with Web Blink; add one with: blink add <name>',
                     'data': rows, 'warnings': []}
-        confirm('add_bundled_blink', {'name': args.name}, getattr(args, 'yes', False), mode=selected_approval_mode(args))
-        return bundled.add(args.name, state_dir=args.state_dir, root=args.plugin_root)
+        selection = {'deployment': args.deployment} if args.deployment is not None else {}
+        confirm('add_bundled_blink', {'name': args.name, **selection}, getattr(args, 'yes', False), mode=selected_approval_mode(args))
+        return bundled.add(args.name, state_dir=args.state_dir, root=args.plugin_root, **selection)
     if args.command == 'install':
         document = load_input(args.file)
         params = {'document': document, 'source': args.source, 'integration': args.id}
+        if args.deployment is not None:
+            params['deployment'] = args.deployment
         if args.base_candidate is not None or args.base_digest is not None:
             params.update(baseCandidate=args.base_candidate, baseDigest=args.base_digest)
         confirm('install_manifest', params, args.yes, preview={'source': args.source, 'integration': args.id,
+                **({'deployment': args.deployment} if args.deployment is not None else {}),
                 'manifestSha256': hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()}, mode=selected_approval_mode(args))
         return native_dispatch(args, 'install_manifest', params)
     if args.command in MANAGEMENT:
@@ -453,6 +460,8 @@ def run(args):
                           'expectedDescriptorSha256': args.expected_descriptor_sha256}
                 if args.expected_commit is not None:
                     params['expectedCommit'] = args.expected_commit
+            if args.deployment is not None:
+                params['deployment'] = args.deployment
         method = 'source_' + action
         from .approval import validate
         issue = validate(method, params)

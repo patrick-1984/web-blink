@@ -88,7 +88,7 @@ def load(name, root=None, *, version=None):
     return max(entries, key=lambda e: tuple(int(x) for x in e['version'].split('.')))
 
 
-def stage(runtime, name, version, expected_descriptor_sha256):
+def stage(runtime, name, version, expected_descriptor_sha256, *, deployment=None):
     """Stage exact current bytes without approving, binding, or trusting a package."""
     import re
     if (not isinstance(name, str) or not re.fullmatch(r'[a-z0-9]+(?:[.-][a-z0-9]+)*', name)
@@ -122,7 +122,8 @@ def stage(runtime, name, version, expected_descriptor_sha256):
         return runtime.install_manifest(found['document'], SOURCE, name, connection=db,
                                         provenance={'kind': 'bundled', 'version': version,
                                                     'descriptorSha256': found['descriptorSha256'],
-                                                    'artifactSha256': found['artifactSha256']})
+                                                    'artifactSha256': found['artifactSha256']},
+                                        **({'deployment': deployment} if deployment is not None else {}))
 
 
 def public_read_only(document):
@@ -134,14 +135,15 @@ def public_read_only(document):
             and all(op.get('x-blink-effect') == 'read' for op in operations))
 
 
-def add(name, *, state_dir=None, root=None):
+def add(name, *, state_dir=None, root=None, deployment=None):
     """Stage and switch on a bundled Blink: the user's order is the authorization for this exact package."""
     from .client import control_request
     if name in EXAMPLES:
         raise BlinkError('unknown_service', 'This is a fictional format example, not a usable Blink')
     found = load(name, root)
     staged = control_request('bundled_stage', {'name': name, 'version': found['version'],
-                                             'expectedDescriptorSha256': found['descriptorSha256']},
+                                             'expectedDescriptorSha256': found['descriptorSha256'],
+                                             **({'deployment': deployment} if deployment is not None else {})},
                              state_dir=state_dir, plugin_root=str(plugin_root(root)))
     if staged.get('status') != 'quarantined':
         return staged
@@ -157,6 +159,8 @@ def add(name, *, state_dir=None, root=None):
         return approved
     data = {'service': f'{SOURCE}:{name}', 'version': found['version'], 'name': found['name'],
             'publicReadOnly': public_read_only(found['document'])}
+    if deployment is not None:
+        data['deployment'] = deployment
     if not data['publicReadOnly']:
         data['next'] = 'This Blink needs your account: connect it from Claude Code or Codex (“use the ' + name + ' Blink”).'
     return {'status': 'ok', 'summary': f"Added {found['name']} ({name} {found['version']})", 'data': data, 'warnings': []}
