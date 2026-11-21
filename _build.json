@@ -3,12 +3,12 @@
     {
       "bytes": 392,
       "path": ".claude-plugin/plugin.json",
-      "sha256": "a85cd0992c290539f8553dc7b4836c204410fd3277ec0746f8ad4c9fdf17f78e"
+      "sha256": "a64123091e010d73c88139ec7b900b65c16d0d3aabde84f2c7bf3ec3f8d042d2"
     },
     {
       "bytes": 576,
       "path": ".codex-plugin/plugin.json",
-      "sha256": "ef0abdda03d36ff3aa44dd2bc7f2e2a9d077ba42bd41daffdfe3c5bfae6f6322"
+      "sha256": "5f8b1108842df3b624a65121d14e473251e093344ab971da07ddbccebd9e5bf0"
     },
     {
       "bytes": 94,
@@ -28,7 +28,7 @@
     {
       "bytes": 20953,
       "path": "README.md",
-      "sha256": "1f9546823e22a8a9569d7fe2cbc92bd2c308f01f5ca35d77f973c0055038a8af"
+      "sha256": "0fd75d800471a6bcac859575cbe06d39df39c85e0ba9cb37c14f1b832d11348f"
     },
     {
       "bytes": 9983,
@@ -261,9 +261,9 @@
       "sha256": "605ccfb4a6f4d1fa1dbf82025f83c8c9537708c8639b836eee5ae673c29c09c2"
     },
     {
-      "bytes": 3371,
+      "bytes": 3699,
       "path": "mcp/bootstrap-uv.mjs",
-      "sha256": "c3f0c17eb11064adaa55ee95d3d312ca90f7b4e9f65d88ae3b78102678ca8518"
+      "sha256": "651bc9ee6d41d91b6efe0969a779e1ef39378d9d7a4afda17dd0e5ac23a8b20c"
     },
     {
       "bytes": 14056,
@@ -288,7 +288,7 @@
     {
       "bytes": 40820,
       "path": "mcp/server.mjs",
-      "sha256": "599ab56335e3c7b546d384325356b4edc2a4955d0afaf85185cd28878b91ef8d"
+      "sha256": "f902bb2a6310e6e94ffbc8f67bdc9a0f22e7e1084f65ca67af104dcab147f775"
     },
     {
       "bytes": 3225,
@@ -303,7 +303,7 @@
     {
       "bytes": 633,
       "path": "pyproject.toml",
-      "sha256": "1daa8a8edc64ca853522bf80be0595c55639d78d785b1308a2fbf1cc97f404a1"
+      "sha256": "88890580e591b994c8a700d4db3b6d9758837dd14f4ec1e6e6af61a865893e9a"
     },
     {
       "bytes": 12305,
@@ -398,7 +398,7 @@
     {
       "bytes": 70,
       "path": "src/blink/__init__.py",
-      "sha256": "c5853477b5e77b1494f32bdf312e732500b644377a23e4fd94a9ca4aa7c26d31"
+      "sha256": "1cb48ded24e835ee88ab0d1ff61af5f1ed1efa1cc8a0c15eee9cb95475f28b83"
     },
     {
       "bytes": 48,
@@ -423,7 +423,7 @@
     {
       "bytes": 52626,
       "path": "src/blink/browser.py",
-      "sha256": "57f566d747c1ce324a875c0f78a9c883611cc44734ce99304a1c2ad2c8621dc3"
+      "sha256": "7faa0c93582bcb2acb2ab8f99e170624dd69a0f8d5250f56b880ad53a0d2e79a"
     },
     {
       "bytes": 11037,
@@ -807,6 +807,6 @@
     "license": "MIT",
     "name": "web-blink",
     "repository": "https://github.com/patrick-1984/web-blink",
-    "version": "0.21.2"
+    "version": "0.21.3"
   }
 }
