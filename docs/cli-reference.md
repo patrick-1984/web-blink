@@ -129,6 +129,14 @@ Use `blink <group> <action> --help` to inspect the input convention. The generic
 `blink human METHOD --cli-input-json ...` remains available for advanced runtime actions.
 
 `blink doctor --force --capability runtime` rechecks the static dependency sentinel for one capability.
+
+`blink peer discover blink-debugger` checks the optional local Blink Debugger CLI. The explicit command
+runs `bdbg capabilities` from the current `PATH` and uses a two-second response timeout and a 4 KiB
+output limit. Use it with a Blink Debugger executable you installed and trust. It reports `compatible`
+for the supported Web Link descriptor and transport extension, `incompatible` for a different contract,
+`unavailable` for a failed or invalid response, and `missing` when the executable cannot be found.
+The exit status is zero for `compatible` and one for the other discovery results. `--dry-run` suppresses
+the probe. The check is local and specific to the declared metadata contract.
 Supported capability names are `runtime`, `learn`, `git-sources` (`gitSources`), `signatures` and `browser`.
 The JSON report includes manual repair recipes. Doctor never installs software automatically; recipe
 execution still requires a separately authorized host action. Live browser/socket and state permissions

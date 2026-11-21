@@ -129,7 +129,7 @@ class ConfigStore:
         self.plugin_root = Path(plugin_root or Path(__file__).resolve().parents[2]).resolve()
         self.path = self.directory / 'settings.json'
 
-    def _directory(self, create=False):
+    def _directory(self, create=False, *, read_only=False):
         if self.directory.resolve().is_relative_to(self.plugin_root):
             raise ConfigError('Settings must be outside the installed plugin')
         for parent in (self.directory, *self.directory.parents):
@@ -138,9 +138,11 @@ class ConfigStore:
         if create:
             self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         if self.directory.exists():
-            if os.name == 'nt':
+            if os.name == 'nt' and not read_only:
                 from .windows import protect
                 protect(self.directory)
+            if os.name == 'nt' and read_only and self.directory.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                raise ConfigError('Settings directory cannot use Windows reparse points')
             info = self.directory.stat()
             if not stat.S_ISDIR(info.st_mode) or (hasattr(os, 'getuid') and info.st_uid != os.getuid()):
                 raise ConfigError('Settings directory must be owned by the current user')
@@ -180,8 +182,8 @@ class ConfigStore:
                 validate_option(key, value)
         return document
 
-    def load(self):
-        self._directory()
+    def load(self, *, read_only=False):
+        self._directory(read_only=read_only)
         if self.path.is_symlink():
             raise ConfigError('Settings file cannot be a symlink')
         if not self.path.exists():
@@ -336,9 +338,9 @@ class ConfigStore:
         self.save(document)
         return {'key': key, 'scope': service or 'global', 'removed': removed}
 
-    def effective(self, service=None, *, cli=None, schema=None, environment=None):
+    def effective(self, service=None, *, cli=None, schema=None, environment=None, read_only=False):
         cli, environment = cli or {}, os.environ if environment is None else environment
-        document = self.load()
+        document = self.load(read_only=read_only)
         values = copy.deepcopy(BUILTINS)
         sources = {key: 'built-in' for key in values}
         for key, property_schema in (schema or {}).get('properties', {}).items():
