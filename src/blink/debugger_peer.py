@@ -41,7 +41,7 @@ def _read_reply(stream, result):
 
 def _probe(executable):
     deadline = monotonic() + TIMEOUT_SECONDS
-    process = subprocess.Popen([str(executable), 'capabilities'], stdin=subprocess.DEVNULL,
+    process = subprocess.Popen([str(executable), 'capabilities'], cwd=executable.anchor, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     reply = Queue(maxsize=1)
     try:

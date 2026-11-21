@@ -54,7 +54,10 @@ class PeerDiscoveryTests(unittest.TestCase):
         return code, json.loads(stdout.getvalue())
 
     def test_peer_discovery_executes_only_fixed_capability_command(self):
-        self.install_fixture(f'    assert sys.argv[1:] == ["capabilities"]\n    print({json.dumps(CAPABILITIES)!r})')
+        self.install_fixture('    import os\n'
+                             '    assert sys.argv[1:] == ["capabilities"]\n'
+                             '    assert os.getcwd() == os.path.abspath(os.path.sep)\n'
+                             f'    print({json.dumps(CAPABILITIES)!r})')
         with patch('blink.windows.protect', side_effect=AssertionError('unexpected config write')):
             code, result = self.invoke()
         self.assertEqual(code, 0)
