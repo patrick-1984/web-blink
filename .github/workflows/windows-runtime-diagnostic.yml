@@ -5,25 +5,52 @@ on:
 permissions:
   contents: read
 jobs:
-  reproduce:
-    runs-on: windows-latest
-    timeout-minutes: 8
+  runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Trace the failing setup stage on this disposable runner
-        shell: bash
+      - run: python -m pip install -e .
+      - name: Local Blink Debugger peer discovery
+        run: python tools/run_tests.py discover -s tests -p test_debugger_peer.py -v
+      - name: Native transport and profile discovery
         env:
-          BLINK_TEST_RUNTIME_SETUP: '1'
+          BLINK_TEST_BROWSER_SETUP: ${{ runner.os == 'Windows' && '1' || '0' }}
+        run: python tools/run_tests.py discover -s tests -p test_windows_runtime.py -v
+      - name: Native CLI and MCP read/write demonstration
+        run: python scripts/demo.py
+      - name: Deployment addresses and isolated environment journeys
         run: |
-          python - <<'PY'
+          python tools/run_tests.py discover -s tests -p test_addresses.py -v
+          python tools/run_tests.py discover -s tests -p "test_deployment*.py" -v
+      - name: Pinned instance composition and scoped native journeys
+        run: python tools/run_tests.py discover -s tests -p "test_instance*.py" -v
+      - name: Running plugin rename/delete and connector death (Windows folder locks)
+        run: python tools/run_tests.py discover -s tests -p test_plugin_updates.py -v
+      - name: Profile labels, cache and numbered selection
+        run: python tools/run_tests.py discover -s tests -p test_profile_index.py -v
+      - name: Shared-profile restart safety
+        run: python tools/run_tests.py discover -s tests -p test_browser_restart_safety.py -v
+      - name: Browser consent and bounded connection waits
+        run: python tools/run_tests.py discover -s tests -p test_browser_consent.py -v
+      - name: Existing browser and work-tab reuse
+        run: python tools/run_tests.py discover -s tests -p test_browser_reuse.py -v
+      - name: Guided recording and browser diagnostics
+        run: python tools/run_tests.py discover -s tests -p test_guided_recording.py -v
+      - name: Label setup errors without changing subprocess behavior
+        shell: bash
+        run: |
+          python - <<'PYTRACE'
           from pathlib import Path
 
           def replace(filename, old, new):
@@ -36,15 +63,14 @@ jobs:
                   "retry.',{directory,debugCause:error.message,debugCode:error.code,debugStack:error.stack});")
           replace('mcp/private-dir.mjs', "if(!sid)throw new Error('private-directory');",
                   "if(!sid)throw new Error('whoami-failed '+identity.status+' '+identity.error?.code);")
-          replace('mcp/private-dir.mjs', "cwd:target,stdio:'ignore',windowsHide:true,timeout:5000",
-                  "cwd:target,encoding:'utf8',windowsHide:true,timeout:5000")
           replace('mcp/private-dir.mjs', "throw new Error('private-directory');",
-                  "throw new Error('icacls-failed '+result.status+' '+result.error?.code+' '+result.stderr);")
+                  "throw new Error('icacls-failed '+result.status+' '+result.error?.code);")
           replace('mcp/bootstrap-uv.mjs', "throw Error('download-failed');",
                   "throw Error('download-failed '+response.status);")
-          replace('mcp/bootstrap-uv.mjs', "stdio:'ignore',windowsHide:true,timeout:30000",
-                  "encoding:'utf8',windowsHide:true,timeout:30000")
           replace('mcp/bootstrap-uv.mjs', "throw Error('unpack-failed');",
-                  "throw Error('unpack-failed '+result.status+' '+result.error?.code+' '+result.stderr);")
-          PY
-          python tools/run_tests.py discover -s tests -p 'test_runtime_preparation.py' -v
+                  "throw Error('unpack-failed '+result.status+' '+result.error?.code);")
+          PYTRACE
+      - name: Automatic runtime preparation and offline reuse
+        env:
+          BLINK_TEST_RUNTIME_SETUP: '1'
+        run: python tools/run_tests.py discover -s tests -p test_runtime_preparation.py -v
