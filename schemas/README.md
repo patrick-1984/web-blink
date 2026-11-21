@@ -1,21 +1,20 @@
 # Web Link distribution schemas (draft v1)
 
 `index.json` identifies the four self-contained JSON Schema Draft 2020-12 documents and their SHA-256
-digests. Their URN `$id` values are stable identifiers for bundled/offline resolution. No hosted schema
-service or plugin release has been published by this change.
+digests. Their URN `$id` values are stable identifiers for bundled and offline resolution.
 
 | File under `v1/` | Instance document |
 |---|---|
 | `sources.schema.json` | Local Git source configuration |
 | `catalog.schema.json` | Repository `blink-catalog.json` |
 | `weblink.schema.json` | Versioned `weblink.json` integration descriptor |
+| `source-lock.schema.json` | Local pinned source/install provenance |
 
 Version 1.3.0 of the integration descriptor recognizes the optional `x-blink-ext.blink-debugger` object.
 It declares transport types for passive observation reports. For example, a device may declare a BLE
 interface and LoRa telemetry as `{"version": 1, "transports": {"bluetooth": ["ble"], "radio": ["lora"]}}`.
 Version 1 uses the `web`, `network`, `bluetooth`, and `radio` transport groups. Subtypes are defined in
 the schema. Metadata supplies no executable artifacts or permissions.
-| `source-lock.schema.json` | Local pinned source/install provenance |
 
 These distribution schemas validate envelopes, identifiers, safe relative paths and artifact metadata.
 The four distribution schemas do **not** validate execution, grants or credential recipes. Separate
