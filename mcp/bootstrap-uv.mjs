@@ -6,6 +6,14 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {privateDirectory} from './private-dir.mjs';
 
+// Use the installed CLR API directly. Windows PowerShell can inherit a module path
+// that gives its archive cmdlet an incompatible PowerShell 7 implementation.
+const windowsZipExtraction=[
+ '$ErrorActionPreference = "Stop";',
+ 'Add-Type -AssemblyName System.IO.Compression.FileSystem;',
+ '[System.IO.Compression.ZipFile]::ExtractToDirectory($env:BLINK_BOOTSTRAP_ARCHIVE, $env:BLINK_BOOTSTRAP_EXTRACT)',
+].join(' ');
+
 export async function bootstrapUV(directory){
  const binary=path.join(directory,'bin',process.platform==='win32'?'uv.exe':'uv');
  if(fs.existsSync(binary)&&fs.lstatSync(binary).isFile()&&!fs.lstatSync(binary).isSymbolicLink()){
@@ -30,7 +38,7 @@ export async function bootstrapUV(directory){
   const archive=path.join(temporary,asset),extract=path.join(temporary,'unpacked');
   fs.writeFileSync(archive,bytes,{mode:0o600});fs.mkdirSync(extract,{mode:0o700});
   const result=process.platform==='win32'
-   ?spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command','Expand-Archive -LiteralPath $env:BLINK_BOOTSTRAP_ARCHIVE -DestinationPath $env:BLINK_BOOTSTRAP_EXTRACT -Force'],
+   ?spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',windowsZipExtraction],
       {cwd:directory,env:{...process.env,BLINK_BOOTSTRAP_ARCHIVE:archive,BLINK_BOOTSTRAP_EXTRACT:extract},stdio:'ignore',windowsHide:true,timeout:30000})
    :spawnSync('tar',['-xf',archive,'-C',extract],{cwd:directory,stdio:'ignore',timeout:30000});
   if(result.error||result.status!==0)throw Error('unpack-failed');
