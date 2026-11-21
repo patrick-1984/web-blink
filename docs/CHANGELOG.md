@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.21.0 — 2026-11-21
+
+- Publish Web Link descriptor schema 1.3.0 with optional transport metadata for passive observation reports.
+  Descriptors can declare web, network, Bluetooth and radio subtypes without granting execution permissions.
+
 ## 0.20.0 — 2026-11-12
 
 - Reuse a pinned shared Blink through a thin instance definition or an embedded base snapshot. Add,
