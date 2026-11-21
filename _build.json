@@ -3,12 +3,12 @@
     {
       "bytes": 392,
       "path": ".claude-plugin/plugin.json",
-      "sha256": "512541c97b73c528e42e7e242f660a00d03fc53c67caafc629c9472f4e92db34"
+      "sha256": "77b5446fcfb96537e407ffa74dce6b22783850e321691f2f94d2f12500aad9a3"
     },
     {
       "bytes": 576,
       "path": ".codex-plugin/plugin.json",
-      "sha256": "3131d63400bdb9f2f0f578a6eccfd17dbe64c0c2f5763f88c958c12a593b13d0"
+      "sha256": "8ca2e8c2bef1b52fd062700f50c3a849195607c38308ce29abf5feecdec8524a"
     },
     {
       "bytes": 94,
@@ -28,7 +28,7 @@
     {
       "bytes": 19889,
       "path": "README.md",
-      "sha256": "1aea7bba953a7808a2e6ebd24ae8e9ad5944bc3397e29dc5c437af83ed1ec185"
+      "sha256": "cb9a82f6b1483fde7216c5e3ca398e525c1cbe94af580a1c80aecc7930d644e5"
     },
     {
       "bytes": 9983,
@@ -288,7 +288,7 @@
     {
       "bytes": 40820,
       "path": "mcp/server.mjs",
-      "sha256": "7ae5461bc837f52403e38c4eb504d5d9aec7175a31666d832586fd3ff2f64291"
+      "sha256": "e04c0cf0318f8214d90afbca9260e53df81b3a2c75e8068c98f9aa38d55d208e"
     },
     {
       "bytes": 3225,
@@ -303,7 +303,7 @@
     {
       "bytes": 633,
       "path": "pyproject.toml",
-      "sha256": "a4e304844c608ebe13487a35262d21f3300fcee3e0d109e57b97373f0ff6f096"
+      "sha256": "86f6693a0b07965e988ccc40906baac2ed8eba51cbfac05b3c38c426960508d3"
     },
     {
       "bytes": 12305,
@@ -311,9 +311,9 @@
       "sha256": "848b319ed090a0f0feb8cd286289ef0ab781d9eaa5d33ae1ca8a7c06b7cf51a0"
     },
     {
-      "bytes": 5754,
+      "bytes": 6168,
       "path": "schemas/README.md",
-      "sha256": "40d02c9152ed37eea2c6f9fce78e1acc0339ae37d4c00e9cbb654330fb0af670"
+      "sha256": "30486ddbe14100e11c05701b2a4e8368d0500ba18ee7bbd637136d517f46b5d8"
     },
     {
       "bytes": 8179,
@@ -338,7 +338,7 @@
     {
       "bytes": 3539,
       "path": "schemas/index.json",
-      "sha256": "d4dc9b5bae8225c3e404dccbdcca2373a1789e1d3144ed6a0bdc41b0c092ee3a"
+      "sha256": "3bf6c278bc1b6f2a1787642e4d49c79a0fdc144955abf7f9cf260b70b6e4a152"
     },
     {
       "bytes": 2658,
@@ -361,9 +361,9 @@
       "sha256": "a8e75bbff65a13323b9375061fffdba8ad61eaa99679ea3676ea12fdf89b01b4"
     },
     {
-      "bytes": 3561,
+      "bytes": 4922,
       "path": "schemas/v1/weblink.schema.json",
-      "sha256": "828af1c7e423e86745bc8d5364ec2c0070f42db735323077cf37c2f318bc1734"
+      "sha256": "e849c091d48d2ca8b20b477594b437d96039dc53d303f8702e150f2edc849475"
     },
     {
       "bytes": 242,
@@ -398,7 +398,7 @@
     {
       "bytes": 70,
       "path": "src/blink/__init__.py",
-      "sha256": "7ab5c3bb77cbe5c5a3539b9b3402176dc2c37f99e43095c256fb57c4f06d777d"
+      "sha256": "548f79c5ba26b2e3a02fde0bfaf3f26d15d238377058fbe5d494d7c056ab126d"
     },
     {
       "bytes": 48,
@@ -423,7 +423,7 @@
     {
       "bytes": 52626,
       "path": "src/blink/browser.py",
-      "sha256": "14646166a718d820ef069c40a1bbc1ede3a1369e59e3e78d7682a983c9549e22"
+      "sha256": "a79cdff7d8bf106f5c56e7c7728070ea0ea46dae37b130ff5547ca09ca0ab699"
     },
     {
       "bytes": 11037,
@@ -593,7 +593,7 @@
     {
       "bytes": 3539,
       "path": "src/blink/data/plugin/schemas/index.json",
-      "sha256": "d4dc9b5bae8225c3e404dccbdcca2373a1789e1d3144ed6a0bdc41b0c092ee3a"
+      "sha256": "3bf6c278bc1b6f2a1787642e4d49c79a0fdc144955abf7f9cf260b70b6e4a152"
     },
     {
       "bytes": 2658,
@@ -616,9 +616,9 @@
       "sha256": "a8e75bbff65a13323b9375061fffdba8ad61eaa99679ea3676ea12fdf89b01b4"
     },
     {
-      "bytes": 3561,
+      "bytes": 4922,
       "path": "src/blink/data/plugin/schemas/v1/weblink.schema.json",
-      "sha256": "828af1c7e423e86745bc8d5364ec2c0070f42db735323077cf37c2f318bc1734"
+      "sha256": "e849c091d48d2ca8b20b477594b437d96039dc53d303f8702e150f2edc849475"
     },
     {
       "bytes": 4122,
@@ -802,6 +802,6 @@
     "license": "MIT",
     "name": "web-blink",
     "repository": "https://github.com/patrick-1984/web-blink",
-    "version": "0.20.0"
+    "version": "0.21.0"
   }
 }
