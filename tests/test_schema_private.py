@@ -115,6 +115,26 @@ class SchemaEditionTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'MAJOR 2'):
                 distribution.validate('catalog', dict(catalog, **change))
 
+    def test_weblink_validates_optional_passive_transport_metadata(self):
+        distribution = Distribution(ROOT)
+        descriptor = json.loads((ROOT / 'examples/instance-overrides/weblink.json').read_text())
+        distribution.validate('weblink', descriptor)
+        metadata = {'version': 1, 'transports': {
+            'web': ['https'], 'network': ['mqtt'], 'bluetooth': ['ble'], 'radio': ['lora', 'zigbee'],
+        }}
+        descriptor['x-blink-ext'] = {'blink-debugger': metadata, 'vendor-data': {'existing': True}}
+        self.assertEqual(distribution.validate('weblink', descriptor), descriptor)
+
+        invalid_transports = ({}, {'web': ['ble']}, {'audio': ['other']}, {'radio': []}, {'radio': ['lora', 'lora']})
+        for invalid in invalid_transports:
+            with self.subTest(transports=invalid), self.assertRaisesRegex(ValueError, 'Invalid weblink'):
+                metadata['transports'] = invalid
+                distribution.validate('weblink', descriptor)
+        metadata['transports'] = {'bluetooth': ['ble']}
+        metadata['payload'] = 'unsupported'
+        with self.assertRaisesRegex(ValueError, 'Invalid weblink'):
+            distribution.validate('weblink', descriptor)
+
     def test_history_must_end_at_the_version_and_be_append_only(self):
         document = manifest()
         document['x-blink-service']['history'].append({'version': '0.9.0', 'date': '2026-10-31'})
