@@ -1,0 +1,50 @@
+name: Windows runtime diagnostic
+on:
+  push:
+    branches: [diag/windows-runtime-bootstrap]
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Trace the failing setup stage on this disposable runner
+        shell: bash
+        env:
+          BLINK_TEST_RUNTIME_SETUP: '1'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(filename, old, new):
+              path = Path(filename)
+              source = path.read_text(encoding='utf-8')
+              assert source.count(old) == 1, (filename, old)
+              path.write_text(source.replace(old, new), encoding='utf-8')
+
+          replace('mcp/setup-runtime.mjs', "retry.',{directory});",
+                  "retry.',{directory,debugCause:error.message,debugCode:error.code,debugStack:error.stack});")
+          replace('mcp/private-dir.mjs', "if(!sid)throw new Error('private-directory');",
+                  "if(!sid)throw new Error('whoami-failed '+identity.status+' '+identity.error?.code);")
+          replace('mcp/private-dir.mjs', "cwd:target,stdio:'ignore',windowsHide:true,timeout:5000",
+                  "cwd:target,encoding:'utf8',windowsHide:true,timeout:5000")
+          replace('mcp/private-dir.mjs', "throw new Error('private-directory');",
+                  "throw new Error('icacls-failed '+result.status+' '+result.error?.code+' '+result.stderr);")
+          replace('mcp/bootstrap-uv.mjs', "throw Error('download-failed');",
+                  "throw Error('download-failed '+response.status);")
+          replace('mcp/bootstrap-uv.mjs', "stdio:'ignore',windowsHide:true,timeout:30000",
+                  "encoding:'utf8',windowsHide:true,timeout:30000")
+          replace('mcp/bootstrap-uv.mjs', "throw Error('unpack-failed');",
+                  "throw Error('unpack-failed '+result.status+' '+result.error?.code+' '+result.stderr);")
+          PY
+          python tools/run_tests.py discover -s tests -p 'test_runtime_preparation.py' -v
