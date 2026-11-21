@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.21.3 — 2026-11-21
+
+- Fix native Windows runtime setup from PowerShell 7. The uv bootstrap uses the installed Windows ZIP API and stops on extraction errors. The existing offline runtime cache remains supported.
+
 ## 0.21.2 — 2026-11-21
 
 - Add a prominent Blink Debugger guide to the README with the shipped peer commands, schema export and saved observation workflow.
