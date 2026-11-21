@@ -1,0 +1,38 @@
+name: Windows runtime shell comparison
+on:
+  push:
+    branches: [diag/windows-runtime-shell]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Original PowerShell parent environment
+        shell: pwsh
+        continue-on-error: true
+        env:
+          BLINK_TEST_RUNTIME_SETUP: '1'
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command 'Get-Command Expand-Archive -ErrorAction Stop | ForEach-Object { $_.Module.Path }'
+          Write-Host "Legacy PowerShell command lookup exit: $LASTEXITCODE"
+          python tools/run_tests.py discover -s tests -p test_runtime_preparation.py -v
+      - name: Let the legacy PowerShell child use its default module search path
+        shell: pwsh
+        env:
+          BLINK_TEST_RUNTIME_SETUP: '1'
+        run: |
+          Remove-Item Env:PSModulePath -ErrorAction SilentlyContinue
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command 'Get-Command Expand-Archive -ErrorAction Stop | ForEach-Object { $_.Module.Path }'
+          Write-Host "Legacy PowerShell command lookup exit: $LASTEXITCODE"
+          python tools/run_tests.py discover -s tests -p test_runtime_preparation.py -v
