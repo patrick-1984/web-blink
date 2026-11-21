@@ -43,3 +43,16 @@ with `gh api user`; commit author, committer and annotated tagger must use that 
 `<id>+<login>@users.noreply.github.com` address. Explicitly remove or override inherited `GIT_AUTHOR_*`
 and `GIT_COMMITTER_*` values before creating commits or tags. Verify the resulting object identity before
 publication. Never copy an author's identity from historical commits or use a personal email address.
+
+## Software feedback loop
+
+At the start of a repository task, read any saved software lessons for this project. Use the private local
+`web-blink/software-lessons.md` file under `XDG_STATE_HOME` or `~/.local/state` on Unix. On Windows use
+the same relative path under `LOCALAPPDATA`. A missing file means there are no saved lessons yet.
+
+Record improvements to Web Blink itself, such as its CLI, plugin workflow, validation, or packaging. Leave service-specific learning in the existing Blink workflow. Keep browser recordings, request bodies, account data, and credentials out of software lessons.
+
+After a major change and at close-out, save generalized lessons that will help on a future task. Record
+the verified symptom or gap, the useful change, and how it was checked. Deduplicate existing lessons.
+Keep the file local and outside the repository. Share any relevant core-project fix or feature suggestion
+with the user, including its expected benefit. A suggestion stays a proposal until the user asks to implement it.
