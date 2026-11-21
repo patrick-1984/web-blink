@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.21.2 — 2026-11-21
+
+- Add a prominent Blink Debugger guide to the README with the shipped peer commands, schema export and saved observation workflow.
+- Refresh the README's pinned installation examples to this release.
+
 ## 0.21.1 — 2026-11-21
 
 - Add `blink peer discover blink-debugger` to check the optional, locally installed Blink Debugger's Web Link transport contract.

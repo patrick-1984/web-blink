@@ -4,6 +4,26 @@ It takes just a blink to control the web. Web Blink learns how web services and 
 them to you as reviewed, ready-to-run actions, so you can automate your work from Claude Code or the command
 line (`web-blink`, or just `blink`).
 
+
+## Use Web Blink with Blink Debugger
+
+Web Blink v0.21.0 added transport metadata to Web Link descriptors. Web Blink v0.21.1 added an
+opt-in compatibility check for the separate Blink Debugger CLI. The debugger summarizes saved
+device observations and checks Bluetooth adapter registration and listening sockets on a Linux host.
+[Web Blink releases](https://github.com/patrick-1984/web-blink/releases) · [Blink Debugger workflow guide](https://github.com/patrick-1984/blink-debugger#common-workflows)
+
+With both CLIs on the same PATH, check that they recognize each other's Web Link capabilities.
+
+```sh
+blink peer discover blink-debugger
+bdbg doctor --probe-web-blink
+```
+
+To get the bundled schema definitions, run `blink schemas export ./blink-schemas`. To compare your saved
+observations with transport types declared in a Web Link descriptor, run
+`bdbg inspect-observations observations.jsonl --weblink weblink.json`. Use the debugger's
+[bundled examples and installation steps](https://github.com/patrick-1984/blink-debugger#install) for a working sample.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/patrick-1984/web-blink/main/docs/media/architecture.gif" width="960" alt="Web Blink architecture: learn from your browser, a HAR file or your own Git repository of Blinks; the local runtime records, proposes, reviews and activates versioned Blinks and keeps logins and private data in a local vault; use them from Claude Code or Codex sessions, the CLI, scripts, routines and schedules.">
 </p>
@@ -30,8 +50,8 @@ Then quit the terminal app completely and open it again.
 **2. Get the news:**
 
 ```sh
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink add nasa-gov
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink nasa-gov latest-news
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink add nasa-gov
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink nasa-gov latest-news
 ```
 
 The first run takes a few seconds while uv downloads everything. You see:
@@ -48,7 +68,7 @@ Added the NASA news releases Blink (public, read-only). Next time it starts righ
 **3. Only releases that mention the Moon** (anywhere in the article, not only the title), ten of them:
 
 ```sh
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink nasa-gov latest-news --search moon --per-page 10
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink nasa-gov latest-news --search moon --per-page 10
 ```
 
 Why this is allowed: US federal websites are public by policy. The White House memo
@@ -56,16 +76,16 @@ Why this is allowed: US federal websites are public by policy. The White House m
 says their content “may be crawled, archived, or ‘scraped’ by anyone in the general public, at any time”.
 
 Tip: help and examples write commands as `blink …`. Until you install it (next steps), put the same
-`uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip` in front, for example
-`uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink nasa-gov latest-news --help`.
+`uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip` in front, for example
+`uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink nasa-gov latest-news --help`.
 
 ### Second example: the federal budget by agency
 
 How much each federal agency has to spend this fiscal year, from USAspending.gov (a US Treasury site):
 
 ```sh
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink add usaspending-gov
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink usaspending-gov agency-budgets
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink add usaspending-gov
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink usaspending-gov agency-budgets
 ```
 
 ```text
@@ -104,8 +124,8 @@ in Claude Code or Codex, and next time the same phrase runs the saved routine.
 Active National Weather Service watches, warnings and advisories for a state:
 
 ```sh
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink add weather-gov
-uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink weather-gov active-alerts --area TX
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink add weather-gov
+uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink weather-gov active-alerts --area TX
 ```
 
 ```text
@@ -120,10 +140,10 @@ Narrow it with `--severity Severe` or `--event "Flood Warning"`. A state is requ
 
 ### Next steps
 
-- Keep the `blink` command: `uv tool install https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip`, then `uv tool update-shell`, then reopen the terminal app.
+- Keep the `blink` command: `uv tool install https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip`, then `uv tool update-shell`, then reopen the terminal app.
   From then on: `blink nasa-gov latest-news`.
 - Scripts: add `--output json` for machine-readable results (see the [CLI reference](docs/cli-reference.md)).
-- More Blinks that ship with Web Blink (NASA news, the federal budget, weather alerts, Claude Console, …): `uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.1.zip blink add` (or `blink add` once installed).
+- More Blinks that ship with Web Blink (NASA news, the federal budget, weather alerts, Claude Console, …): `uvx --from https://github.com/patrick-1984/web-blink/archive/refs/tags/v0.21.2.zip blink add` (or `blink add` once installed).
 - Your own web apps: install the plugin (below) and ask Claude Code or Codex to do a task there. Blink learns
   the app while it works.
 
