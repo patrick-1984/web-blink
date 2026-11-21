@@ -1,4 +1,4 @@
-name: Windows runtime shell comparison
+name: Windows runtime archive comparison
 on:
   push:
     branches: [diag/windows-runtime-shell]
@@ -8,6 +8,8 @@ jobs:
   compare:
     runs-on: windows-latest
     timeout-minutes: 5
+    env:
+      BLINK_TEST_RUNTIME_SETUP: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,21 +20,34 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Original PowerShell parent environment
+      - name: Stock Expand-Archive with diagnostics
         shell: pwsh
         continue-on-error: true
-        env:
-          BLINK_TEST_RUNTIME_SETUP: '1'
         run: |
-          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command 'Get-Command Expand-Archive -ErrorAction Stop | ForEach-Object { $_.Module.Path }'
-          Write-Host "Legacy PowerShell command lookup exit: $LASTEXITCODE"
+          @'
+          from pathlib import Path
+          path = Path('mcp/setup-runtime.mjs')
+          source = path.read_text(encoding='utf-8')
+          path.write_text(source.replace("retry.',{directory});", "retry.',{directory,debugCause:error.message});"), encoding='utf-8')
+          path = Path('mcp/bootstrap-uv.mjs')
+          source = path.read_text(encoding='utf-8')
+          source = source.replace("stdio:'ignore',windowsHide:true,timeout:30000", "encoding:'utf8',windowsHide:true,timeout:30000")
+          for label in ('unpack-failed', 'binary-missing'):
+              source = source.replace("throw Error('" + label + "');", "throw Error('" + label + " '+result.status+' '+result.stderr?.slice(0,700)+' '+result.stdout?.slice(0,200)+' '+JSON.stringify(fs.readdirSync(extract)));")
+          path.write_text(source, encoding='utf-8')
+          '@ | python -
           python tools/run_tests.py discover -s tests -p test_runtime_preparation.py -v
-      - name: Let the legacy PowerShell child use its default module search path
+      - name: Use the Windows ZIP API with original stdio
         shell: pwsh
-        env:
-          BLINK_TEST_RUNTIME_SETUP: '1'
         run: |
-          Remove-Item Env:PSModulePath -ErrorAction SilentlyContinue
-          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command 'Get-Command Expand-Archive -ErrorAction Stop | ForEach-Object { $_.Module.Path }'
-          Write-Host "Legacy PowerShell command lookup exit: $LASTEXITCODE"
+          @'
+          import subprocess
+          from pathlib import Path
+          source = subprocess.check_output(['git','show','HEAD:mcp/bootstrap-uv.mjs']).decode('utf-8')
+          old = "Expand-Archive -LiteralPath $env:BLINK_BOOTSTRAP_ARCHIVE -DestinationPath $env:BLINK_BOOTSTRAP_EXTRACT -Force"
+          new = '$ErrorActionPreference = "Stop"; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:BLINK_BOOTSTRAP_ARCHIVE, $env:BLINK_BOOTSTRAP_EXTRACT)'
+          assert source.count(old) == 1
+          Path('mcp/bootstrap-uv.mjs').write_text(source.replace(old, new.replace('"Stop"', chr(92) + '"Stop' + chr(92) + '"')), encoding='utf-8')
+          '@ | python -
+          node --check mcp/bootstrap-uv.mjs
           python tools/run_tests.py discover -s tests -p test_runtime_preparation.py -v
