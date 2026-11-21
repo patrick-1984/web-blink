@@ -19,6 +19,8 @@ jobs:
         with:
           node-version: '22'
       - run: python -m pip install -e .
+      - name: Local Blink Debugger peer discovery
+        run: python tools/run_tests.py discover -s tests -p test_debugger_peer.py -v
       - name: Native transport and profile discovery
         env:
           BLINK_TEST_BROWSER_SETUP: ${{ runner.os == 'Windows' && '1' || '0' }}

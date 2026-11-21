@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.21.1 — 2026-11-21
+
+- Add `blink peer discover blink-debugger` to check the optional, locally installed Blink Debugger's Web Link transport contract.
+
 ## 0.21.0 — 2026-11-21
 
 - Publish Web Link descriptor schema 1.3.0 with optional transport metadata for passive observation reports.

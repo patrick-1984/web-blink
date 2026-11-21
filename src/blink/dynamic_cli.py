@@ -916,11 +916,28 @@ def route(argv=None):
             print('Usage: blink <integration> <action> [options]\n'
                   '       blink configure set|get|list|unset ... [--blink source:integration]\n'
                   '       blink <advanced-command> --help\n\n'
-                  'Advanced commands: ' + ', '.join(sorted(LEGACY)) + '\n'
+                  'Advanced commands: ' + ', '.join(sorted(LEGACY | {'peer'})) + '\n'
                   'Settings precedence: command line > environment > Blink defaults > global defaults > schema/built-ins.\n'
                   'Global flags: --output json|table|tsv|none --debug/--no-debug --dry-run/--no-dry-run\n'
                   '              --region --language --binding --config-dir --state-dir --plugin-root')
             return 0
+        if tokens[0] == 'peer' and (len(tokens) == 1 or tokens[1] in ('discover', '--help', '-h')):
+            parser = SafeParser(prog='blink peer', description='Check a local peer capability contract')
+            actions = parser.add_subparsers(required=True)
+            probe = actions.add_parser('discover', help='Check the local Blink Debugger CLI')
+            probe.add_argument('product', choices=('blink-debugger',))
+            parser.parse_args(tokens[1:])
+            if set(flags) - {'output', 'dry_run', 'config_dir'}:
+                raise UsageError('Invalid peer discovery options')
+            store = ConfigStore(flags.get('config_dir'))
+            settings, _ = store.effective(cli=_settings_flags(flags), read_only=True)
+            output = settings['output']
+            if settings['dry_run']:
+                return render(_envelope({'dryRun': True, 'dispatch': False}, 'Peer check suppressed'), output)
+            from .debugger_peer import discover
+            result = discover()
+            render(result, output)
+            return 0 if result['status'] == 'compatible' else 1
         # Diagnostic startup and help do not depend on a valid settings file.
         if tokens[0] == 'doctor':
             if not flags:
